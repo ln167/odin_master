@@ -89,3 +89,28 @@ def test_scaffold_missing_template(tmp_path):
     with pytest.raises(FileNotFoundError):
         scaffolder.scaffold(template="nope", target_dir=tmp_path / "out",
                             name="g", repo_root=tmp_path)
+
+
+def _repo_root() -> Path:
+    # tools/indexer/tests/test_scaffolder.py -> repo root
+    return Path(__file__).resolve().parents[3]
+
+
+@pytest.mark.parametrize("template", ["cli", "lib", "game"])
+def test_real_template_scaffolds(tmp_path, template):
+    repo = _repo_root()
+    if not (repo / "templates" / template).is_dir():
+        pytest.skip(f"template {template} missing")
+    target = tmp_path / f"out-{template}"
+    res = scaffolder.scaffold(template=template, target_dir=target,
+                              name="demo_app", repo_root=repo)
+    assert res.files_written > 0
+    # {{name}} substitution must have landed somewhere.
+    seen_sub = False
+    for p in target.rglob("*"):
+        if p.is_file() and p.suffix in {".odin", ".md", ".py"}:
+            if "{{name}}" in p.read_text(encoding="utf-8", errors="replace"):
+                raise AssertionError(f"unsubstituted placeholder in {p}")
+            if "demo_app" in p.read_text(encoding="utf-8", errors="replace"):
+                seen_sub = True
+    assert seen_sub, "expected {{name}}→demo_app substitution in at least one file"

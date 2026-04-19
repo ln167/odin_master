@@ -27,18 +27,13 @@ def test_help_lists_all_subcommands():
         assert cmd in out, f"missing subcommand `{cmd}` in --help output:\n{out}"
 
 
-def test_remaining_stub_subcommands_exit_zero_with_stub_message():
-    """Subcommands not yet wired up (Plans 6/8 still pending) keep their stubs."""
-    stub_cases = [
-        ["summarize", "x"],
-        ["publish", "x"],
-        ["vendor", "add", "https://example.invalid/repo.git"],
-        ["docs", "build"],
-    ]
-    for args in stub_cases:
+def test_no_subcommands_are_stubs():
+    """Once Plan 6/8 follow-ups land, no subcommand should print the old stub message."""
+    for args in (["summarize", "--help"], ["publish", "--help"],
+                 ["vendor", "--help"], ["docs", "--help"]):
         r = _run(args)
-        assert r.returncode == 0, f"{args} -> exit {r.returncode}\nSTDOUT:{r.stdout}\nSTDERR:{r.stderr}"
-        assert "not yet implemented" in (r.stdout + r.stderr), f"{args}: missing stub message"
+        assert r.returncode == 0, f"{args}\n{r.stderr}"
+        assert "not yet implemented" not in (r.stdout + r.stderr)
 
 
 def test_implemented_subcommands_exit_zero(tmp_path, monkeypatch):

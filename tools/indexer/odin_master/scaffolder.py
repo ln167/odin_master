@@ -75,7 +75,8 @@ def scaffold(
     files_written = 0
     for path in src.rglob("*"):
         rel = path.relative_to(src)
-        dst = target_dir / rel
+        rel_sub = Path(*[_substitute(part, params) for part in rel.parts])
+        dst = target_dir / rel_sub
         if path.is_dir():
             dst.mkdir(parents=True, exist_ok=True)
             continue

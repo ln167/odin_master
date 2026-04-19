@@ -13,6 +13,9 @@
   url: https://odin-lang.org/docs/
   destination: odin-lang-org
   processor: html-to-markdown
+  mirror: true
+  max_depth: 2
+  max_pages: 40
   last_updated: 2026-04-19
 
 - id: odin-overview
@@ -30,6 +33,9 @@
   url: https://zylinski.se/posts/
   destination: karl-zylinski
   processor: html-to-markdown
+  mirror: true
+  max_depth: 2
+  max_pages: 30
   last_updated: 2026-04-19
 
 - id: gingerbill-blog
@@ -38,6 +44,9 @@
   url: https://www.gingerbill.org/article/
   destination: gingerbill
   processor: html-to-markdown
+  mirror: true
+  max_depth: 2
+  max_pages: 30
   last_updated: 2026-04-19
 
 # ── Tier 3: community (treat with skepticism) ────────────────────────────────

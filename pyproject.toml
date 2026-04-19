@@ -7,6 +7,13 @@ requires-python = ">=3.12"
 [project.optional-dependencies]
 dev = ["pytest>=8", "pyyaml>=6", "tomli>=2; python_version<'3.11'"]
 
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = []
+
 [tool.pytest.ini_options]
 testpaths = ["tests", "tools/indexer/tests"]
 python_files = "test_*.py"

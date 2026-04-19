@@ -1,6 +1,6 @@
 # Plan 8 — Default corpus seeding + end-to-end integration
 
-> **Status:** OUTLINE — full task-by-task plan to be written when Plans 1, 2, 3, and 6 are implemented and verified working.
+> **Status:** SHIPPED 2026-04-19
 >
 > **Why outline only:** per the user's incremental-commitment strategy, we don't draft detailed plans for downstream work that may shift once foundation work surfaces real constraints. End-to-end seeding only makes sense after the indexer + search CLI + setup commands all work in isolation.
 

@@ -15,8 +15,11 @@ ENABLED        :: INSTRUMENT == "spall" || INSTRUMENT == "tracy" || INSTRUMENT =
 ENABLE_SPALL   :: INSTRUMENT == "spall" || INSTRUMENT == "both"
 ENABLE_TRACY   :: INSTRUMENT == "tracy" || INSTRUMENT == "both"
 
-Zone :: struct {
-	when ENABLE_SPALL { spall_buf: ^Spall_Buffer }
+when ENABLE_SPALL {
+	Spall_Buffer :: struct {}  // forward decl — backend supplies it
+	Zone :: struct { spall_buf: ^Spall_Buffer }
+} else {
+	Zone :: struct {}
 }
 
 @(deferred_out=_zone_end)

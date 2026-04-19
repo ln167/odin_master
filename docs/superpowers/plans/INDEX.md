@@ -43,13 +43,13 @@ When the time comes to start Plan N, expand its outline file into a full TDD-sty
 | # | Status | Plan | Depends on |
 |---|---|---|---|
 | 1 | **FULL** | [Foundation: repo skeleton + CLI shells](2026-04-19-plan-1-foundation.md) | — |
-| 2 | OUTLINE | [Indexer (Python cold-path)](2026-04-19-plan-2-indexer.md) | 1 |
-| 3 | OUTLINE | [Search CLI (Rust hot-path)](2026-04-19-plan-3-search-cli.md) | 1 |
-| 4 | OUTLINE | [Hot-reload template](2026-04-19-plan-4-hot-reload-template.md) | 1 |
-| 5 | OUTLINE | [Playground + instrumentation library](2026-04-19-plan-5-playground-instrumentation.md) | 1 |
-| 6 | OUTLINE | [Editor wiring + remaining odin-master subcommands](2026-04-19-plan-6-editor-and-cli-subcommands.md) | 1, 5 |
-| 7 | OUTLINE | [CI matrix + cross-platform validation](2026-04-19-plan-7-ci-matrix.md) | 2, 3, 4, 5, 6 |
-| 8 | OUTLINE | [Default corpus + end-to-end integration](2026-04-19-plan-8-default-corpus-integration.md) | 1, 2, 3, 6 |
+| 2 | SHIPPED | [Indexer (Python cold-path)](2026-04-19-plan-2-indexer.md) | 1 |
+| 3 | SHIPPED | [Search CLI (Rust hot-path)](2026-04-19-plan-3-search-cli.md) | 1 |
+| 4 | SHIPPED | [Hot-reload template](2026-04-19-plan-4-hot-reload-template.md) | 1 |
+| 5 | SHIPPED | [Playground + instrumentation library](2026-04-19-plan-5-playground-instrumentation.md) | 1 |
+| 6 | SHIPPED | [Editor wiring + remaining odin-master subcommands](2026-04-19-plan-6-editor-and-cli-subcommands.md) | 1, 5 |
+| 7 | SHIPPED | [CI matrix + cross-platform validation](2026-04-19-plan-7-ci-matrix.md) | 2, 3, 4, 5, 6 |
+| 8 | SHIPPED | [Default corpus + end-to-end integration](2026-04-19-plan-8-default-corpus-integration.md) | 1, 2, 3, 6 |
 
 ## Coding principles (apply to every plan)
 

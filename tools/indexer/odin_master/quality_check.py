@@ -46,9 +46,10 @@ def _search(query: str, *, top: int = 5,
         raise FileNotFoundError("odin-search not on PATH")
     proc = subprocess.run(
         [bin_, "--keyword-only", "--json", "--top", str(top), query],
-        capture_output=True, text=True, check=True
+        capture_output=True, check=True,
     )
-    return json.loads(proc.stdout).get("results", [])
+    text = proc.stdout.decode("utf-8", errors="replace")
+    return json.loads(text).get("results", [])
 
 
 def run(checks: list[QualityCheck], *, search_bin: str | None = None

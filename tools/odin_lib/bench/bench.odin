@@ -48,5 +48,6 @@ write_json :: proc(r: Result, path: string) -> bool {
 		return false
 	}
 	defer delete(bytes)
-	return os.write_entire_file(path, bytes)
+	werr := os.write_entire_file(path, bytes)
+	return werr == nil
 }

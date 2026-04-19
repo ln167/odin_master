@@ -103,4 +103,5 @@ jobs:
         run: |
           python -m pip install -e tools/indexer
           mkdir -p content && echo "[]" > content/manifest.yaml
+          bash tools/install/install.sh --lite
           odin-master doctor || true

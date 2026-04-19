@@ -1,0 +1,1 @@
+Please click this [link](https://odinbook.com/) if you are not redirected.

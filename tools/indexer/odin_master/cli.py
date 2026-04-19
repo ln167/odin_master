@@ -1,10 +1,4 @@
-"""odin-master — cold-path CLI for the odin_master template.
-
-Plan 1 shipped dispatch shells. Plan 2 wires up `update`, `reindex`, `lint`, and
-`doctor` against the indexer pipeline. Subcommands not yet implemented (summarize,
-new, update-template, publish, vendor, docs, scratch, test-summary) keep their
-stubs until later plans.
-"""
+"""odin-master — cold-path CLI for the odin_master template."""
 from __future__ import annotations
 
 import os
@@ -21,10 +15,6 @@ scratch_app = typer.Typer(name="scratch", help="Scratchpad evidence helpers.", n
 app.add_typer(vendor_app, name="vendor")
 app.add_typer(docs_app, name="docs")
 app.add_typer(scratch_app, name="scratch")
-
-
-def _stub(name: str) -> None:
-    typer.echo(f"odin-master {name}: not yet implemented")
 
 
 def _repo_root() -> Path:
@@ -72,9 +62,15 @@ def reindex(keyword_only: bool = typer.Option(False, "--keyword-only", help="Ski
 
 
 @app.command()
-def summarize(source: str) -> None:
+def summarize(source: str,
+              model: str = typer.Option("llama3.2", "--model"),
+              url: str = typer.Option("http://127.0.0.1:11434", "--url")) -> None:
     """LLM-compile a source into wiki concept pages with backlinks."""
-    _stub(f"summarize {source}")
+    from . import summarize as sm
+    root = _repo_root()
+    rep = sm.summarize(root, source, model=model, url=url)
+    typer.echo(f"summarize {source}: wrote {len(rep.written)} concepts "
+               f"({rep.raw_response_chars} chars from {model})")
 
 
 @app.command()
@@ -151,9 +147,13 @@ def update_template(project: Path = typer.Argument(..., exists=True, file_okay=F
 
 
 @app.command()
-def publish(topic: str) -> None:
+def publish(topic: str,
+            top: int = typer.Option(10, "--top")) -> None:
     """File a query session into content/outputs/YYYY-MM-DD-<topic>/."""
-    _stub(f"publish {topic}")
+    from . import publish as pub
+    root = _repo_root()
+    rep = pub.publish(root, topic, top=top)
+    typer.echo(f"publish {topic}: {rep.n_results} results -> {rep.out_path}")
 
 
 @app.command(name="bootstrap-corpus")
@@ -208,13 +208,33 @@ def test_summary(report: Path = typer.Argument(Path("build/test-report.json"))) 
 @vendor_app.command(name="add")
 def vendor_add(git_url: str) -> None:
     """git submodule add + ols.json wiring + libs/MANIFEST.md update."""
-    _stub(f"vendor add {git_url}")
+    from . import vendor_add as va
+    root = _repo_root()
+    rep = va.vendor_add(root, git_url)
+    typer.echo(f"vendor add {rep.name}: {rep.submodule_path} "
+               f"(ols={'updated' if rep.ols_updated else 'skipped'}, "
+               f"manifest={'updated' if rep.manifest_updated else 'unchanged'})")
 
 
 @docs_app.command(name="build")
 def docs_build() -> None:
-    """Local pkg.odin-lang.org renderer for stdlib HTML."""
-    _stub("docs build")
+    """Render Odin doc output for tools/odin_lib subpackages."""
+    from . import docs_build as db
+    root = _repo_root()
+    rep = db.build_docs(root)
+    typer.echo(f"docs build: {len(rep.built)} ok, {len(rep.skipped)} skipped -> {rep.out_dir}")
+    if rep.skipped:
+        for p in rep.skipped:
+            typer.echo(f"  skipped: {p}")
+
+
+@app.command(name="wiki-index")
+def wiki_index_cmd() -> None:
+    """Regenerate content/wiki/INDEX.md from concepts/ + summaries/."""
+    from . import wiki_index
+    root = _repo_root()
+    out = wiki_index.regenerate(root)
+    typer.echo(f"wiki-index: wrote {out}")
 
 
 @scratch_app.command(name="new")

@@ -1,4 +1,7 @@
 # Wiki
 
-LLM-compiled, concept-organized articles with backlinks to verbatim sources.
-This file will be auto-maintained as a TOC by `odin-master summarize` (Plan 2).
+| Title | Path |
+|---|---|
+| Context Allocator | [concepts/context-allocator.md](concepts/context-allocator.md) |
+| Reading a File | [concepts/reading-a-file.md](concepts/reading-a-file.md) |
+| Tagged Unions | [concepts/tagged-unions.md](concepts/tagged-unions.md) |

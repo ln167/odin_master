@@ -19,5 +19,6 @@ RESULT :: proc(verdict: string, detail := "") {
 }
 
 write_output :: proc(path: string, body: string) -> bool {
-	return os.write_entire_file(path, transmute([]u8)strings.clone(body))
+	werr := os.write_entire_file(path, transmute([]u8)strings.clone(body))
+	return werr == nil
 }

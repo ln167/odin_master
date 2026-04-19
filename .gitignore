@@ -28,3 +28,9 @@ node_modules/
 
 # Local user overrides
 local.toml
+
+# Per-machine agent settings
+.claude/
+
+# Locally-published digests
+content/outputs/

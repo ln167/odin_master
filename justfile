@@ -38,7 +38,7 @@ clean:
 format:
     @find . -name '*.odin' -not -path '*/build/*' -not -path '*/vendor/*' -print0 | xargs -0 -n1 odinfmt -overwrite
 
-# ─── Bench / profile (Plan 5) ─────────────────────────────────────────────
+# ─── Bench / profile ──────────────────────────────────────────────────────
 bench name:
     @cd playground/bench/{{name}} && odin run . -define:INSTRUMENT=spall -o:speed
 
@@ -48,7 +48,7 @@ profile-run binary:
 hot:
     @echo "scaffold a project with `odin-master new <n> --template game` first"
 
-# ─── Scratchpad (Plan 5) ──────────────────────────────────────────────────
+# ─── Scratchpad ───────────────────────────────────────────────────────────
 scratch-new slug:
     @odin-master scratch new {{slug}}
 
@@ -58,7 +58,7 @@ scratch-run dir:
 scratch-watch dir:
     @watchexec -w {{dir}} -- odin-master scratch run {{dir}}
 
-# ─── Knowledge base (Plan 2) ──────────────────────────────────────────────
+# ─── Knowledge base ───────────────────────────────────────────────────────
 summarize source:
     @odin-master summarize {{source}}
 

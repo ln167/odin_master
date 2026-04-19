@@ -6,6 +6,8 @@ package game
 import "base:runtime"
 import "core:fmt"
 
+HOT_RELOAD :: #config(HOT_RELOAD, false)
+
 @(export)
 game_init_window :: proc() {
 	fmt.println("[{{name}}] init window")

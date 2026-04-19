@@ -25,6 +25,18 @@ pub fn open_db(path: &Path) -> Result<Connection> {
     Connection::open(path).with_context(|| format!("opening sqlite at {}", path.display()))
 }
 
+/// Sanitize a free-form user query for FTS5: quote each whitespace-delimited
+/// token (so `context.allocator` is a literal token, not a syntax expression),
+/// then join with OR so a multi-word query is fuzzy. BM25 handles ranking.
+fn sanitize_fts_query(q: &str) -> String {
+    q.split_whitespace()
+        .map(|t| t.trim_matches(|c: char| !c.is_alphanumeric() && c != '.' && c != '_' && c != '-'))
+        .filter(|t| !t.is_empty())
+        .map(|t| format!("\"{}\"", t.replace('"', "\"\"")))
+        .collect::<Vec<_>>()
+        .join(" OR ")
+}
+
 pub fn keyword_search(
     con: &Connection,
     query: &str,
@@ -32,11 +44,15 @@ pub fn keyword_search(
     tiers: &[u8],
     source: Option<&str>,
 ) -> Result<Vec<ChunkHit>> {
+    let safe_query = sanitize_fts_query(query);
+    if safe_query.is_empty() {
+        return Ok(vec![]);
+    }
     let mut where_clauses = vec![
         "chunks.id = chunks_fts.rowid".to_string(),
         "chunks_fts MATCH ?1".to_string(),
     ];
-    let mut params: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(query.to_string())];
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(safe_query)];
     let mut next_idx = 2;
     if !tiers.is_empty() {
         let placeholders: Vec<String> = (0..tiers.len()).map(|i| format!("?{}", next_idx + i)).collect();

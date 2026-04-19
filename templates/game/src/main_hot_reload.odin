@@ -22,7 +22,7 @@ Game_API :: struct {
 	force_reload:    proc() -> bool,
 	force_restart:   proc() -> bool,
 	lib:             dynlib.Library,
-	mtime:           os.File_Time,
+	mtime:           time.Time,
 	api_version:     int,
 }
 
@@ -38,15 +38,15 @@ newest_dll :: proc() -> (path: string, ok: bool) {
 	d, derr := os.open(DLL_DIR)
 	if derr != nil { return "", false }
 	defer os.close(d)
-	files, ferr := os.read_dir(d, -1)
+	files, ferr := os.read_dir(d, -1, context.allocator)
 	if ferr != nil { return "", false }
-	best_time: os.File_Time
+	best_time: time.Time
 	for f in files {
 		if !strings.has_suffix(f.name, dll_ext()) { continue }
 		if !strings.has_prefix(f.name, "game_") { continue }
-		if f.modification_time > best_time {
+		if time.diff(best_time, f.modification_time) > 0 {
 			best_time = f.modification_time
-			path = filepath.join({DLL_DIR, f.name})
+			path, _ = filepath.join({DLL_DIR, f.name}, context.allocator)
 			ok = true
 		}
 	}
@@ -54,9 +54,9 @@ newest_dll :: proc() -> (path: string, ok: bool) {
 }
 
 load_api :: proc(path: string) -> (api: Game_API, ok: bool) {
-	count, lerr := dynlib.initialize_symbols(&api, path, "game_", "lib")
-	if lerr != "" || count == 0 {
-		fmt.eprintln("dynlib load failed:", lerr, "from", path)
+	count, lok := dynlib.initialize_symbols(&api, path, "game_", "lib")
+	if !lok || count == 0 {
+		fmt.eprintln("dynlib load failed from", path)
 		return {}, false
 	}
 	mt, _ := os.last_write_time_by_name(path)

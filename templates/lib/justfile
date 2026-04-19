@@ -1,0 +1,16 @@
+# {{name}} task runner.
+
+default:
+    @just --list --unsorted
+
+test:
+    @python build.py test
+
+doc:
+    @python build.py doc
+
+format:
+    @odinfmt -overwrite src tests
+
+clean:
+    @rm -rf build

@@ -1,6 +1,6 @@
 # Plan 7 — CI matrix + cross-platform validation
 
-> **Status:** OUTLINE — full task-by-task plan to be written when Plans 2, 3, 4, 5, and 6 are implemented and have minimal CI lanes already.
+> **Status:** SHIPPED 2026-04-19
 >
 > **Why outline only:** per the user's incremental-commitment strategy, we don't draft detailed plans for downstream work that may shift once foundation work surfaces real constraints. A real CI matrix only makes sense once there are real subsystems to test.
 

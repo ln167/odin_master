@@ -274,18 +274,12 @@ def test_just_lists_all_documented_targets():
 
 
 def test_user_docs_present():
-    expected = [
-        "getting-started.md",
-        "daily-use.md",
-        "adding-sources.md",
-        "multi-machine.md",
-        "migration-2026.md",
-        "troubleshooting.md",
-    ]
-    for f in expected:
-        p = ROOT / "docs" / f
-        assert p.is_file(), f"missing docs/{f}"
-        assert p.read_text(encoding="utf-8").lstrip().startswith("# "), f"docs/{f}: no H1"
+    # README has the Quick Start; only adding-sources is kept as a separate doc.
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert "## Quick start" in readme
+    p = ROOT / "docs" / "adding-sources.md"
+    assert p.is_file()
+    assert p.read_text(encoding="utf-8").lstrip().startswith("# ")
 
 
 # ─── Task 13: CI workflow ────────────────────────────────────────────────────

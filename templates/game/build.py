@@ -51,10 +51,8 @@ def cmd_hot(_args: argparse.Namespace) -> None:
     _run(args)
     host = HOT_DIR / ("{{name}}" + (".exe" if _system() == "windows" else ""))
     if not host.exists():
-        host_args = [_odin(), "build", "src",
-                     "-file:src/main_hot_reload.odin",
-                     "-debug", "-out:" + str(host),
-                     "-define:HOT_RELOAD=true"]
+        host_args = [_odin(), "build", "src/main_hot_reload.odin",
+                     "-file", "-debug", "-out:" + str(host)]
         _run(host_args)
     print(f"hot: built {out}; run {host}")
 
@@ -63,8 +61,8 @@ def cmd_release(args: argparse.Namespace) -> None:
     out_dir = BUILD / "release"
     out_dir.mkdir(parents=True, exist_ok=True)
     out = out_dir / ("{{name}}" + (".exe" if _system() == "windows" else ""))
-    cmd = [_odin(), "build", "src",
-           "-file:src/main_release.odin",
+    cmd = [_odin(), "build", "src/main_release.odin",
+           "-file",
            f"-out:{out}",
            "-define:HOT_RELOAD=false"]
     if args.profile == "release":
