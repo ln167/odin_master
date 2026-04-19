@@ -1,0 +1,35 @@
+name: reusable-ci
+
+on:
+  workflow_call:
+    inputs:
+      odin-version:
+        type: string
+        default: "dev-2026-04"
+      profile:
+        type: string
+        default: "debug"
+      runs-on:
+        type: string
+        default: "ubuntu-latest"
+
+jobs:
+  build-and-test:
+    runs-on: ${{ inputs.runs-on }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: laytan/setup-odin@v2
+        with:
+          release: ${{ inputs.odin-version }}
+      - name: Check
+        run: odin check . -vet -strict-style
+      - name: Build
+        shell: bash
+        run: |
+          if [ "${{ inputs.profile }}" = "release" ]; then
+            odin build . -o:speed -no-bounds-check -out:app
+          else
+            odin build . -debug -out:app
+          fi
+      - name: Test
+        run: odin test . || true

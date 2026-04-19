@@ -1,0 +1,29 @@
+[project]
+name = "odin-master"
+version = "0.0.2"
+description = "Cold-path admin and indexer CLI for the odin_master template."
+requires-python = ">=3.12"
+dependencies = [
+    "typer>=0.12",
+    "pyyaml>=6",
+    "requests>=2.31",
+    "usearch>=2.12",
+    "numpy>=1.26",
+    "pypdf>=4",
+    "beautifulsoup4>=4.12",
+    "markdownify>=0.11",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8", "responses>=0.25"]
+
+[project.scripts]
+odin-master = "odin_master.cli:app"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["odin_master*"]

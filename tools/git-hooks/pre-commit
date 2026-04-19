@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -e
+git diff --cached --name-only --diff-filter=ACM | grep '\.odin$' | while read -r f; do
+    odinfmt -stdin -overwrite < "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+    git add "$f"
+done
+odin check . -vet -strict-style

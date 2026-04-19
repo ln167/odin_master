@@ -1,0 +1,13 @@
+[project]
+name = "odin-master-template"
+version = "0.0.1"
+description = "Personal Odin master template — root project, holds dev tooling and structural tests."
+requires-python = ">=3.12"
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pyyaml>=6", "tomli>=2; python_version<'3.11'"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "tools/indexer/tests"]
+python_files = "test_*.py"
+addopts = "-ra --import-mode=importlib"

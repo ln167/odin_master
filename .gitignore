@@ -1,0 +1,30 @@
+# Search index — rebuilt locally per machine
+content/index/
+
+# Profiling captures — large binary traces
+playground/profiles/
+*.spall
+*.pdb
+*.ctf
+
+# Build artifacts
+build/
+target/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+*.egg-info/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+
+# Node (tree-sitter, etc.)
+node_modules/
+
+# Local user overrides
+local.toml

@@ -1,0 +1,18 @@
+set windows-shell := ["cmd.exe", "/c"]
+
+default: dev
+
+dev:
+    python build.py hot
+
+build profile="debug":
+    python build.py release --profile {{profile}}
+
+run: build
+    ./build/release/{{name}}
+
+clean:
+    python build.py clean
+
+test:
+    odin test src/game -define:HOT_RELOAD=false

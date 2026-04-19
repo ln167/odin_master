@@ -1,0 +1,50 @@
+# odin_master default corpus — spec §4.7.
+# Add new sources by following docs/adding-sources.md, then `odin-master update`.
+#
+# DO NOT INDEX — out of license / out of license-equivalent:
+#   - Discord transcripts (Odin server)
+#   - Private support emails
+#   - Anything paywalled
+
+# ── Tier 1: authoritative ────────────────────────────────────────────────────
+- id: odin-lang-org
+  tier: 1
+  fetcher: html_mirror
+  url: https://odin-lang.org/docs/
+  destination: odin-lang-org
+  processor: html-to-markdown
+  last_updated: 2026-04-19
+
+- id: odin-overview
+  tier: 1
+  fetcher: pasted_text
+  destination: odin-overview
+  source_path: tier1-authoritative/odin-overview
+  processor: markdown
+  last_updated: 2026-04-19
+
+# ── Tier 2: curated ──────────────────────────────────────────────────────────
+- id: karl-zylinski-blog
+  tier: 2
+  fetcher: html_mirror
+  url: https://zylinski.se/posts/
+  destination: karl-zylinski
+  processor: html-to-markdown
+  last_updated: 2026-04-19
+
+- id: gingerbill-blog
+  tier: 2
+  fetcher: html_mirror
+  url: https://www.gingerbill.org/article/
+  destination: gingerbill
+  processor: html-to-markdown
+  last_updated: 2026-04-19
+
+# ── Tier 3: community (treat with skepticism) ────────────────────────────────
+- id: odin-examples
+  tier: 3
+  fetcher: git_clone
+  git_url: https://github.com/odin-lang/examples.git
+  destination: odin-examples
+  processor: source-code
+  last_updated: 2026-04-19

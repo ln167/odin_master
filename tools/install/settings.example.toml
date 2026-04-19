@@ -1,0 +1,7 @@
+# Per-machine settings — copy to ~/.config/odin_master/settings.toml
+# (or %APPDATA%\odin_master\settings.toml on Windows).
+# See spec §2.5.
+
+enable_vector_search = true
+ollama_url           = "http://127.0.0.1:11434"
+embedding_model      = "qwen3-embedding:4b"

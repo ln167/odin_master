@@ -1,0 +1,16 @@
+# Canonical-query gold set. Each entry is a query whose top-5 results must
+# include at least one of the listed source ids (run via `odin-master quality-check`).
+- query: "how do I read a file in Odin"
+  must_include_source_ids_in_top_5: [odin-lang-org, odin-overview]
+
+- query: "what is context.allocator"
+  must_include_source_ids_in_top_5: [odin-lang-org, odin-overview]
+
+- query: "hot reload pattern game"
+  must_include_source_ids_in_top_5: [karl-zylinski-blog]
+
+- query: "tagged union usage"
+  must_include_source_ids_in_top_5: [odin-lang-org, gingerbill-blog]
+
+- query: "Karl Zylinski raylib"
+  must_include_source_ids_in_top_5: [karl-zylinski-blog]
