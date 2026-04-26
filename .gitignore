@@ -34,3 +34,18 @@ local.toml
 
 # Locally-published digests
 content/outputs/
+
+# Cloned third-party repos (have their own .git)
+content/sources/tier3-community/odin-examples/
+
+# Playground scratch files — only scratch.odin and README.md are tracked
+playground/*.odin
+!playground/scratch.odin
+
+# Bootstrap log artifacts
+bootstrap-out.log
+
+# Built Odin binaries
+tools/lessons-check/lessons-check.exe
+tools/lessons-check/lessons-check
+lessons/**/.lessons-check.odin

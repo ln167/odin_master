@@ -15,6 +15,7 @@ pub struct ChunkHit {
     pub view: String,
     pub path: String,
     pub heading_path: String,
+    pub char_offset: i64,
     pub text: String,
     /// Lower BM25 = better in SQLite's bm25() — we negate when emitting so
     /// downstream RRF treats higher score as better.
@@ -71,7 +72,7 @@ pub fn keyword_search(
     params.push(Box::new(top as i64));
     let sql = format!(
         "SELECT chunks.id, chunks.source_id, chunks.tier, chunks.view, chunks.path,
-                chunks.heading_path, chunks.text, bm25(chunks_fts) as bm25_score
+                chunks.heading_path, chunks.char_offset, chunks.text, bm25(chunks_fts) as bm25_score
          FROM chunks_fts, chunks
          WHERE {}
          ORDER BY bm25(chunks_fts) ASC LIMIT ?{}",
@@ -88,8 +89,9 @@ pub fn keyword_search(
                 view: row.get(3)?,
                 path: row.get(4)?,
                 heading_path: row.get(5)?,
-                text: row.get(6)?,
-                score: -row.get::<_, f64>(7)?, // higher score = better
+                char_offset: row.get(6)?,
+                text: row.get(7)?,
+                score: -row.get::<_, f64>(8)?, // higher score = better
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -126,7 +128,7 @@ pub fn fetch_chunks_by_ids(con: &Connection, ids: &[u64]) -> Result<Vec<ChunkHit
     }
     let placeholders: Vec<String> = (0..ids.len()).map(|i| format!("?{}", i + 1)).collect();
     let sql = format!(
-        "SELECT id, source_id, tier, view, path, heading_path, text
+        "SELECT id, source_id, tier, view, path, heading_path, char_offset, text
          FROM chunks WHERE id IN ({})",
         placeholders.join(",")
     );
@@ -141,7 +143,8 @@ pub fn fetch_chunks_by_ids(con: &Connection, ids: &[u64]) -> Result<Vec<ChunkHit
                 view: row.get(3)?,
                 path: row.get(4)?,
                 heading_path: row.get(5)?,
-                text: row.get(6)?,
+                char_offset: row.get(6)?,
+                text: row.get(7)?,
                 score: 0.0,
             })
         })?

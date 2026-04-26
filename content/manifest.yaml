@@ -14,8 +14,19 @@
   destination: odin-lang-org
   processor: html-to-markdown
   mirror: true
-  max_depth: 2
-  max_pages: 40
+  max_depth: 4
+  max_pages: 200
+  last_updated: 2026-04-19
+
+- id: odin-pkg-docs
+  tier: 1
+  fetcher: html_mirror
+  url: https://pkg.odin-lang.org/
+  destination: odin-pkg-docs
+  processor: html-to-markdown
+  mirror: true
+  max_depth: 3
+  max_pages: 400
   last_updated: 2026-04-19
 
 - id: odin-overview
@@ -24,6 +35,37 @@
   destination: odin-overview
   source_path: tier1-authoritative/odin-overview
   processor: markdown
+  last_updated: 2026-04-19
+
+- id: odin-core
+  tier: 1
+  fetcher: local_dir
+  source_path: ${ODIN_ROOT}/core
+  destination: odin-core
+  processor: source-code
+  include_glob: "**/*.odin"
+  max_files: 4000
+  max_bytes_per_file: 524288
+  last_updated: 2026-04-19
+
+- id: odin-vendor
+  tier: 1
+  fetcher: local_dir
+  source_path: ${ODIN_ROOT}/vendor
+  destination: odin-vendor
+  processor: source-code
+  include_glob: "**/*.odin"
+  max_files: 4000
+  max_bytes_per_file: 524288
+  last_updated: 2026-04-19
+
+- id: odin-wiki
+  tier: 1
+  fetcher: local_dir
+  source_path: content/wiki/concepts
+  destination: odin-wiki
+  processor: markdown
+  include_glob: "**/*.md"
   last_updated: 2026-04-19
 
 # ── Tier 2: curated ──────────────────────────────────────────────────────────
@@ -43,6 +85,17 @@
   fetcher: html_mirror
   url: https://www.gingerbill.org/article/
   destination: gingerbill
+  processor: html-to-markdown
+  mirror: true
+  max_depth: 2
+  max_pages: 30
+  last_updated: 2026-04-19
+
+- id: jakubtomsu-blog
+  tier: 2
+  fetcher: html_mirror
+  url: https://jakubtomsu.github.io/
+  destination: jakubtomsu
   processor: html-to-markdown
   mirror: true
   max_depth: 2

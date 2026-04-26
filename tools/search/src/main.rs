@@ -10,6 +10,7 @@
 
 mod embed;
 mod fuse;
+mod manifest;
 mod repo_root;
 mod settings;
 mod store;
@@ -140,18 +141,61 @@ fn main() -> Result<()> {
         serde_json::to_writer_pretty(std::io::stdout(), &out)?;
         println!();
     } else {
-        for (i, hit) in combined.iter().enumerate() {
-            println!(
-                "{:>3}. [{}/{} t{}] {} {}",
-                i + 1, hit.source_id, hit.path, hit.tier, hit.heading_path,
-                if hit.text.len() > 120 { format!("{}…", &hit.text[..120]) } else { hit.text.clone() },
-            );
-        }
         if combined.is_empty() {
             eprintln!("(no results)");
+        } else {
+            let bases = manifest::source_base_dirs(&root).unwrap_or_default();
+            let total = combined.len();
+            for (i, hit) in combined.iter().enumerate() {
+                print_hit(i + 1, hit, bases.get(&hit.source_id));
+                if i + 1 < total {
+                    println!();
+                }
+            }
         }
     }
     Ok(())
+}
+
+fn print_hit(n: usize, hit: &store::ChunkHit, base_dir: Option<&std::path::PathBuf>) {
+    println!("{:>3}. {}/{}  [t{}]", n, hit.source_id, hit.path, hit.tier);
+    let heading = hit.heading_path.trim();
+    if !heading.is_empty() && heading != "/" {
+        println!("     {}", heading);
+    }
+    let snippet: String = hit.text.chars().take(400).collect();
+    let trailing = if hit.text.chars().count() > 400 { "…" } else { "" };
+    for line in snippet.lines() {
+        println!("     > {}", line);
+    }
+    if !trailing.is_empty() {
+        println!("     > …");
+    }
+    if let Some(base) = base_dir {
+        let abs = base.join(&hit.path);
+        let display_path = abs.to_string_lossy().replace('\\', "/");
+        let line = lookup_line(&abs, hit.char_offset);
+        match line {
+            Some(l) => println!("     -> {}:{}", display_path, l),
+            None => println!("     -> {}", display_path),
+        }
+    }
+}
+
+fn lookup_line(path: &std::path::Path, char_offset: i64) -> Option<u64> {
+    if char_offset < 0 { return None; }
+    let bytes = std::fs::read(path).ok()?;
+    let mut line: u64 = 1;
+    let mut chars: i64 = 0;
+    for b in bytes.iter() {
+        if chars >= char_offset { break; }
+        if *b == b'\n' { line += 1; }
+        // crude: count bytes. For ASCII-heavy corpora this matches chars;
+        // for mixed UTF-8 the line number may be off by a small amount, which is
+        // still fine for jumping to a spot near the chunk.
+        chars += 1;
+    }
+    Some(line)
 }
 
 fn run_doctor(cfg: &settings::Settings) -> Result<()> {

@@ -1,5 +1,6 @@
 -- Search picker: shells out to `odin-search --json <query>` and shows results
--- in Telescope or Snacks (auto-detected). Falls back to a vim.ui.select list.
+-- in a vim.ui.select list (Telescope/Snacks/fzf get picked up automatically
+-- if the user has wrapped vim.ui.select with one of them).
 local M = {}
 
 local function run_search(query)
@@ -14,9 +15,73 @@ local function run_search(query)
     return data.results or {}
 end
 
+-- Resolve a hit's relative `path` to an absolute file we can `:edit`. We
+-- mirror the Rust binary's logic: read content/manifest.yaml from the repo
+-- root and look up the source's base directory. Falls back to the relative
+-- path on failure (the picker still shows the result; it just won't open).
+local function repo_root()
+    local marker = vim.fn.findfile("content/manifest.yaml", ".;")
+    if marker == "" then return nil end
+    return vim.fn.fnamemodify(marker, ":h:h")
+end
+
+local function tier_dir(tier)
+    if tier == 1 then return "authoritative"
+    elseif tier == 2 then return "curated"
+    elseif tier == 3 then return "community"
+    else return "unknown" end
+end
+
+local function source_base_dir(root, source_id)
+    -- Cheap parse: scan manifest.yaml for the matching `- id:` block.
+    local manifest = root .. "/content/manifest.yaml"
+    local fd = io.open(manifest, "r"); if not fd then return nil end
+    local body = fd:read("*a"); fd:close()
+    local id, tier, fetcher, dest, src_path
+    for block in body:gmatch("(%- id:[^%-]+)") do
+        id        = block:match("- id:%s*([%w%-_%.]+)")
+        if id == source_id then
+            tier      = tonumber(block:match("tier:%s*(%d+)"))
+            fetcher   = block:match("fetcher:%s*([%w_]+)")
+            dest      = block:match("destination:%s*([%w%-_%./]+)")
+            src_path  = block:match("source_path:%s*([^\n]+)")
+            break
+        end
+    end
+    if not id or id ~= source_id then return nil end
+    if fetcher == "local_dir" and src_path then
+        src_path = src_path:gsub("^%s+", ""):gsub("%s+$", "")
+        src_path = src_path:gsub("${(%w+)}", function(v) return os.getenv(v) or ("${" .. v .. "}") end)
+        if src_path:match("^[A-Za-z]:") or src_path:sub(1, 1) == "/" then
+            return src_path
+        end
+        return root .. "/" .. src_path
+    end
+    if not tier then return nil end
+    dest = dest or source_id
+    return string.format("%s/content/sources/tier%d-%s/%s", root, tier, tier_dir(tier), dest)
+end
+
 local function open_hit(hit)
-    if hit.path then
-        vim.cmd("edit " .. vim.fn.fnameescape(hit.path))
+    local target = hit.path
+    local root = repo_root()
+    if root and hit.source_id then
+        local base = source_base_dir(root, hit.source_id)
+        if base then target = base .. "/" .. hit.path end
+    end
+    if not target or target == "" then return end
+    vim.cmd("edit " .. vim.fn.fnameescape(target))
+    if hit.char_offset and hit.char_offset > 0 then
+        local fd = io.open(target, "r")
+        if fd then
+            local body = fd:read("*a"); fd:close()
+            local line = 1
+            for i = 1, math.min(hit.char_offset, #body) do
+                if body:sub(i, i) == "\n" then line = line + 1 end
+            end
+            pcall(vim.api.nvim_win_set_cursor, 0, { line, 0 })
+            vim.cmd("normal! zz")
+        end
     end
 end
 
@@ -37,12 +102,10 @@ function M.search(query)
     end)
 end
 
-function M.setup(opts)
-    local prefix = opts.keymap_prefix or "<leader>o"
-    vim.keymap.set("n", prefix .. "d", function() M.search() end,
-        { desc = "odin-search picker" })
+function M.setup(_opts)
+    -- Keymaps live in odin_master/init.lua now.
     vim.api.nvim_create_user_command("OdinSearch",
-        function(c) M.search(c.args) end, { nargs = "*" })
+        function(c) M.search(c.args ~= "" and c.args or nil) end, { nargs = "*" })
 end
 
 return M

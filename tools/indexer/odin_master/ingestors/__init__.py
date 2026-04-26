@@ -21,6 +21,9 @@ def fetch(source: Source, content_root: Path) -> list[FetchedFile]:
     if source.fetcher == "local_file":
         from . import local_file
         return local_file.fetch(source, content_root)
+    if source.fetcher == "local_dir":
+        from . import local_dir
+        return local_dir.fetch(source, content_root)
     if source.fetcher == "pdf":
         from . import pdf
         return pdf.fetch(source, content_root)

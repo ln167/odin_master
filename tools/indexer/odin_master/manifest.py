@@ -6,7 +6,7 @@ from pathlib import Path
 
 import yaml
 
-VALID_FETCHERS = {"local_file", "git_clone", "html_mirror", "pdf", "pasted_text"}
+VALID_FETCHERS = {"local_file", "local_dir", "git_clone", "html_mirror", "pdf", "pasted_text"}
 VALID_TIERS = {1, 2, 3}
 
 
@@ -56,7 +56,7 @@ def load(path: Path) -> list[Source]:
             raise ManifestError(f"{path}[{sid}]: git_clone requires `git_url`")
         if f == "html_mirror" and "url" not in entry:
             raise ManifestError(f"{path}[{sid}]: html_mirror requires `url`")
-        if f in ("local_file", "pdf") and "source_path" not in entry:
+        if f in ("local_file", "local_dir", "pdf") and "source_path" not in entry:
             raise ManifestError(f"{path}[{sid}]: {f} requires `source_path`")
         out.append(
             Source(

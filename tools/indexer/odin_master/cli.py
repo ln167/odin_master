@@ -73,6 +73,27 @@ def summarize(source: str,
                f"({rep.raw_response_chars} chars from {model})")
 
 
+@app.command("source-diff")
+def source_diff(
+    save: bool = typer.Option(False, "--save", help="Write the current hashes as the new baseline."),
+) -> None:
+    """Show which files under content/sources/ changed since the last snapshot."""
+    from . import source_diff as sd
+    root = _repo_root()
+    sources_root = root / "content" / "sources"
+    state_path = sources_root / sd.STATE_FILENAME
+    if not sources_root.is_dir():
+        typer.echo(f"source-diff: {sources_root} does not exist")
+        raise typer.Exit(1)
+    before = sd.load_state(state_path)
+    after = sd.snapshot(sources_root)
+    report = sd.diff(before, after)
+    typer.echo(sd.format_report(report, sources_root=sources_root))
+    if save:
+        sd.save_state(state_path, after)
+        typer.echo(f"source-diff: saved new baseline to {state_path.as_posix()}")
+
+
 @app.command()
 def lint() -> None:
     """Wiki health checks (broken backlinks, dead refs)."""

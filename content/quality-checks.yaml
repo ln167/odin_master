@@ -10,7 +10,37 @@
   must_include_source_ids_in_top_5: [karl-zylinski-blog]
 
 - query: "tagged union usage"
-  must_include_source_ids_in_top_5: [odin-lang-org, gingerbill-blog]
+  must_include_source_ids_in_top_5: [odin-lang-org, gingerbill-blog, odin-core]
 
 - query: "Karl Zylinski raylib"
   must_include_source_ids_in_top_5: [karl-zylinski-blog]
+
+- query: "dynamic array append"
+  must_include_source_ids_in_top_5: [odin-core, odin-lang-org]
+
+- query: "string builder"
+  must_include_source_ids_in_top_5: [odin-core, odin-lang-org]
+
+- query: "map iteration"
+  must_include_source_ids_in_top_5: [odin-core, odin-lang-org]
+
+- query: "json marshal"
+  must_include_source_ids_in_top_5: [odin-core]
+
+- query: "raylib bindings"
+  must_include_source_ids_in_top_5: [odin-vendor, karl-zylinski-blog]
+
+- query: "parametric polymorphism generic procedure"
+  must_include_source_ids_in_top_5: [odin-lang-org, odin-core, gingerbill-blog]
+
+- query: "soa struct of arrays"
+  must_include_source_ids_in_top_5: [odin-lang-org, odin-core]
+
+- query: "foreign block import"
+  must_include_source_ids_in_top_5: [odin-lang-org, odin-core, odin-vendor]
+
+- query: "when statement build constant"
+  must_include_source_ids_in_top_5: [odin-lang-org, odin-core]
+
+- query: "distinct type alias"
+  must_include_source_ids_in_top_5: [odin-lang-org, odin-core]
