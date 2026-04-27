@@ -11,17 +11,22 @@ Open a terminal anywhere inside this repo.
 Run each command and check the output against "you should see".
 
     odin version
-    ols --version
-    odinfmt -version
+    odinfmt
     odin-search --doctor
+
+(Skip `ols`. It's a Language Server, not a CLI — running it directly just
+makes it sit waiting for a client. nvim wires it up automatically when
+you open a `.odin` file. Run `odin-master doctor` below to confirm it's
+on PATH.)
 
 ## You should see
 
-- `odin version dev-2026-04-…` (or newer dev-YYYY-MM)
-- `ols 0.1…` or any version line — just confirms the binary runs
-- `odinfmt 0.1…` or any version line
-- A doctor block ending in `ollama: ok` (or `unreachable` if you haven't
-  started Ollama — that's fine for keyword search)
+- **`odin version`** → `C:\…\odin.exe version dev-2026-04-…` (or newer dev-YYYY-MM)
+- **`odinfmt`** → a usage banner: `Usage: odinfmt.exe [path] [-config] [-stdin] [-w]`.
+  No version flag exists; if the banner prints, the binary works.
+- **`odin-search --doctor`** → a doctor block ending in `ollama: ok`
+  (or `unreachable` if Ollama isn't running — that's fine for
+  keyword-only search).
 
 ## Now do this
 From the repo root:
