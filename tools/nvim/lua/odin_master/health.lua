@@ -1,4 +1,5 @@
--- Hooked by :checkhealth odin_master. Mirrors `odin-master doctor` output.
+-- Hooked by :checkhealth odin_master. Reports on Odin compiler/LSP/formatter
+-- and the substrate's `just doctor` health check.
 local M = {}
 
 local function tool(name)
@@ -11,11 +12,13 @@ end
 
 function M.check()
     vim.health.start("odin_master")
-    for _, t in ipairs({ "odin", "ols", "odinfmt", "git", "odin-search", "odin-master" }) do
+    -- Note: odin-search and odin-master CLIs were removed by the 2026-05-04
+    -- substrate redesign. Substrate health checks now run via `just doctor`.
+    for _, t in ipairs({ "odin", "ols", "odinfmt", "git", "python", "just" }) do
         tool(t)
     end
-    if vim.fn.executable("odin-master") == 1 then
-        local out = vim.fn.systemlist({ "odin-master", "doctor" })
+    if vim.fn.executable("just") == 1 then
+        local out = vim.fn.systemlist({ "just", "doctor" })
         for _, line in ipairs(out) do vim.health.info(line) end
     end
 end

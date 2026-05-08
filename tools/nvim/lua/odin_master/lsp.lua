@@ -8,6 +8,7 @@ local function start_with_native(opts)
         filetypes = { "odin" },
         root_markers = { "ols.json", "odinfmt.json", ".git" },
         settings = opts.ols_settings or {},
+        init_options = opts.ols_init_options or {},
     })
     vim.lsp.enable("ols")
 end
@@ -18,6 +19,7 @@ local function start_with_lspconfig(opts)
     lspconfig.ols.setup({
         cmd = { "ols" },
         settings = opts.ols_settings or {},
+        init_options = opts.ols_init_options or {},
     })
     return true
 end

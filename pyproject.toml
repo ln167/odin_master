@@ -1,11 +1,12 @@
 [project]
 name = "odin-master-template"
 version = "0.0.1"
-description = "Personal Odin master template — root project, holds dev tooling and structural tests."
+description = "Personal multi-domain technical-knowledge substrate (Odin v1)."
 requires-python = ">=3.12"
+dependencies = ["pyyaml>=6"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "pyyaml>=6", "tomli>=2; python_version<'3.11'"]
+dev = ["pytest>=8", "tomli>=2; python_version<'3.11'"]
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -15,6 +16,6 @@ build-backend = "setuptools.build_meta"
 py-modules = []
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "tools/indexer/tests"]
+testpaths = ["tests"]
 python_files = "test_*.py"
 addopts = "-ra --import-mode=importlib"

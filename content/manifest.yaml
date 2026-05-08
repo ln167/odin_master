@@ -1,5 +1,6 @@
-# odin_master default corpus — spec §4.7.
-# Add new sources by following docs/adding-sources.md, then `odin-master update`.
+# odin_master substrate corpus.
+# Add new sources by following docs/adding-sources.md.
+# Note: the v1 update fetcher pipeline is deferred — manifest is data-only for now.
 #
 # DO NOT INDEX — out of license / out of license-equivalent:
 #   - Discord transcripts (Odin server)
@@ -9,6 +10,7 @@
 # ── Tier 1: authoritative ────────────────────────────────────────────────────
 - id: odin-lang-org
   tier: 1
+  domain: odin
   fetcher: html_mirror
   url: https://odin-lang.org/docs/
   destination: odin-lang-org
@@ -20,6 +22,7 @@
 
 - id: odin-pkg-docs
   tier: 1
+  domain: odin
   fetcher: html_mirror
   url: https://pkg.odin-lang.org/
   destination: odin-pkg-docs
@@ -31,14 +34,16 @@
 
 - id: odin-overview
   tier: 1
+  domain: odin
   fetcher: pasted_text
   destination: odin-overview
-  source_path: tier1-authoritative/odin-overview
+  source_path: content/domains/odin/source/raw/tier1-authoritative/odin-overview
   processor: markdown
   last_updated: 2026-04-19
 
 - id: odin-core
   tier: 1
+  domain: odin
   fetcher: local_dir
   source_path: ${ODIN_ROOT}/core
   destination: odin-core
@@ -50,6 +55,7 @@
 
 - id: odin-vendor
   tier: 1
+  domain: odin
   fetcher: local_dir
   source_path: ${ODIN_ROOT}/vendor
   destination: odin-vendor
@@ -59,18 +65,14 @@
   max_bytes_per_file: 524288
   last_updated: 2026-04-19
 
-- id: odin-wiki
-  tier: 1
-  fetcher: local_dir
-  source_path: content/wiki/concepts
-  destination: odin-wiki
-  processor: markdown
-  include_glob: "**/*.md"
-  last_updated: 2026-04-19
+# (odin-wiki entry removed — wiki was archived to content/_archive/old-wiki-concepts
+#  by the 2026-05-04 substrate redesign. The new compile pipeline regenerates wiki
+#  content into content/domains/odin/compiled/from-ingest/.)
 
 # ── Tier 2: curated ──────────────────────────────────────────────────────────
 - id: karl-zylinski-blog
   tier: 2
+  domain: odin
   fetcher: html_mirror
   url: https://zylinski.se/posts/
   destination: karl-zylinski
@@ -82,6 +84,7 @@
 
 - id: gingerbill-blog
   tier: 2
+  domain: odin
   fetcher: html_mirror
   url: https://www.gingerbill.org/article/
   destination: gingerbill
@@ -93,6 +96,7 @@
 
 - id: jakubtomsu-blog
   tier: 2
+  domain: odin
   fetcher: html_mirror
   url: https://jakubtomsu.github.io/
   destination: jakubtomsu
@@ -105,6 +109,7 @@
 # ── Tier 3: community (treat with skepticism) ────────────────────────────────
 - id: odin-examples
   tier: 3
+  domain: odin
   fetcher: git_clone
   git_url: https://github.com/odin-lang/examples.git
   destination: odin-examples

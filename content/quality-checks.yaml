@@ -1,46 +1,73 @@
-# Canonical-query gold set. Each entry is a query whose top-5 results must
-# include at least one of the listed source ids (run via `odin-master quality-check`).
-- query: "how do I read a file in Odin"
-  must_include_source_ids_in_top_5: [odin-lang-org, odin-overview]
+# odin-master quality-checks — substrate regression tests.
+# Run via `just substrate-test` (or `python tools/substrate/test.py`).
+#
+# - `structural` checks are mechanical (run via doctor). No LLM. Fast.
+# - `semantic` checks invoke the relevant skill via `claude -p` and assert
+#    that the answer cites required source_ids.
 
-- query: "what is context.allocator"
-  must_include_source_ids_in_top_5: [odin-lang-org, odin-overview]
+structural:
+  - "doctor passes for all domains"
+  - "doctor --provenance-check passes for all populated domains"
+  - "every compiled page has provenance frontmatter and lives under matching folder"
+  - "every Sources section in compiled/ matches frontmatter source_ids"
 
-- query: "hot reload pattern game"
-  must_include_source_ids_in_top_5: [karl-zylinski-blog]
+semantic:
+  - query: "how do I read a file in Odin"
+    domain: odin
+    must_include_source_ids_in_top_5: [odin-lang-org, odin-overview]
 
-- query: "tagged union usage"
-  must_include_source_ids_in_top_5: [odin-lang-org, gingerbill-blog, odin-core]
+  - query: "what is context.allocator"
+    domain: odin
+    must_include_source_ids_in_top_5: [odin-lang-org, odin-overview]
 
-- query: "Karl Zylinski raylib"
-  must_include_source_ids_in_top_5: [karl-zylinski-blog]
+  - query: "hot reload pattern game"
+    domain: odin
+    must_include_source_ids_in_top_5: [karl-zylinski-blog]
 
-- query: "dynamic array append"
-  must_include_source_ids_in_top_5: [odin-core, odin-lang-org]
+  - query: "tagged union usage"
+    domain: odin
+    must_include_source_ids_in_top_5: [odin-lang-org, gingerbill-blog, odin-core]
 
-- query: "string builder"
-  must_include_source_ids_in_top_5: [odin-core, odin-lang-org]
+  - query: "Karl Zylinski raylib"
+    domain: odin
+    must_include_source_ids_in_top_5: [karl-zylinski-blog]
 
-- query: "map iteration"
-  must_include_source_ids_in_top_5: [odin-core, odin-lang-org]
+  - query: "dynamic array append"
+    domain: odin
+    must_include_source_ids_in_top_5: [odin-core, odin-lang-org]
 
-- query: "json marshal"
-  must_include_source_ids_in_top_5: [odin-core]
+  - query: "string builder"
+    domain: odin
+    must_include_source_ids_in_top_5: [odin-core, odin-lang-org]
 
-- query: "raylib bindings"
-  must_include_source_ids_in_top_5: [odin-vendor, karl-zylinski-blog]
+  - query: "map iteration"
+    domain: odin
+    must_include_source_ids_in_top_5: [odin-core, odin-lang-org]
 
-- query: "parametric polymorphism generic procedure"
-  must_include_source_ids_in_top_5: [odin-lang-org, odin-core, gingerbill-blog]
+  - query: "json marshal"
+    domain: odin
+    must_include_source_ids_in_top_5: [odin-core]
 
-- query: "soa struct of arrays"
-  must_include_source_ids_in_top_5: [odin-lang-org, odin-core]
+  - query: "raylib bindings"
+    domain: odin
+    must_include_source_ids_in_top_5: [odin-vendor, karl-zylinski-blog]
 
-- query: "foreign block import"
-  must_include_source_ids_in_top_5: [odin-lang-org, odin-core, odin-vendor]
+  - query: "parametric polymorphism generic procedure"
+    domain: odin
+    must_include_source_ids_in_top_5: [odin-lang-org, odin-core, gingerbill-blog]
 
-- query: "when statement build constant"
-  must_include_source_ids_in_top_5: [odin-lang-org, odin-core]
+  - query: "soa struct of arrays"
+    domain: odin
+    must_include_source_ids_in_top_5: [odin-lang-org, odin-core]
 
-- query: "distinct type alias"
-  must_include_source_ids_in_top_5: [odin-lang-org, odin-core]
+  - query: "foreign block import"
+    domain: odin
+    must_include_source_ids_in_top_5: [odin-lang-org, odin-core, odin-vendor]
+
+  - query: "when statement build constant"
+    domain: odin
+    must_include_source_ids_in_top_5: [odin-lang-org, odin-core]
+
+  - query: "distinct type alias"
+    domain: odin
+    must_include_source_ids_in_top_5: [odin-lang-org, odin-core]

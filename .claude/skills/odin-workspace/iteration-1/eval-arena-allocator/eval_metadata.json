@@ -1,0 +1,6 @@
+{
+  "eval_id": 0,
+  "eval_name": "arena-allocator",
+  "prompt": "In Odin, what's an arena allocator and how does it relate to the other allocators? I've never used them. What's the use case — when would I reach for one, and how do I actually create and use one in code? Walk me through the mental model from 'I need X, so I make an arena' through to a concrete runnable code example. Don't WebSearch.",
+  "assertions": []
+}

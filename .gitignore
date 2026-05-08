@@ -1,8 +1,5 @@
-# Search index — rebuilt locally per machine
-content/index/
-
 # Profiling captures — large binary traces
-playground/profiles/
+profiles/
 *.spall
 *.pdb
 *.ctf
@@ -23,29 +20,26 @@ __pycache__/
 .idea/
 .vscode/
 
-# Node (tree-sitter, etc.)
+# Node (tree-sitter, qmd cache, etc.)
 node_modules/
 
 # Local user overrides
 local.toml
 
 # Per-machine agent settings
-.claude/
-
-# Locally-published digests
-content/outputs/
+.claude/settings.local.json
 
 # Cloned third-party repos (have their own .git)
-content/sources/tier3-community/odin-examples/
+content/domains/odin/source/raw/tier3-community/odin-examples/
 
-# Playground scratch files — only scratch.odin and README.md are tracked
-playground/*.odin
-!playground/scratch.odin
+# Scratch files — only scratch.odin and README.md are tracked
+scratch/*.odin
+!scratch/scratch.odin
 
-# Bootstrap log artifacts
-bootstrap-out.log
+# Built Odin binaries (lessons-check)
+tools/domains/odin/lessons-check/lessons-check.exe
+tools/domains/odin/lessons-check/lessons-check
+content/domains/odin/vault/lessons/**/.lessons-check.odin
 
-# Built Odin binaries
-tools/lessons-check/lessons-check.exe
-tools/lessons-check/lessons-check
-lessons/**/.lessons-check.odin
+# qmd local cache (per-machine; index lives elsewhere)
+.qmd/

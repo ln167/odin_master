@@ -1,0 +1,10 @@
+build/
+host.log
+*.so
+*.dylib
+*.dll
+*.pdb
+*.exp
+*.lib
+*.exe
+.DS_Store

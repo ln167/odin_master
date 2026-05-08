@@ -1,0 +1,12 @@
+set windows-shell := ["cmd.exe", "/c"]
+
+default: build
+
+build:
+    python build.py hot
+
+run: build
+    ./build/hot_reload/lab
+
+clean:
+    python build.py clean

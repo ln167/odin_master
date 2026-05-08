@@ -7,6 +7,9 @@ function M.format_buffer(bufnr)
     local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
     local out = vim.fn.systemlist("odinfmt -stdin", lines)
     if vim.v.shell_error ~= 0 then return end
+    for i, line in ipairs(out) do
+        out[i] = line:gsub("\r$", "")
+    end
     vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, out)
 end
 

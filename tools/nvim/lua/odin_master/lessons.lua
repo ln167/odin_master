@@ -27,7 +27,7 @@ end
 
 local function list_lessons(root)
     local out = {}
-    local lessons_dir = root .. "/lessons"
+    local lessons_dir = root .. "/content/domains/odin/vault/lessons"
     local entries = vim.fn.readdir(lessons_dir, function(name)
         return name:match("^%d%d%-") and 1 or 0
     end)
@@ -78,13 +78,13 @@ function M.next()
     open_lesson(target)
 end
 
--- `<leader>op` — open playground/scratch.odin (creating it if needed).
-function M.playground()
+-- `<leader>op` — open scratch/scratch.odin (creating it if needed).
+function M.scratch()
     local root = repo_root()
     if not root then vim.notify("repo root not found", vim.log.levels.WARN); return end
-    local pg = root .. "/playground"
-    local scratch = pg .. "/scratch.odin"
-    if vim.fn.isdirectory(pg) == 0 then vim.fn.mkdir(pg, "p") end
+    local dir = root .. "/scratch"
+    local scratch = dir .. "/scratch.odin"
+    if vim.fn.isdirectory(dir) == 0 then vim.fn.mkdir(dir, "p") end
     if vim.fn.filereadable(scratch) == 0 then
         local fd = io.open(scratch, "w")
         if fd then

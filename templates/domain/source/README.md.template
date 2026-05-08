@@ -1,0 +1,23 @@
+---
+type: domain-readme
+domain: {{domain}}
+---
+
+# {{domain}} Domain — Source
+
+<TODO: one-paragraph description of what this domain covers>
+
+## Layout
+
+- `raw/` — upstream-mirrored material (tier1/tier2/tier3 per the manifest)
+- `notes/` — reserved for hand-written content
+- `contradictions.md` — append-only log of source disagreements
+- `README.md` — this file
+
+## Tier semantics for {{domain}}
+
+| Tier | What lives here | Trust |
+|---|---|---|
+| 1 | <TODO: tier1 description> | Authoritative |
+| 2 | <TODO: tier2 description> | Curated |
+| 3 | <TODO: tier3 description> | Community |
