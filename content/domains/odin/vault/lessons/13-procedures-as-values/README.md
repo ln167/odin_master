@@ -6,7 +6,7 @@ into another proc, or stash it in a struct field — that's how callbacks
 and (manual) vtables work in Odin.
 
 ## Setup
-1. `cd content/domains/odin/vault/content/domains/odin/vault/lessons/13-procedures-as-values`
+1. `cd content/domains/odin/vault/lessons/13-procedures-as-values`
 2. Open `main.odin`.
 
 ## Do this

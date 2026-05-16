@@ -1,0 +1,213 @@
+---
+source_url: https://jorenjoestar.github.io/tags/bindless
+source_id: jorenjoestar-bindless
+fetched_at: 2026-05-16T17:32:00.180188+00:00
+fetcher: html_mirror
+sha256: 6b40310f3621531c2e5e821db4391ef58a09d88b095cddc95807f12c55a27cbc
+---
+
+bindless | Gabriel's Virtual Tavern
+
+
+
+
+
+  
+
+
+  
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+  
+  
+    
+  
+
+  
+
+# bindless
+
+
+  
+
+  
+
+
+
+
+
+  
+
+  
+  
+  
+    
+
+## [Modern (Bindless) Sprite Batch for Vulkan (and more!)](/post/modern_sprite_batch/)
+
+    
+      
+      The sprites rendered with 1 draw call using the techniques described in this article.Overview Sprite batching is one of the fundamental techniques used in almost all pixel art games (that are lovingly back in town after the first era of 3D), and yet I never found any recent documentation.
+Since the Bindless Age has started old algorithms can be implemented in new ways.
+In this short article I would like to talk about how easy is to manage sprites, including UI, with the bindless model.
+      
+    
+  
+  
+  
+    
+
+## [Vulkan Pills 1: Bindless Textures](/post/vulkan_bindless_texture/)
+
+    
+      
+      Overview Here is a very short article on how to use Vulkan bindless features.
+All the relevant c++ code is into gpu_device_vulkan.cpp and command_buffer.cpp, and you can follow along HYDRA_BINDLESS defines to see what changes.
+THIS IS THE FASTEST ROUTE TO START USING BINDLESS TEXTURES THAT I KNOW OF.
+This means also that is architecturally not optimal but it will serve its purposes!
+There is a great article about the different features used here at arm, check it out first!
+      
+    
+  
+  
+
+  
+
+
+
+      
+
+    
+    
+    
+    
+    
+
+    
+    
+    
+      
+      
+      
+      
+
+      
+        
+      
+
+      
+        
+        
+        
+        
+        
+      
+
+      
+      
+      
+      
+    
+
+    
+    
+
+    
+    
+    
+    
+
+    
+    
+    
+    
+
+    
+    
+
+    
+    
+    
+    
+
+    
+    
+    
+    
+    
+
+    
+    
+
+    
+    
+    
+    
+    
+    
+    
+    
+    
+      
+    
+    
+    
+    
+    
+
+    
+
+
+
+
+
+
+  
+  
+    
+
+  
+  
+
+  
+
+  
+    
+      
+        
+
+##### Cite
+
+        
+          ×
+        
+      
+      
+        
+
+```
+
+```
+
+
+      
+      
+        **[Copy](#)
+        **[Download](#)

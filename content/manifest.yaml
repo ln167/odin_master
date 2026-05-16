@@ -69,6 +69,74 @@
 #  by the 2026-05-04 substrate redesign. The new compile pipeline regenerates wiki
 #  content into content/domains/odin/compiled/from-ingest/.)
 
+- id: tinyrenderer
+  tier: 1
+  domain: graphics
+  fetcher: html_mirror
+  url: https://github.com/ssloy/tinyrenderer/wiki
+  destination: tinyrenderer
+  processor: html-to-markdown
+  mirror: true
+  max_depth: 2
+  max_pages: 30
+  last_updated: 2026-05-09
+  notes: |
+    Sokolov's CPU-rasterizer curriculum. Spine of graphics lessons
+    00 through 09 (framebuffer through tangent-space normal mapping).
+    Skip lesson 9 (GLSL); keep lessons 0-6bis plus the
+    perspective-correct interpolation supplement.
+
+- id: vkguide-dev
+  tier: 1
+  domain: graphics
+  fetcher: html_mirror
+  url: https://vkguide.dev/
+  destination: vkguide
+  processor: html-to-markdown
+  mirror: true
+  max_depth: 4
+  max_pages: 100
+  last_updated: 2026-05-09
+  notes: |
+    Vulkan tutorial with the cleanest GPU-driven-rendering section
+    available (bindless via descriptor indexing + BDA, indirect draw,
+    compute culling). Maps to graphics lessons 13-15. Vulkan-specific
+    code, but the techniques port to SDL3-GPU one-to-one.
+
+- id: jonathanfischer-sdl-gpu
+  tier: 1
+  domain: graphics
+  fetcher: html_mirror
+  url: https://www.jonathanfischer.net/gpu-by-example/
+  destination: jonathanfischer-sdl-gpu
+  processor: html-to-markdown
+  mirror: true
+  max_depth: 3
+  max_pages: 30
+  last_updated: 2026-05-09
+  notes: |
+    "Muddling through SDL GPU" by Jonathan Fischer. Closest thing to
+    a curriculum-grade SDL3-GPU walkthrough. Source for graphics
+    lessons 10-12 (device + swapchain + render pass + first triangle,
+    vertex/fragment shaders, push constants).
+
+- id: matthias-research-tenminutephysics
+  tier: 1
+  domain: graphics
+  fetcher: html_mirror
+  url: https://matthias-research.github.io/pages/tenMinutePhysics/
+  destination: tenminutephysics
+  processor: html-to-markdown
+  mirror: true
+  max_depth: 2
+  max_pages: 50
+  last_updated: 2026-05-09
+  notes: |
+    Matthias Mueller's "Ten Minute Physics" series. Includes the XPBD
+    PDF (09-xpbd.pdf) plus implementations of Verlet, soft body,
+    fluid, rigid body. Spine of graphics lesson 18 (XPBD substep
+    loop, then port to compute).
+
 # ── Tier 2: curated ──────────────────────────────────────────────────────────
 - id: karl-zylinski-blog
   tier: 2
@@ -105,6 +173,106 @@
   max_depth: 2
   max_pages: 30
   last_updated: 2026-04-19
+
+- id: sebastianaaltonen-blog
+  tier: 2
+  domain: graphics
+  fetcher: html_mirror
+  url: https://www.sebastianaaltonen.com/blog
+  destination: sebastianaaltonen
+  processor: html-to-markdown
+  mirror: true
+  max_depth: 2
+  max_pages: 30
+  last_updated: 2026-05-09
+  notes: |
+    First entry in the graphics domain. Author is Sebastian Aaltonen
+    (ex-Ubisoft/EA Frostbite, GPU-driven rendering pioneer). The
+    "No Graphics API" post (2025-12-16) is the load-bearing reference
+    for our graphics-API path-not-taken decision (see ENGINE.md).
+    Initial mirror was performed manually on 2025-05-09 pending the
+    html_mirror fetcher.
+
+- id: iquilezles-articles
+  tier: 2
+  domain: graphics
+  fetcher: html_mirror
+  url: https://iquilezles.org/articles/
+  destination: iquilezles
+  processor: html-to-markdown
+  mirror: true
+  max_depth: 2
+  max_pages: 100
+  last_updated: 2026-05-09
+  notes: |
+    Inigo Quilez's articles. "Raymarching SDFs", "3D SDFs",
+    "Smooth minimum", "Numerical normals for SDFs". Maps to
+    graphics lesson 17 (voxel raymarching on GPU via DDA in compute).
+
+- id: alextardif-bindless
+  tier: 2
+  domain: graphics
+  fetcher: html_mirror
+  url: https://alextardif.com/BindlessProgramming.html
+  destination: alextardif
+  processor: html-to-markdown
+  mirror: true
+  max_depth: 1
+  max_pages: 5
+  last_updated: 2026-05-09
+  notes: |
+    Alex Tardif, "Bindless Oriented Programming." Reference for
+    graphics lesson 14 (bindless mental model, descriptor indexing,
+    BDA).
+
+- id: jorenjoestar-bindless
+  tier: 2
+  domain: graphics
+  fetcher: html_mirror
+  url: https://jorenjoestar.github.io/
+  destination: jorenjoestar
+  processor: html-to-markdown
+  mirror: true
+  max_depth: 2
+  max_pages: 30
+  last_updated: 2026-05-09
+  notes: |
+    Joren Joestar's blog, especially "Vulkan Pills 1: Bindless
+    Textures" plus engine-architecture posts. Pairs with Tardif for
+    graphics lesson 14.
+
+- id: bartwronski-articles
+  tier: 2
+  domain: graphics
+  fetcher: html_mirror
+  url: https://bartwronski.com/articles-blog-posts-index/
+  destination: bartwronski
+  processor: html-to-markdown
+  mirror: true
+  max_depth: 2
+  max_pages: 50
+  last_updated: 2026-05-09
+  notes: |
+    Bart Wronski's articles index. Sampling, dithering, signal
+    processing series. Reference for graphics lessons 11+ when
+    sampling and tone curves come up.
+
+- id: aras-p-blog
+  tier: 2
+  domain: graphics
+  fetcher: html_mirror
+  url: https://aras-p.info/blog/
+  destination: aras-p
+  processor: html-to-markdown
+  mirror: true
+  max_depth: 2
+  max_pages: 50
+  last_updated: 2026-05-09
+  notes: |
+    Aras Pranckevicius's blog. The "Daily Pathtracer" series in
+    particular models the CPU-to-GPU porting narrative; relevant
+    template for graphics lesson 18 second half (port XPBD to
+    compute).
 
 # ── Tier 3: community (treat with skepticism) ────────────────────────────────
 - id: odin-examples

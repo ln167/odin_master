@@ -1,0 +1,7 @@
+naive_near(200,200)      = 0x404040FF
+correct_near(200,200)    = 0xFFFFFFFF
+naive_mid(400,300)       = 0x404040FF
+correct_mid(400,300)     = 0xFFFFFFFF
+naive_far(600,300)       = 0x404040FF
+correct_far(600,300)     = 0x404040FF
+outside(50,50)           = 0x101018FF

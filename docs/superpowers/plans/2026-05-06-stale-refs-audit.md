@@ -4,6 +4,28 @@ Date: 2026-05-06
 Scope: every file referencing artifacts deleted/moved by the 2026-05-04 substrate redesign.
 Method: targeted grep + per-file Read; the spec/plan/comprehensive-review files under `docs/superpowers/` are intentionally excluded as historical record (their stale refs are accurate descriptions of past state).
 
+## Resolution status (2026-05-09)
+
+All BROKEN entries are resolved. Most were fixed in flight between the audit
+date and 2026-05-09 (install scripts and `.github/workflows/` were deleted
+wholesale; `tests/test_repo_structure.py` is gone; lesson READMEs were
+rewritten around qmd; `.gitignore` was repathed; `<leader>oq` is wired to
+real qmd search via `tools/nvim/lua/odin_master/search.lua`). Two
+remaining items were patched on 2026-05-09:
+
+- B10 partial: 17 lesson README "cd" lines had a doubled path
+  (`content/domains/odin/vault/content/domains/odin/vault/lessons/...`).
+  Repaired in lessons 01-17 (excluding 00, 18, 19 which were already clean).
+- B15: `tools/domains/odin/lessons-check/main.odin` still walked
+  `lessons/` at runtime. Repointed to `content/domains/odin/vault/lessons/`
+  via a `LESSONS_DIR` constant.
+
+OUTDATED entries O1-O3 (plan/spec cross-links) were intentionally left
+alone, they sit under `docs/superpowers/{plans,specs}/` and are out of
+scope per the resolver's instructions. O4-O7 either do not need edits
+(`_archive` is frozen; `arena-allocator.cited.md` was already repathed)
+or are optional polish. Cosmetic items (C1) untouched.
+
 ---
 
 ## BROKEN — file or recipe no longer works

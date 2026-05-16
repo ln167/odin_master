@@ -1,0 +1,7 @@
+pixel(0,0)       = 0x101018FF
+pixel(100,100)   = 0xFFFFFFFF
+pixel(50,200)    = 0xFF0000FF
+pixel(400,200)   = 0xFF0000FF
+pixel(750,200)   = 0xFF0000FF
+pixel(400,199)   = 0x101018FF
+pixel(400,201)   = 0x101018FF

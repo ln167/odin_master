@@ -7,7 +7,7 @@ is interrogated with `switch v in val { case A: …; case nil: … }` or with
 type assertions: `a, ok := val.(A)`.
 
 ## Setup
-1. `cd content/domains/odin/vault/content/domains/odin/vault/lessons/10-tagged-unions`
+1. `cd content/domains/odin/vault/lessons/10-tagged-unions`
 2. Open `main.odin`.
 
 ## Do this

@@ -8,6 +8,13 @@ profiles/
 build/
 target/
 
+# Assembly / IR dumps from `just asm` / `just asm-file`
+bench/**/*.S
+bench/**/*.s
+bench/**/*.exe
+bench/**/*.ll
+*.bench/**/*.bc
+
 # Python
 __pycache__/
 *.pyc
@@ -43,3 +50,30 @@ content/domains/odin/vault/lessons/**/.lessons-check.odin
 
 # qmd local cache (per-machine; index lives elsewhere)
 .qmd/
+
+# Verification test scratch (just verify writes .actual.txt; odin run -out:.bin writes a binary)
+tests/**/.actual.txt
+tests/**/.bin
+tests/**/.bin.exe
+tests/**/.bin.pdb
+
+# Debug builds from `just debug-dir` and `<leader>oD`
+**/.dbg.exe
+**/.dbg.pdb
+**/*.dbg.exe
+**/*.dbg.pdb
+
+# Downloaded debuggers (install via `just raddbg-install`)
+tools/debug/raddbg/
+
+# Dear ImGui build artifacts (just imgui-build)
+tools/domains/odin/odin_lib/vendor/odin-imgui/premake5
+tools/domains/odin/odin_lib/vendor/odin-imgui/premake5.exe
+tools/domains/odin/odin_lib/vendor/odin-imgui/python3.bat
+tools/domains/odin/odin_lib/vendor/odin-imgui/imgui_*.lib
+tools/domains/odin/odin_lib/vendor/odin-imgui/imgui_*.a
+tools/domains/odin/odin_lib/vendor/odin-imgui/build/deps/
+tools/domains/odin/odin_lib/vendor/odin-imgui/build/venv/
+tools/domains/odin/odin_lib/vendor/odin-imgui/build/generated/
+tools/domains/odin/odin_lib/vendor/odin-imgui/build/make/
+tools/domains/odin/odin_lib/vendor/odin-imgui/build/build.bat

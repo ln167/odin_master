@@ -1,0 +1,6 @@
+outside_left(100,200)  = 0x101018FF
+outside_right(700,300) = 0x101018FF
+outside_top(400,50)    = 0x101018FF
+outside_bottom(400,550)= 0x101018FF
+inside_line(300,250)   = 0xFFFFFFFF
+fully_outside(50,25)   = 0x101018FF

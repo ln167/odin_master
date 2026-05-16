@@ -1,0 +1,224 @@
+---
+source_url: https://jorenjoestar.github.io/tags/rendering
+source_id: jorenjoestar-bindless
+fetched_at: 2026-05-16T17:32:04.179543+00:00
+fetcher: html_mirror
+sha256: 1977efbdbe36e4f4ec019a7f2b7fa07f752ca8315be0445b62f6e1217bd8cf8c
+---
+
+rendering | Gabriel's Virtual Tavern
+
+
+
+
+
+  
+
+
+  
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+  
+  
+    
+  
+
+  
+
+# rendering
+
+
+  
+
+  
+
+
+
+
+
+  
+
+  
+  
+  
+    
+
+## [Gpu Driven Text](/post/gpu_driven_text/gpu_driven_text/)
+
+    
+      
+      Overview Recently on Twitter there was an interesting conversation about GPU-Driven line rendering.
+This reminded me of a system that I use to render values that live only on the GPU, like GPU VFX: it gives you the possibility to output text and values from shaders!
+Normally these values can be mapped and read back into the GPU, but sometimes can be easier to just write them from a shader.
+      
+    
+  
+  
+  
+    
+
+## [Rendering Astronomic Stars](/post/realistic_stars/)
+
+    
+      
+      Overview Since growing up I’ve always been fascinated by stars, and being exposed to anime like Sainy Seiya and Hokuto No Ken just fueled the passion. My 4th year of high-school had a full year course on ‘geographical astronomy’ - an in depth look at our planet and the stars from a scientific perspective. Many years has passed (20+!) and I’ve never dwelved into these kind of topic.
+Then few years ago, while researching for rendering un Just Cause 4 I stumbled upon a couple of papers about realistic rendering of stars.
+      
+    
+  
+  
+  
+    
+
+## [Data Driven Rendering: Pipelines](/post/data_driven_rendering_pipeline/)
+
+    
+      
+      Overview Model used in the demo.Data Driven Rendering Series:
+ https://jorenjoestar.github.io/post/writing_shader_effect_language_1/ https://jorenjoestar.github.io/post/writing_shader_effect_language_2/ https://jorenjoestar.github.io/post/writing_shader_effect_language_3/ https://jorenjoestar.github.io/post/data_driven_rendering_pipeline/  We finally arrived in the Rendering Pipeline realm.Some can write that it is useless, some can hate it.Many have some sort of abstraction for it since ages, and others have to now that new APIs like Vulkan and DX12 have it as an explicit part of their design (finally!).
+After we built a basic Material System in the previous article (https://jorenjoestar.
+      
+    
+  
+  
+
+  
+
+
+
+      
+
+    
+    
+    
+    
+    
+
+    
+    
+    
+      
+      
+      
+      
+
+      
+        
+      
+
+      
+        
+        
+        
+        
+        
+      
+
+      
+      
+      
+      
+    
+
+    
+    
+
+    
+    
+    
+    
+
+    
+    
+    
+    
+
+    
+    
+
+    
+    
+    
+    
+
+    
+    
+    
+    
+    
+
+    
+    
+
+    
+    
+    
+    
+    
+    
+    
+    
+    
+      
+    
+    
+    
+    
+    
+
+    
+
+
+
+
+
+
+  
+  
+    
+
+  
+  
+
+  
+
+  
+    
+      
+        
+
+##### Cite
+
+        
+          ×
+        
+      
+      
+        
+
+```
+
+```
+
+
+      
+      
+        **[Copy](#)
+        **[Download](#)

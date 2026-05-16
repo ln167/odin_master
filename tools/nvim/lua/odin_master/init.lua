@@ -22,6 +22,9 @@ local function register_keymaps(prefix)
     map("H", function() require("odin_master.lessons").next() end,      "Odin: next lesson")
     map("p", function() require("odin_master.lessons").scratch() end, "Odin: open scratch")
     map("d", function() vim.cmd("OdinDoctor") end,                       "Odin: doctor")
+    map("V", function() require("odin_master.verify").scaffold() end,    "Odin: scaffold tests/<slug> for proc under cursor")
+    map("D", function() require("odin_master.dap").launch_current() end, "Odin: build + debug current file (codelldb)")
+    map("R", function() require("odin_master.raddbg").launch_current() end, "Odin: build + debug current file (RAD Debugger, Windows)")
 end
 
 function M.setup(opts)

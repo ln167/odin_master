@@ -8,7 +8,7 @@ by overwriting `context.allocator`. The change applies to the rest of the
 current scope (and propagates into procs called from there).
 
 ## Setup
-1. `cd content/domains/odin/vault/content/domains/odin/vault/lessons/08-context-and-allocators`
+1. `cd content/domains/odin/vault/lessons/08-context-and-allocators`
 2. Open `main.odin`.
 
 ## Do this

@@ -7,7 +7,7 @@ moves a pointer forward by `size`. **Individual `free` is a no-op**;
 once. Wins for per-frame, per-request, per-job lifetimes.
 
 ## Setup
-1. `cd content/domains/odin/vault/content/domains/odin/vault/lessons/09-arena-allocator`
+1. `cd content/domains/odin/vault/lessons/09-arena-allocator`
 2. Open `main.odin`.
 
 ## Do this

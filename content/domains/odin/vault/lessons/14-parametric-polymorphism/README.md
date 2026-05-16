@@ -10,7 +10,7 @@ valid `T`.
 No boxing. No vtable. No runtime cost vs. hand-written code per type.
 
 ## Setup
-1. `cd content/domains/odin/vault/content/domains/odin/vault/lessons/14-parametric-polymorphism`
+1. `cd content/domains/odin/vault/lessons/14-parametric-polymorphism`
 2. Open `main.odin`.
 
 ## Do this

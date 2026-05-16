@@ -1,0 +1,7 @@
+ccw_interior(200,200)   = 0xFFFFFFFF
+ccw_top_edge(200,100)   = 0xFFFFFFFF
+outside_above(200,90)   = 0x101018FF
+cw_interior(600,150)    = 0x101018FF
+sliver(400,406)         = 0x00FF00FF
+offscreen(720,500)      = 0x101018FF
+background(0,0)         = 0x101018FF

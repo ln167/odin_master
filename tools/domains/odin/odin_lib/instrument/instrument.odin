@@ -9,40 +9,35 @@
 //   }
 package instrument
 
+import "base:runtime"
+
 INSTRUMENT :: #config(INSTRUMENT, "false")
 
 ENABLED        :: INSTRUMENT == "spall" || INSTRUMENT == "tracy" || INSTRUMENT == "both"
 ENABLE_SPALL   :: INSTRUMENT == "spall" || INSTRUMENT == "both"
 ENABLE_TRACY   :: INSTRUMENT == "tracy" || INSTRUMENT == "both"
 
-when ENABLE_SPALL {
-	Spall_Buffer :: struct {}  // forward decl — backend supplies it
-	Zone :: struct { spall_buf: ^Spall_Buffer }
-} else {
-	Zone :: struct {}
-}
+Zone :: struct {}
 
 @(deferred_out=_zone_end)
 SCOPE :: proc(loc := #caller_location) -> Zone {
-	return _zone_begin(loc.procedure)
+	return _zone_begin(loc.procedure, loc)
 }
 
 @(deferred_out=_zone_end)
-SCOPE_NAMED :: proc(name: string) -> Zone {
-	return _zone_begin(name)
+SCOPE_NAMED :: proc(name: string, loc := #caller_location) -> Zone {
+	return _zone_begin(name, loc)
 }
 
 @(private)
-_zone_begin :: proc(name: string) -> Zone {
-	when !ENABLED { return Zone{} }
+_zone_begin :: proc(name: string, loc: runtime.Source_Code_Location) -> Zone {
 	when ENABLE_SPALL { _spall_begin(name) }
-	when ENABLE_TRACY { _tracy_begin(name) }
+	when ENABLE_TRACY { _tracy_begin(name, loc) }
 	return Zone{}
 }
 
 @(private)
 _zone_end :: proc(_: Zone) {
-	when !ENABLED { return }
 	when ENABLE_SPALL { _spall_end() }
 	when ENABLE_TRACY { _tracy_end() }
 }

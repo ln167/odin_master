@@ -1,0 +1,11 @@
+line1_start(50,50)    = 0xFFFFFFFF
+line1_end(750,450)    = 0xFFFFFFFF
+line2_start(100,300)  = 0x00FF00FF
+line2_end(700,320)    = 0x00FF00FF
+line3_diagonal(200,200)= 0xFF0000FF
+line4_vert_top(400,100)= 0xFFFFFFFF
+line4_vert_mid(400,300)= 0x0000FFFF
+line4_vert_bot(400,500)= 0x0000FFFF
+line5_left(100,100)   = 0xFFFFFFFF
+line5_right(700,100)  = 0xFFFFFFFF
+background(0,0)       = 0x101018FF

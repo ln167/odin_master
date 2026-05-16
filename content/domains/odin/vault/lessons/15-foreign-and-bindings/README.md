@@ -7,7 +7,7 @@ to call. Odin handles the C ABI; you supply C-equivalent types
 (`cstring`, `c.int`, `^T`, `rawptr`).
 
 ## Setup
-1. `cd content/domains/odin/vault/content/domains/odin/vault/lessons/15-foreign-and-bindings`
+1. `cd content/domains/odin/vault/lessons/15-foreign-and-bindings`
 2. Open `main.odin`.
 
 ## Do this

@@ -5,7 +5,7 @@ Odin's built-in scalar types, variable declarations (`:=` vs `: T =`), and
 the difference between `fmt.println` and `fmt.printf`.
 
 ## Setup
-1. `cd content/domains/odin/vault/content/domains/odin/vault/lessons/02-types-and-printing`
+1. `cd content/domains/odin/vault/lessons/02-types-and-printing`
 2. Open `main.odin`.
 
 ## Do this

@@ -1,0 +1,4 @@
+top_left(200,200)        = 0xAD8C6FFF
+center(400,300)          = 0xC39D7DFF
+bot_right(600,400)       = 0x9C7E64FF
+outside(50,50)           = 0x101018FF

@@ -5,7 +5,7 @@ The smallest possible Odin program: a `package`, an `import`, and a `main`
 procedure that prints one line.
 
 ## Setup
-1. `cd content/domains/odin/vault/content/domains/odin/vault/lessons/01-hellope`
+1. `cd content/domains/odin/vault/lessons/01-hellope`
 2. Open `main.odin` in LazyVim. It's a stub.
 
 ## Do this

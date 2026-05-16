@@ -10,7 +10,7 @@ only instrumentation.
 can be overridden from the command line with `-define:NAME=value`.
 
 ## Setup
-1. `cd content/domains/odin/vault/content/domains/odin/vault/lessons/16-when-and-build-flags`
+1. `cd content/domains/odin/vault/lessons/16-when-and-build-flags`
 2. Open `main.odin`.
 
 ## Do this

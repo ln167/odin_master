@@ -1,5 +1,14 @@
 # Substrate Redesign Implementation Plan
 
+> **Status (2026-05-13): SHIPPED.** The substrate was fully restructured in
+> flight between 2026-05-04 and 2026-05-06. `content/domains/` holds the five
+> domains, `tools/substrate/{doctor,promote,test,domain-scaffold,search,verify_all}.py`
+> all exist and are wired into `justfile` + nvim. Stale references caught by
+> `2026-05-06-stale-refs-audit.md` were resolved on 2026-05-09. The individual
+> task checkboxes below were never ticked off because execution happened
+> faster than the bookkeeping; do not re-run them. This file is preserved as
+> the historical record of how the migration was planned.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Restructure `odin_master` from an Odin-specific reference into a multi-domain technical-knowledge substrate per the spec at `docs/superpowers/specs/2026-05-04-substrate-redesign-design.md`.

@@ -1,21 +1,21 @@
-# Playground (future-state)
+# Engine (future-state)
 
-**Date:** 2026-05-06
-**Status:** Forward-looking. Not yet built. This document describes what `odin_master` should turn into as a real-time graphics playground for learning + foundational experimentation.
+**Date:** 2026-05-06 (renamed from PLAYGROUND.md 2026-05-09)
+**Status:** Forward-looking. Not yet built. This document describes what `odin_master` should turn into as a real-time graphics engine for learning + foundational experimentation.
 
-Companion to `LEARNING.md` (Odin language learning loop) and `ONBOARDING.md` (substrate structure). The playground is a separate concern from the substrate's category-1 wiki — it's a dev environment that uses the substrate as a reference layer.
+Companion to `LEARNING.md` (Odin language learning loop) and `ONBOARDING.md` (substrate structure). The engine is a separate concern from the substrate's category-1 wiki, it's a dev environment that uses the substrate as a reference layer.
 
 ---
 
 ## Vision
 
-A hot-reload graphics playground in Odin + SDL3 that supports two phases of work:
+A hot-reload graphics engine in Odin + SDL3 that supports two phases of work:
 
 1. **Learning phase** (immediate): write rudimentary graphics experiments (drawing pixels, lines, polygons; sampling textures; simple physics) and iterate in real-time. Each experiment is a small Odin file; saving rebuilds and reloads in under a second without losing window or state.
 
 2. **Prototype phase** (later): becomes the host for the 2D Engineer's Cave prototype described in `../projects/ultimate-flat/PIVOT.md`. Same hot-reload infrastructure, more sophisticated game logic on top.
 
-The playground is NOT a game engine in the Unity / Unreal sense. There is no level editor, no asset pipeline, no scripting layer, no scene graph, no plugin system. It is **a game-with-dev-tools-baked-in** pattern: one binary, dev affordances layered on top of a running simulation.
+This is NOT an engine in the Unity / Unreal sense. There is no level editor, no asset pipeline, no scripting layer, no scene graph, no plugin system. It is **a game-with-dev-tools-baked-in** pattern: one binary, dev affordances layered on top of a running simulation.
 
 ---
 
@@ -72,7 +72,7 @@ The host is small (~100 lines). The DLL boundary is small (~5 functions). Everyt
 
 ## The six tools
 
-When the playground is built, these are the dev affordances that should exist from day one. None of them require an "edit mode." All run inside the live simulation.
+When the engine is built, these are the dev affordances that should exist from day one. None of them require an "edit mode." All run inside the live simulation.
 
 ### 1. Hot code reload
 
@@ -143,7 +143,7 @@ For 90%+ of graphics learning and game-logic iteration, hot reload just works. T
 
 ---
 
-## What the playground is NOT
+## What this engine is NOT
 
 Explicitly out of scope, even forever:
 
@@ -153,7 +153,7 @@ Explicitly out of scope, even forever:
 - **Plugin system.** Everything compiles into the game DLL.
 - **Networking abstraction.** Single-player only.
 - **Multiple build configurations.** One debug, one release.
-- **A general-purpose engine.** This serves one user and one game (and learning experiments along the way).
+- **A general-purpose engine in the Unity / Unreal sense.** This serves one user and one game (and learning experiments along the way).
 
 Anything that adds complexity without reducing the dev loop time is the enemy.
 
@@ -161,12 +161,12 @@ Anything that adds complexity without reducing the dev loop time is the enemy.
 
 ## Relationship to the substrate
 
-The playground sits alongside the substrate, not inside it. Specifically:
+This engine sits alongside the substrate, not inside it. Specifically:
 
 - **The substrate** (`content/domains/`) is for *external* technical knowledge: Odin language, papers, SDL3, engines, graphics. Category-1 lookup-and-synthesis. LLM never writes to `source/` or `vault/`.
 - **The runnable surface** (`lab/`, `bench/`, `tests/`, `scratch/`) is for *internal* code: experiments, learning artifacts, eventually the game prototype. Different ownership rules: this is normal code under git.
 
-When the playground experiments raise a question that needs an authoritative answer ("how does dual contouring work?", "what's the right Vulkan barrier here?"), the substrate is the place you go to find or build that answer. The substrate informs the playground; the playground does not pollute the substrate.
+When lab experiments raise a question that needs an authoritative answer ("how does dual contouring work?", "what's the right Vulkan barrier here?"), the substrate is the place you go to find or build that answer. The substrate informs the engine; the engine does not pollute the substrate.
 
 ## Foundational, not throwaway: the runnable-surface roles
 
@@ -184,6 +184,42 @@ All four use the same Odin compiler, share `tools/domains/odin/odin_lib/instrume
 
 **Hot-reload `lab/` is the only persistent role.** The others are isolated programs that you fire off, read the answer, and move on.
 
+## Programs vs profilers: testing and measurement vocabulary
+
+Five overlapping concepts that confuse people on a cold read. The runnable-surface
+roles above describe *where programs live* and *their lifecycle*. This table cuts
+the same space differently: *what kind of question each tool answers*, and how
+you invoke it. Spall and Tracy are not directories, they are compile-time
+switches on `tools/domains/odin/odin_lib/instrument/` that any program (lab,
+bench, tests) can opt into.
+
+```
++----------------------+--------------------------+-----------------------+--------------------------+----------------------+
+| Name                 | Answers                  | Where                 | Invoked by               | Status               |
++----------------------+--------------------------+-----------------------+--------------------------+----------------------+
+| odin test (builtin)  | does this proc work?     | @(test) procs inline  | just test  (= odin test) | shipped, in use      |
++----------------------+--------------------------+-----------------------+--------------------------+----------------------+
+| bench/<name>/        | how fast does X run?     | bench/<name>/main.odin| just bench <name>        | recipe live, 0 progs |
++----------------------+--------------------------+-----------------------+--------------------------+----------------------+
+| tests/<slug>/        | does X give the right    | tests/<slug>/main.odin| just verify <slug>       | spec only, no impl,  |
+| (= "executable       |  output? (diff vs        |                       |  (recipe not wired yet)  |  no recipe           |
+|   verification")     |  expected.txt)           |                       |                          |                      |
++----------------------+--------------------------+-----------------------+--------------------------+----------------------+
+| Spall   (backend)    | where did time go?       | instrument.odin       | -define:INSTRUMENT=spall | shipped              |
+|                      |  offline .spall trace,   |  (compile-time switch)|                          |  bench uses this     |
+|                      |  load in viewer after    |                       |                          |                      |
++----------------------+--------------------------+-----------------------+--------------------------+----------------------+
+| Tracy   (backend)    | live realtime frame      | instrument.odin       | -define:INSTRUMENT=tracy | shipped              |
+|                      |  profiler, attaches to a |  (compile-time switch)|                          |  intended for lab    |
+|                      |  running process via TCP |                       |                          |                      |
++----------------------+--------------------------+-----------------------+--------------------------+----------------------+
+```
+
+**Mental model:** `odin test`, `bench`, and `tests` are *what kind of program
+you run*. Spall and Tracy are *how you observe any of them running*. Default
+`INSTRUMENT=false` means zero overhead, you only pay for Spall/Tracy when you
+opt in at compile time.
+
 ## Tying in `executable verification` (future)
 
 `docs/superpowers/specs/2026-05-08-executable-verification-idea.md` (idea-only, not implemented) proposes that objective wiki claims ("X allocates capacity Y", "this syntax compiles to Z") get backed by runnable artifacts under `tests/`. That artifact directory is already a peer to `bench/` and `lab/` with the same isolated-program shape and the same `just verify <slug>` invocation idiom.
@@ -196,7 +232,7 @@ The slot exists already at `tests/` (with a placeholder README). Nothing to impl
 
 This doc and `../projects/ultimate-flat/PIVOT.md` use different sequencing words; reconciliation:
 
-| PLAYGROUND phase | What it ships | PIVOT rung mapping |
+| Engine phase | What it ships | PIVOT rung mapping |
 |---|---|---|
 | **Phase 0** ✅ | Hot-reload host + DLL, stdout only | infrastructure (no rung) |
 | **Phase 1** | SDL3 window, framebuffer pointer through `Game_Memory` | infrastructure (no rung) |
@@ -209,7 +245,7 @@ This doc and `../projects/ultimate-flat/PIVOT.md` use different sequencing words
 | Phase 8 | Pixel grid of bonded particles | rung 5 |
 | Phase 9 | Rigid body promotion from connected components | rung 6 |
 
-PLAYGROUND phases 0-3 are *infrastructure*: window, framebuffer, primitive drawing. PIVOT rungs 1-6 are the *physics* ladder. They start interleaving at Phase 4. By Phase 9 the prototype's central architectural thesis (promote/demote bridge) is testable.
+Engine phases 0-3 are *infrastructure*: window, framebuffer, primitive drawing. PIVOT rungs 1-6 are the *physics* ladder. They start interleaving at Phase 4. By Phase 9 the prototype's central architectural thesis (promote/demote bridge) is testable.
 
 ---
 
@@ -221,9 +257,9 @@ When the basic Odin lessons in `content/domains/odin/vault/lessons/` are complet
 2. Set up the lab with hot reload + basic SDL3 window. **One day's work.** (Phase 0 of this is already done in `lab/` as of 2026-05-06; the SDL3 step is Phase 1.)
 3. Use it as the learning vehicle for graphics rudiments: draw a pixel, draw a line, fill a polygon, blend colors, sample a texture, transform coordinates. Each as a tiny experiment in the DLL.
 4. Build up the six tools incrementally as needed (overlays first, then tweakers, etc.).
-5. When the architecture is ready, the playground host becomes the prototype's host. No infrastructure rebuild.
+5. When the architecture is ready, the lab host becomes the prototype's host. No infrastructure rebuild.
 
-The playground is intentionally built *before* the prototype because the learning phase benefits from it just as much, and building it later would mean either: (a) doing learning without fast feedback (slow), or (b) building the prototype with whatever ad-hoc setup gets cobbled together first (mess).
+The engine is intentionally built *before* the prototype because the learning phase benefits from it just as much, and building it later would mean either: (a) doing learning without fast feedback (slow), or (b) building the prototype with whatever ad-hoc setup gets cobbled together first (mess).
 
 ---
 
@@ -234,7 +270,7 @@ A target. Not a plan. The order, scope, and exact tools may change. The principl
 - **Real-time feedback is the operating virtue.** Anything that breaks the dev loop is the enemy.
 - **One binary.** No engine/game separation.
 - **Dev affordances layered on a running simulation.** No edit mode.
-- **The playground informs the prototype.** Same host, same hot-reload, more sophisticated game logic on top when the time comes.
+- **The engine informs the prototype.** Same host, same hot-reload, more sophisticated game logic on top when the time comes.
 - **Cross-platform from day one.** The dev path is Windows ↔ Linux (the same user moves between machines mid-project). Native macOS is best-effort. Anything we build must compile and run unchanged on Windows + Linux. No Windows-only tooling on the critical path.
 - **CPU first, GPU later.** Software-rasterize the foundations (pixel, line, polygon, blend, sample, transform) before touching the GPU. The math transfers; only the API differs. Skipping the CPU phase produces people who can call `glDraw*` but cannot debug their own shader output. Phase 4+ is where GPU optionally enters.
 - **No raylib.** Even though it would be faster to learn, batteries-included drawing primitives are exactly what foundations-first is *against*. SDL3 gives a window and a framebuffer; everything above that we write.

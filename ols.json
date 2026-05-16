@@ -8,6 +8,6 @@
     { "name": "default", "checker_path": ["src"], "defines": {} }
   ],
   "collections": [
-    { "name": "odin_lib", "path": "tools/odin_lib" }
+    { "name": "odin_lib", "path": "tools/domains/odin/odin_lib" }
   ]
 }

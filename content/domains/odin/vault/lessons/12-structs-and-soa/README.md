@@ -8,7 +8,7 @@ fields live next to each other in memory. Prefix the array type with
 etc. Same indexing syntax (`p[i].pos.x`); different memory layout.
 
 ## Setup
-1. `cd content/domains/odin/vault/content/domains/odin/vault/lessons/12-structs-and-soa`
+1. `cd content/domains/odin/vault/lessons/12-structs-and-soa`
 2. Open `main.odin`.
 
 ## Do this

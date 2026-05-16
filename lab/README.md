@@ -11,9 +11,11 @@ experiment that sits in `src/game/`. The current contents of `src/game/` are the
 
 Peer to `bench/` (perf, one-shot programs) and `tests/` (correctness,
 one-shot programs). `lab/` is the only one of the three that runs as a
-persistent process. See `../tests/README.md` for the lifecycle table.
+persistent process. See `../tests/README.md` for the lifecycle table, and
+`../ENGINE.md` § "Programs vs profilers" for how `odin test` / `bench` /
+`tests` / Spall / Tracy fit together.
 
-Forward-looking vision in `../PLAYGROUND.md`. Architectural framing in
+Forward-looking vision in `../ENGINE.md`. Architectural framing in
 `../../projects/ultimate-flat/PIVOT.md`. Lesson-form tour of the underlying
 hot-reload pattern in `../content/domains/odin/vault/lessons/18-hot-reload-tour/`.
 
@@ -99,9 +101,6 @@ Known issues to fix when they next bite:
 - **`api_version` mismatch check missing.** Required *before* the first time
   `Game_Memory` changes shape between reloads (Phase 2 candidate). Without it,
   a layout-change reload silently corrupts state.
-- **`ols.json` collection path is stale.** Says `tools/odin_lib`, real path is
-  `tools/domains/odin/odin_lib`. Will bite as soon as anything in `lab/` does
-  `import "odin_lib:..."`.
 - **No Spall instrumentation in lab/ yet.** Shared
   `tools/domains/odin/odin_lib/instrument/` is ready. Wire when there's a real
   frame-time question to answer.

@@ -1,0 +1,587 @@
+---
+source_url: https://github.com/ssloy/tinyrenderer/wiki/Lesson-8:-Ambient-occlusion
+source_id: tinyrenderer
+fetched_at: 2026-05-16T17:31:01.119069+00:00
+fetcher: html_mirror
+sha256: 110f3fb8a20a2f7bcb5f9091dda977ee2a06639a17dcc25d752639574047883d
+---
+
+Lesson 8: Ambient occlusion · ssloy/tinyrenderer Wiki · GitHub
+
+  
+  
+  
+  
+
+    
+  
+
+  
+
+    
+
+  
+  
+
+  
+  
+
+    
+
+  
+
+  
+
+    
+
+  
+
+    
+
+    
+
+      
+
+      
+
+    
+    
+    
+
+      
+  
+  
+
+      
+
+        
+
+  
+  
+  
+  
+
+  
+
+      
+
+  
+  
+
+    
+
+    
+  
+
+  
+
+  
+
+    
+  
+
+  
+  
+  
+
+  
+
+  
+
+  
+    
+      
+      
+
+    
+      [Skip to content](#start-of-content)
+
+      
+    
+      
+      
+      
+
+  
+  
+  
+
+      
+
+          
+
+              
+
+          
+            [Search syntax tips](https://docs.github.com/search-github/github-code-search/understanding-github-code-search-syntax)            
+          
+        
+
+    
+
+  
+  
+  
+    
+
+  
+    
+  
+    
+      
+
+# 
+        Provide feedback
+      
+
+        
+    
+    
+      
+    
+
+    
+  
+  
+
+      
+                
+      
+                    Cancel
+
+              Submit feedback
+
+    
+    
+
+  
+    
+  
+    
+      
+
+# 
+        Saved searches
+      
+
+        
+
+## Use saved searches to filter your results more quickly
+
+    
+    
+      
+    
+
+    
+  
+  
+
+      
+                
+
+        
+                
+
+        
+          
+        
+
+      
+                    Cancel
+
+              Create saved search
+
+    
+  
+
+            
+              [Sign in](/login?return_to=https%3A%2F%2Fgithub.com%2Fssloy%2Ftinyrenderer%2Fwiki%2FLesson-8%3A-Ambient-occlusion)
+            
+
+              [Sign up](/signup?ref_cta=Sign+up&ref_loc=header+logged+out&ref_page=%2F%3Cuser-name%3E%2F%3Crepo-name%3E%2Fwiki%2Fshow&source=header-repo&source_repo=ssloy%2Ftinyrenderer)
+
+                
+    
+        
+    
+
+Appearance settings
+
+      
+        
+
+  
+  
+  
+
+      
+    
+  
+
+          Resetting focus
+        
+      
+    
+  
+
+      
+  
+        
+    
+
+        You signed in with another tab or window. Reload to refresh your session.
+        You signed out in another tab or window. Reload to refresh your session.
+        You switched accounts on another tab or window. Reload to refresh your session.
+
+      
+    
+
+Dismiss alert
+
+  
+
+    
+
+  
+
+    
+
+  
+    
+
+  
+    
+      
+    
+
+    
+    
+      
+      {{ message }}
+
+    
+  
+
+  
+
+    
+
+  
+        
+    
+      
+  
+    
+
+  
+
+  
+
+      
+
+        
+            
+  
+      
+    
+
+    
+    
+      [ssloy](/ssloy)    
+    /
+    **
+      [tinyrenderer](/ssloy/tinyrenderer)
+    **
+
+    Public
+  
+
+        
+
+        
+            
+
+    
+      
+
+  
+- 
+            [Notifications](/login?return_to=%2Fssloy%2Ftinyrenderer)    You must be signed in to change notification settings
+
+  
+
+  
+- 
+          [Fork
+    2.2k](/login?return_to=%2Fssloy%2Ftinyrenderer)
+  
+
+  
+- 
+        
+        [Star
+          23.6k](/login?return_to=%2Fssloy%2Ftinyrenderer)
+  
+
+        
+      
+
+        
+
+          
+
+  
+  
+
+    
+    
+
+    
+      
+  
+    
+      
+
+# Lesson 8: Ambient occlusion
+
+        
+          [Jump to bottom](#wiki-pages-box)
+
+        
+    
+
+      
+        Dmitry V. Sokolov edited this page Sep 1, 2025
+        ·
+        [21 revisions](/ssloy/tinyrenderer/wiki/Lesson-8:-Ambient-occlusion/_history)
+      
+
+    
+      
+            
+              
+                
+
+  
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+ 
+
+#  This text is obsolete, the second edition of the course is [available here](https://haqr.eu/tinyrenderer/).
+
+  
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+ 
+
+In previous lectures we used local illumination model. In other words, for computing illumination of a current pixel we did not take into account its neighbors. [Phong reflection model](https://en.wikipedia.org/wiki/Phong_reflection_model) is a famous example of such approach:
+
+In this model final illumination intensity for a point is a sum of three components: ambient intensity, constant for all points in the scene, diffuse and specular highlights depending on normal vectors. Wait a minute, why did he choose **constant** ambient component?
+
+# Second attempt in the global illumination: ambient occlusion
+
+Well, I was not 100% right: we did use a bit global illumination when we computed shadow mapping. Let us check another possibility to improve our renders (note that one does not exclude another!). Here is an example where I used only ambient component of the Phong reflection model:
+
+**No diffuse component, no specular. Ambient only, however it is easy to see that I did not choose it to be constant.** Okay, the problem is stated as follows: let us ambient intensity for each point of our scene. When we previously supposed constant ambient illumination, it means that we supposed our scene so nice that all light was reflected everywhere equally. A bit strong hypothesis that is. Of course, it was made back in the old days where computing power was severely limited. Nowadays, we can spend a bit more to get more realistic images. Global illumination is more expensive than the local is. Recall that for shadow mapping we were forced to do two-passes rendering, thus roughly dividing our FPS by 2.
+
+# Brute force attempt
+
+The source code is available [here](https://github.com/ssloy/tinyrenderer/tree/631386c5ab1987d4cfa097e8f89894cadd593c2d). Let us suppose that our object is surrounded by a hemisphere, emitting light uniformly (cloudy sky). Then let us choose randomly, say, a thousand points at the hemisphere, render the object thousand times and to compute what parts of the model were visible.
+
+**Question:** Do you know how to pick **uniformly** a thousand points on a (hemi-)sphere? Something like this:
+
+If we simply pick randomly a longitude and a latitude, we will obtain an accumulation of points near the poles, thus breaking our assumption on uniform lighting of the sky. [Check the answer](http://mathworld.wolfram.com/SpherePointPicking.html).
+
+**Question:** where do we store the visibility information?
+
+Since we are in the brute force section, then the answer is obvious: in a texture!
+
+Thus, we do a two-pass rendering for each point we picked on the sphere, here is the first shader and the resulting image:
+
+```
+    virtual bool fragment(Vec3f gl_FragCoord, Vec3f bar, TGAColor &color) {
+        color = TGAColor(255, 255, 255)*((gl_FragCoord.z+1.f)/2.f);
+        return false;
+    }
+```
+
+This image is not very interesting for us, we are more interested in its z-buffer, exactly as in the previous lesson. Then we do another pass:
+
+```
+    virtual bool fragment(Vec3f gl_FragCoord, Vec3f bar, TGAColor &color) {
+        Vec2f uv = varying_uv*bar;
+        if (std::abs(shadowbuffer[int(gl_FragCoord.x+gl_FragCoord.y*width)]-gl_FragCoord.z)<1e-2) {
+            occl.set(uv.x*1024, uv.y*1024, TGAColor(255));
+        }
+        color = TGAColor(255, 0, 0);
+        return false;
+    }
+```
+
+The resulting image is not interesting either, it will simply draw a red image. However, this line I like:
+
+```
+            occl.set(uv.x*1024, uv.y*1024, TGAColor(255));
+```
+
+occl - is initially clear image; this line tells us that if the fragment is visible, then we put a white point in this image using fragment's texture coordinates. Here is the resulting occl image for one point we choose on the hemisphere:
+
+**Question:** Why are there holes in obviously visible triangles?
+
+**Question:** Why are there triangles more densely covered than others?
+
+Well, we repeat above procedure a thousand times, compute average of all occl images and here is the average visible texture:
+
+Cool, looks like something we could want. Let us draw our Diable without any lighting computation, simply by putting above texture:
+
+```
+    virtual bool fragment(Vec3f gl_FragCoord, Vec3f bar, TGAColor &color) {
+        Vec2f uv = varying_uv*bar;
+        int t = aoimage.get(uv.x*1024, uv.y*1024)[0];
+        color = TGAColor(t, t, t);
+        return false;
+    }
+```
+
+Here aoimage is the above (average lighting) texture. And resulting render is:
+
+**Question:** Wow, he is in a bad mood... Why?
+
+This question is linked to the previous one. Did you notice that in Diablo's texture there is one arm only? The artist (in this case [Samuel Sharit](https://www.linkedin.com/in/samuelsharit)) is practical and did not want to waste precious resources. He simply said that the arms are textured in the same way and both arms can have same texture coordinates. Roughly it means that our lighting computing will count arms twice, thus quadrupling the light energy in the final render.
+
+## Let us sum up
+
+This method allows to precompute ambient occlusion for scenes with static geometry. Computation time depends on the number of samples you choose, but in practice it does not matter since we compute it once and use as a texture afterwards. Advantage of this method is its flexibility and ability to compute much more complex lighting than a simple uniform hemisphere. Disadvantage - for doubled texture coordinates the computation is not correct, we need to put some scotch tape to repair it (see the teaser image for this lesson).
+
+# Screen space ambient occlusion
+
+Well, we see that global illumination is still an expensive thing, it requires visibility computations for many points. Let us try to find a compromise between computing time and rendering quality. Here is an image I want to compute (recall that in this lesson I do not use other lighting besides the ambient one):
+
+Here is the shader to compute the image:
+
+```
+struct ZShader : public IShader {
+    mat<4,3,float> varying_tri;
+
+    virtual Vec4f vertex(int iface, int nthvert) {
+        Vec4f gl_Vertex = Projection*ModelView*embed<4>(model->vert(iface, nthvert));
+        varying_tri.set_col(nthvert, gl_Vertex);
+        return gl_Vertex;
+    }
+
+    virtual bool fragment(Vec3f gl_FragCoord, Vec3f bar, TGAColor &color) {
+        color = TGAColor(0, 0, 0);
+        return false;
+    }
+};
+```
+
+What-what-what?! `color = TGAColor(0, 0, 0);` ?!
+
+Yes, that is right. At the moment I am only interested in the z-buffer, the image will appear after a post-processing step. Here is the complete code with our "empty" shader call and the post-processing routine:
+
+```
+    ZShader zshader;
+    for (int i=0; i<model->nfaces(); i++) {
+        for (int j=0; j<3; j++) {
+            zshader.vertex(i, j);
+        }
+        triangle(zshader.varying_tri, zshader, frame, zbuffer);
+    }
+
+    for (int x=0; x<width; x++) {
+        for (int y=0; y<height; y++) {
+            if (zbuffer[x+y*width] < -1e5) continue;
+            float total = 0;
+            for (float a=0; a<M_PI*2-1e-4; a += M_PI/4) {
+                total += M_PI/2 - max_elevation_angle(zbuffer, Vec2f(x, y), Vec2f(cos(a), sin(a)));
+            }
+            total /= (M_PI/2)*8;
+            total = pow(total, 100.f);
+            frame.set(x, y, TGAColor(total*255, total*255, total*255));
+        }
+    }
+```
+
+The empty shader call gives us the z-buffer. As for the post-processing: for each pixel of our image I emit a number of rays (eight here) in all directions around the pixel. The z-buffer is a height map, you can imagine it as a landscape. What i want to compute is the slope in each of our 8 directions. The function `max_elevation_angle` gives the maximum slope we encounter for each ray we cast.
+
+If all eight rays have zero elevation, then the current pixel is well visible, the terrain around is flat. If the angle is near 90°, then current pixel is well-hidden in a kind of a valley, and receives little ambient light.
+
+In theory we need to compute the [solid angle](https://en.wikipedia.org/wiki/Solid_angle) for each point of the z-buffer, but we approximate it as a sum of (90°-max_elevation_angle) / 8. The pow(, 100.) is simply there to increase the contrast of the image.
+
+Here is an ambient-occlusion-only render of our friend:
+
+The source code is available [here](https://github.com/ssloy/tinyrenderer/tree/d7c806bc3d598fc54dd446b6c81b94f723728205).
+
+Enjoy!
+
+              
+
+          
+
+            
+            
+
+            
+
+### Clone this wiki locally
+
+            
+              
+              
+                
+  
+      
+    
+
+      
+    
+
+  
+
+              
+            
+          
+
+  
+    
+  
+
+  
+
+    
+  
+
+  
+
+          
+
+    
+
+  
+    
+    
+
+    
+      
+    
+
+    
+    You can’t perform that action at this time.

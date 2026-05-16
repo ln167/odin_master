@@ -92,3 +92,26 @@ Test 4:
 - Threading.
 - Shaders, GPU.
 - `force_reload` / `force_restart` exports.
+
+## Phases 5+
+
+Phases 5 and beyond are **user-driven learning, not LLM-authored**. The LLM is a
+rubber duck, bug-hunt assistant, and research lookup, not the author of the
+code. The user types every loop themselves, derives algorithms on paper before
+typing, and breaks things deliberately to learn the failure modes.
+
+Loose mapping for orientation only (subject to change as the user goes):
+
+| Phase | What it ships | Curriculum lesson | PIVOT rung |
+|---|---|---|---|
+| 5 | N-particle Verlet system | graphics/04 | rung 2 |
+| 6 | Distance constraints (XPBD substep loop) | graphics/18 | rung 2-3 |
+| 7 | Multi-constraint solver, bond network | graphics/04 follow-up | rung 3-4 |
+| 8 | First SDL3-GPU triangle (move off CPU rasterizer) | graphics/10 | infrastructure |
+| 9 | Compute-shader Verlet (port the loop to GPU) | graphics/13 + 18 | rung 4-5 |
+| 10+ | Bindless, GPU-driven culling, voxel raymarch, destruction | graphics/14-19 | rung 5-6 |
+
+These are *orientation*, not a checklist. The user picks order and depth at
+each step. The LLM does not draft Phase 5+ implementation plans like Phases
+1-4 above; if you (LLM) are reading this and thinking "let me sketch Phase 5
+in detail," do not. Hand back to the user.

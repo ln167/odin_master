@@ -1,0 +1,233 @@
+---
+source_url: https://jorenjoestar.github.io/categories/publishing/index.xml
+source_id: jorenjoestar-bindless
+fetched_at: 2026-05-16T17:31:59.275237+00:00
+fetcher: html_mirror
+sha256: 5c96c0ce27bf9ecbedc266bc7c54374e4e04faaf2afc6d044f9da5cbfeb48cdb
+---
+
+publishing on Gabriel's Virtual Tavern
+    https://jorenjoestar.github.io/categories/publishing/
+    Recent content in publishing on Gabriel's Virtual Tavern
+    Source Themes Academic (https://sourcethemes.com/academic/)
+    en-us
+    Tue, 07 Feb 2023 15:46:28 +0100
+    
+	    
+    
+    
+    
+      The Year of the Vulkan Book
+      https://jorenjoestar.github.io/post/year_of_the_vulkan_book/
+      Tue, 07 Feb 2023 15:46:28 +0100
+      
+      https://jorenjoestar.github.io/post/year_of_the_vulkan_book/
+      <p>Hello everyone! How have you been ?<br>
+A little more than a year has passed since my last post, but for a good reason!<br>
+Last year was all dedicated to writing this book, <strong>Mastering Graphics Programming with Vulkan</strong>, available in different countries on Amazon <a href="https://www.amazon.com/Mastering-Graphics-Programming-Vulkan-state/dp/1803244798">US</a>,<a href="https://www.amazon.co.uk/Mastering-Graphics-Programming-Vulkan-state/dp/1803244798">UK</a>,<a href="https://www.amazon.in/Mastering-Graphics-Programming-Vulkan-state/dp/1803244798">India</a>,<a href="https://www.amazon.it/Mastering-Graphics-Programming-Vulkan-state/dp/1803244798">Italy</a> and many more, with <a href="https://twitter.com/marco_castorina">Marco Castorina</a>.<br>
+All my coding free time went into the writing of this book with him, and this post is a little recap of what happened behind the scenes and my experience of writing a book for the first time!</p>
+<h1 id="how-it-started">How it started</h1>
+<p>It all started thanks to this blog!<br>
+At the end of 2021 Marco wrote to me if I was interested to collaborate, in any form we would agree, on writing a book about Vulkan.<br>
+Thanks to the articles I wrote here and the code on Github he wanted to know if I could help.<br>
+We jumped on a Skype call and talked: since the beginning there was a good feeling talking to him. My gut instict was right!<br>
+He asked me in which way I wanted to help him, including being a co-author&hellip;and me being me, I thought &ldquo;I&rsquo;ve never wrote a book, this could be an amazing experience!&rdquo;.<br>
+So we agreed that we will write the book together, and from there he introduced me to the team at Packt and we started discussing about the topics.<br>
+One thing we really wanted to do is to dedicate time learning topics that we did not have time to study, and that was a huge risk but also a great reward.</p>
+<p>After some talking with Packt, we agreed on a 9 months writing time: a tight schedule, but we felt we could make it working together with Marco.<br>
+We succedeed, albeit not to the level we wanted, but it was a huge learning experience for both of us (I am pretty sure is the same for Marco).<br>
+In this case I measure success as a combination of effort, learning new things, delivering and enjoyment of the process.<br>
+As you will see later on in this post, this book is far from perfect and make me question a better way of delivering the rendering knowledge we wanted to share.</p>
+<h2 id="the-purpose-of-the-book">The purpose of the book</h2>
+<p>Since the beginning we had clear in mind that we needed to show how to use Vulkan in a real, modern and AAA rendering context.<br>
+Both Marco and me work in the industry, and we decided to try to create a package that included the latest rendering tech that you would find in a AAA renderer.
+We knew we could not possibly deliver a bulletproof technology written in few months writing code after work, but at least we could give some pointers to what is used right now.<br>
+We also wanted to demistify Vulkan and show it in a practical full-blown demo. In this sense, after reading some reviews, I think we did not hit the mark - many complains are that we used a reincarnation of the Hydra engine, stripped down to accomodate a Vulkan only mindset.<br>
+We will talk about that later.</p>
+<p>At the end, if I can simplify everything in one phrase, it would be:</p>
+<blockquote>
+<p>Demistification of Vulkan as an API and its application to modern rendering techniques</p>
+</blockquote>
+<h2 id="choosing-the-topics">Choosing the topics</h2>
+<p>This was actually a very fun part!<br>
+Both me and Marco wanted to explore and write some techniques from scratch.<br>
+We started with asking ourselves which techniques a modern rendering engine supports, based on our work knowledge, and started jotting down those.<br>
+There also some techniques that we singularly never did, and we tried to do what we would have most fun doing.</p>
+<p>This is a simple list:</p>
+<ul>
+<li>Pure bindless mode</li>
+<li>Frame graph based</li>
+<li>Clustered Deferred Rendering</li>
+<li>Point lights with cubemap shadows</li>
+<li>Mesh shaders</li>
+<li>GPU driven rendering</li>
+<li>Temporal Anti-Aliasing</li>
+<li>Volumetric Fog</li>
+<li>Raytracing: shadows</li>
+<li>Global Illumination</li>
+</ul>
+<p>With this list we started writing collecting links to the various topics before the next big decision&hellip;where do we start from a code pespective ?</p>
+<h2 id="choosing-an-engine">Choosing an engine</h2>
+<p>We always knew we wanted to use the thinnest layer on top of Vulkan.<br>
+We explored various libraries, but something was clear: we need to learn how to use those libraries as well, and that would mean some time.<br>
+After some thoughts&hellip;we chose to take Hydra, my own creature ehm engine, and cleanup some code, make the API Vulkan only and use that.<br>
+Hydra is the foundation for the code of all the articles on this blog, and already the only backend working was Vulkan.<br>
+Some could argue that this is not the best choice, but actually we have two advantages: first, having written it from scratch I knew every nook and crannies of the code; second it has a lot of boilerplate code for Vulkan and for other simple but useful subsystems (cameras, input, &hellip;).<br>
+Another choice we made was to go fully Vulkan based: GLSL was the default choice for writing shaders, using JSON files to create a smaller Techniques/FX framework, and even better&hellip;parsing SpirV to take informations about the pipeline!<br>
+Marco came out with this idea, and I really liked it.<br>
+Between all the different skills he has, he is great in reading the Vulkan specifications and use them.<br>
+And with these choices&hellip;all was set to begin!</p>
+<h2 id="how-to-structure-the-code">How to structure the code?</h2>
+<p>This was another big decision to make.<br>
+We thought a lot about it: we wanted a way to freeze the code in time for each chapter, but we didn&rsquo;t want to rely on github history to do that.<br>
+The natural evolution of this thought is to create the code for each chapter in a separate folder.<br>
+So we separated the code in the common code area, where code between different chapters is shared, and the rendering code went into each chapter.<br>
+This included both shaders and the core rendering code. 
+The current structure of code is something like:</p>
+<p><strong>source</strong><br>
+__<strong>chapter1</strong><br>
+____<strong>graphics</strong><br>
+__<strong>raptor</strong><br>
+____<strong>application</strong><br>
+____<strong>foundation</strong></p>
+<p>The main raptor folder contains foundation and application subfolders: <strong>application</strong> is contains a high level wrapper for window, input and application so that it is easier to fire a working application, while <strong>foundation</strong> the main data structures (array and hash map) and some utility functions/subsystems (like file management, string buffers, time queries, memory management, logging, gltf parsing, camera&hellip;).<br>
+All the code in these folders is shared between chapters, so we duplicate and evolve only the rendering part, as it is the main focus of the book.</p>
+<p>Was it perfect ?<br>
+Absolutely not.<br>
+Was it painful ?<br>
+Yes, a little.
+Could we do better ?
+Absolutely yes!</p>
+<p>There are many problems with these choices, but at the end it worked for us: for every chapter you have a snapshot of the rendering code, while everthing else that is not rendering related is unchanged, and should actually not be the focus.<br>
+There are some big downsides: for example every time we would add something to a chapter, we would need to port the code to the following chapters. Fixing a bug in chapter 4 meant porting it up to the 15th chapter!</p>
+<p>Same is happening now that the code is in the wild: when we receive a bugfix, we need to port it to all subsequent chapters.<br>
+Again not the best choice, but the best with our knowledge at the time we started.</p>
+<h2 id="the-awesomeness-of-having-a-publisher">The awesomeness of having a publisher</h2>
+<p>I&rsquo;ve never worked with a publisher, but working with Packt was a great experience.<br>
+They gave us the power to concentrate only on writing the book and the code, without worrying about anything else.<br>
+Printing, delivering, organizing, they really took care of us.</p>
+<p>When we thought we were late, or we needed more time, they listened as well.<br>
+They also knew that the time to write a book was crucial, as this book covers a missing piece of information.</p>
+<p>Every feedback on both sides was thoughtful and well received, so it was a great experience.</p>
+<p>Thank you to all the team behind Packt, we managed to have a deep focus on working on our side of things and only on that.<br>
+That was great to experience!</p>
+<h1 id="lessons">Lessons</h1>
+<p>This whole journey has been powerful and helped me navigating some personal difficult times as well.</p>
+<h2 id="the-power-of-deadlines">The power of deadlines</h2>
+<p>Personally I love to have projects in my free time, because I can explore what I want, even if just redoing the same thing just in a completely different way.<br>
+Problem is that not having a fixed objective can make me feel lost sometimes, same for not having any timeline.<br>
+Articles in this blog helped that, but the book is the ultimate example!</p>
+<p>Deadlines gives you that huge lesson:</p>
+<blockquote>
+<p>Do the best that you can, with the resources you can.</p>
+</blockquote>
+<p>Resources include both knowledge and time.<br>
+In the realm of knowledge I include not only technical knowledge, but also personal knowledge.</p>
+<h2 id="the-problems-of-deadlines">The problems of deadlines</h2>
+<p>Deadlines have also an uncomfortable side with it.<br>
+We did not manage to put everything we wanted into the code, for example shader reloading, code generation, local tonemapping, and many many more.<br>
+Deadlines really push you to think about what you can and cannot achieve given the time.<br>
+And many times you over or underestimate the time, and have to change priorities.<br>
+This is one of the biggest problems with game development, as there are many unknowns unknowns.</p>
+<p>Still, you need to deliver, thus you can&rsquo;t loose too much time thinking and writing code in the best way possible.<br>
+You deliver, and this is important.</p>
+<p>Also, the time we put on this book was our free time, after a day of work, or in the weekend, so possibly at times you had to figure out things with very low energies.</p>
+<p>For every piece of code we were writing, this was the question:</p>
+<blockquote>
+<p>Is this that I am doing really necessary given the time I have ?</p>
+</blockquote>
+<h2 id="know-thyself">Know thyself</h2>
+<p>Another great lesson is that before writing a book, there is one &lsquo;persona&rsquo; - Gabriel - that is writing the book.<br>
+Do you listen to yourself ? To your needs ? Are you ready to know Gabriel with a new perspective, as the writer of a book ?</p>
+<p>These can seem like crazy questions, but our identity changes a bit depending on the context.<br>
+Who do you think you are when writing a book ?<br>
+Are you overconfident ? Underconfident (not sure this word exists) ?<br>
+Are you ready to change your mindset on a technical topic ?<br>
+Are you ready to do something wrong and being called out for that ?</p>
+<p>I think one of our superpowers is the possibility to change perspective based on experience.<br>
+Even if it is painful: seeing that you don&rsquo;t know enough about a topic that you should know, after all this year of rendering, can be painful.<br>
+As candid as I can be, there are still many topics that I don&rsquo;t know deeply, nor I understand fully.<br>
+That is what I love about rendering: is such a huge topic, that really puts your ego in check.<br>
+I will always know less than a year before, where multiple people are researching and advancing the knowledge.<br>
+But still, I can help crafting amazing games and rendering tech!</p>
+<p>Again, the relationship with our reality is what matters.</p>
+<p>This is one of the biggest lessons about writing this book: the combination of effort, changing perspective and mindset is the real win.<br>
+And on that topic, I have no regrets: we acted at our best given the constraints.<br>
+But we can do better!</p>
+<blockquote>
+<p>Are you ready to change perspective in front of new inputs ?</p>
+</blockquote>
+<h2 id="technical-knowledge">Technical knowledge</h2>
+<p>After a digression about the human side of things (I would talk about that for hours&hellip;) let&rsquo;s get back to the technical knowledge.<br>
+What I&rsquo;ve learnt is that&hellip;I did not know many new topics, only read about it, and by actually doing them I have a better understanding.<br>
+Ultimate understanding ?<br>
+Not even close!</p>
+<blockquote>
+<p>For me, re-writing or re-implementing a technique makes me understand it.</p>
+</blockquote>
+<p>I found over and over that reading a paper or some code does not work much for me.<br>
+I can have an idea about something, but re-doing is what makes me create my mental model of it.<br>
+Some have the power to learn by just reading or hearing, not me.<br>
+That is why I am also active in my free time: real knowledge comes from models arising from experience.</p>
+<h2 id="the-thinnest-vulkan-layer-possible">The thinnest Vulkan layer possible</h2>
+<p>This is a post-launch thought, and one of the most common critiques I&rsquo;ve read around about the book.<br>
+Many did not like the usage of Hydra/Raptor, and complained that this was too much of a &lsquo;Raptor manual&rsquo; instead of a pure Vulkan book.</p>
+<p>Could have we written a thinner layer ?<br>
+I think we could have done it, and it would be an interesting challenge for the future.<br>
+I still stand with our choice, as I think the abstraction we provided is so thin that does not change the API understanding, but actually elevates it to a more common &lsquo;next generation APIs&rsquo; mindset and knowledge that will help on using Vulkan, DirectX12, consoles API and such.<br>
+Still I get it: this is a Vulkan book, so you should focus on Vulkan only!<br>
+Maybe is the fact that, even though I&rsquo;ve used (and written from scratch) Vulkan renderers in the past, I can&rsquo;t help but seeing a pattern in the all APIs.</p>
+<p>At the end rendering is a combination of big concepts, that are present in both Vulkan and DirectX12, like Images, Buffers, Pipelines, Swapchains, Command Buffers and such.<br>
+Once you master these concepts, you can use those on any API.<br>
+Yet with Raptor the usage is a slightly higher level compared to simple Vulkan, but I really feel still now that helps visualizing what is happening even better.</p>
+<p>I get that some areas, like descriptor sets and pipeline management can be too Raptory, but still it would have been a problem to fix anyway, even with simple Vulkan: this bookeeping is that you don&rsquo;t find many times in tutorials around, but what gives you the power to develop complex techniques without writing a ton of work.</p>
+<p>I am (slowly) in the active process of trying to strip even more layering to have a simpler Vulkan, so I am happy about this critique.<br>
+I will learn something new, and maybe next edition, if will ever exists, will be an even more barebone Vulkan code.</p>
+<blockquote>
+<p>Is there a way to write organized Vulkan code that is evern more straight-forward ?</p>
+</blockquote>
+<h2 id="the-joy-of-exploration">The joy of exploration</h2>
+<p>When writing the book, for each chapter we first wrote the code to be working to a good level, then we would write the corresponding chapter and fix/improve the code after.<br>
+This was an interesting way of working, really focused on having something measurable and usable before writing any sentence about a chapter.<br>
+With Marco we decided to put a lot of current topics, like Raytracing, Temporal Anti-Aliasing, Bindless, Mesh shaders and such, so that we could have a go at implementing them all together.<br>
+There are better implementations out there, but I think we delivered a solid demo in the final chapter, that showcases all those together in harmony.<br>
+During the development, I would ask myself multiple times:</p>
+<blockquote>
+<p>Are you enjoying the exploration ?</p>
+</blockquote>
+<p>Often times when navigating uncharted territories, we are stressed out about it. And I was many times, but this question really helped me not reaching the breaking point.<br>
+I still need to enjoy the process, otherwise what is the point of it ?<br>
+It was not always possible, and sometimes you have to grind through it, but still it was great.<br>
+Having Marco as an ally, and a friend, helped a lot.<br>
+When any of the two was stuck, or tired, the other would come in and help.<br>
+We went with the flow, we worked together on some chapters, and singularly on others.<br>
+We talked and I shared also my personal difficulties, as 2022 was a though year: useful, but though.<br>
+And when we were stressed, or tired, we would talk about that.<br>
+Never forget about the human behind the role!<br>
+I really enjoyed working with him!</p>
+<h2 id="rendering-is-about-synergies">Rendering is about synergies</h2>
+<p>The more chapters we wrote, the more I thought how rendering is a beautiful synergy, and that is why re-creating a renderer visuals is hard.<br>
+Every pass in a frame needs to find its space in other passes as well (well not every one of them).<br>
+It is an orchestra of GPU programs, textures, buffers and pipelines that create beautiful pixels.<br>
+Building each chapter with something more really shaped this.<br>
+Again, it could have been done in a better way, yes!<br>
+But the effort and the knowledge at the time, plus the time constraints, are all that matters.</p>
+<p>That is why I am happy with the result: we forged something that, albeit not being perfect, really touched a little of everything you find in a modern renderer. Something you will not find in a tech demo, that shows just a portion of this.<br>
+Once we&rsquo;ve added Clustered Deferred rendering, we added pointlights shadows (with the vertex/mesh shader only output) then we built on top Volumetric Fog, and TAA, and then started exploring indirect lighting with ray tracing&hellip;everything worked together.<br>
+Re-using the clustered light structure to read lights into the Volumetric Fog for example.</p>
+<p>We did it step by step, trying to show the way.<br>
+For each step, the question was always:</p>
+<blockquote>
+<p>What is this technique adding to the scene ?</p>
+</blockquote>
+<p>We always had an eye for performances as well, even though having a 2070 did not help :p<br>
+But still, as you see opening the demo, there is a GPU profiler that gives you a frame timing breakdown and helps keeping track of where the time budget is going.<br>
+This is a game developer mindset: always think about performances.<br>
+To create realtime-usable tech, you need it to be fast, or at least keep the total frame time to an acceptable level!</p>
+<h1 id="final-thoughts">Final thoughts</h1>
+<p>I&rsquo;ve touched a lot of topics in this post, and I will gladly talk more about this stuff.<br>
+One thing is clear: I learnt a lot, both technically and personally, and I will continue to learn more.<br>
+There are other things on the horizon sparked by this book, like a talk about Vulkan at Eurographics 2023, or the idea of doing a &lsquo;write your modern renderer&rsquo; in italian, my native language, and more.<br>
+For sure a lot of feedback and things to evolve and experiment, and I am thankful for that.</p>
+<p>I also wish that we could help streamlining the usage of Vulkan, maybe developing some lightweight library to help developers (like the Vulkan Memory Allocator), but let&rsquo;s see the future.</p>
+<p>For now I enjoy the experience that the book gave me, the many lessons, the knowledge and the thought that I can still improve and learn, while remembering to enjoy the process.</p>

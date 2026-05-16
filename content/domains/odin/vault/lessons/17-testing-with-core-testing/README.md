@@ -7,7 +7,7 @@ to encode expectations. `odin test <pkg>` finds them, runs them in
 parallel, watches memory, and reports failures.
 
 ## Setup
-1. `cd content/domains/odin/vault/content/domains/odin/vault/lessons/17-testing-with-core-testing`
+1. `cd content/domains/odin/vault/lessons/17-testing-with-core-testing`
 2. Create `mathx.odin`:
 
    ```odin

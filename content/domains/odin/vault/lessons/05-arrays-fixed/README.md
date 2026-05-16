@@ -7,7 +7,7 @@ Element-wise math (`+`, `-`, `*`) works on arrays of numeric types — no
 loop required.
 
 ## Setup
-1. `cd content/domains/odin/vault/content/domains/odin/vault/lessons/05-arrays-fixed`
+1. `cd content/domains/odin/vault/lessons/05-arrays-fixed`
 2. Open `main.odin`.
 
 ## Do this

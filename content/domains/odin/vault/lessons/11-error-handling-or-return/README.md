@@ -11,7 +11,7 @@ Two operators sweeten the calling code:
   `(value, err)` expression.
 
 ## Setup
-1. `cd content/domains/odin/vault/content/domains/odin/vault/lessons/11-error-handling-or-return`
+1. `cd content/domains/odin/vault/lessons/11-error-handling-or-return`
 2. Create a sibling file `content/domains/odin/vault/lessons/11-error-handling-or-return/numbers.txt`
    with three lines:
 

@@ -1,0 +1,4 @@
+red_only(200,200)        = 0xFF0000FF
+green_only(450,400)      = 0x00FF00FF
+middle_tie(350,300)      = 0xFF0000FF
+background(0,0)          = 0x101018FF

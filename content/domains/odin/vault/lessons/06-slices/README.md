@@ -7,7 +7,7 @@ array, slice another slice, slice a dynamic array — same type, different
 backing storage.
 
 ## Setup
-1. `cd content/domains/odin/vault/content/domains/odin/vault/lessons/06-slices`
+1. `cd content/domains/odin/vault/lessons/06-slices`
 2. Open `main.odin`.
 
 ## Do this

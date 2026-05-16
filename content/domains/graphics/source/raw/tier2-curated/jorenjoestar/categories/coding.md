@@ -1,0 +1,323 @@
+---
+source_url: https://jorenjoestar.github.io/categories/coding
+source_id: jorenjoestar-bindless
+fetched_at: 2026-05-16T17:31:52.657981+00:00
+fetcher: html_mirror
+sha256: 70bb8a25fbd869f1f0dfc6816c9340f26e306a0f3de3925b5f4f91f61690704a
+---
+
+coding | Gabriel's Virtual Tavern
+
+
+
+
+
+  
+
+
+  
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+  
+  
+    
+  
+
+  
+
+# coding
+
+
+  
+
+  
+
+
+
+
+
+  
+
+  
+  
+  
+    
+
+## [Modern (Bindless) Sprite Batch for Vulkan (and more!)](/post/modern_sprite_batch/)
+
+    
+      
+      The sprites rendered with 1 draw call using the techniques described in this article.Overview Sprite batching is one of the fundamental techniques used in almost all pixel art games (that are lovingly back in town after the first era of 3D), and yet I never found any recent documentation.
+Since the Bindless Age has started old algorithms can be implemented in new ways.
+In this short article I would like to talk about how easy is to manage sprites, including UI, with the bindless model.
+      
+    
+  
+  
+  
+    
+
+## [Vulkan Pills 1: Bindless Textures](/post/vulkan_bindless_texture/)
+
+    
+      
+      Overview Here is a very short article on how to use Vulkan bindless features.
+All the relevant c++ code is into gpu_device_vulkan.cpp and command_buffer.cpp, and you can follow along HYDRA_BINDLESS defines to see what changes.
+THIS IS THE FASTEST ROUTE TO START USING BINDLESS TEXTURES THAT I KNOW OF.
+This means also that is architecturally not optimal but it will serve its purposes!
+There is a great article about the different features used here at arm, check it out first!
+      
+    
+  
+  
+  
+    
+
+## [Gpu Driven Text](/post/gpu_driven_text/gpu_driven_text/)
+
+    
+      
+      Overview Recently on Twitter there was an interesting conversation about GPU-Driven line rendering.
+This reminded me of a system that I use to render values that live only on the GPU, like GPU VFX: it gives you the possibility to output text and values from shaders!
+Normally these values can be mapped and read back into the GPU, but sometimes can be easier to just write them from a shader.
+      
+    
+  
+  
+  
+    
+
+## [Serialization For Games](/post/serialization_for_games/)
+
+    
+      
+      Overview We will go through all the logical steps (and the code!) to write a binary serializer that supports versioning and memory mappability. It is not an automatic process, and it will not contain any data definition schema.
+As use cases, we have:
+ Creation and reading of game resources/assets Game world states (“savegames”) Networking transmission/reception  Not having the schema is a problem, and we will try to go around it in the best way possible.
+      
+    
+  
+  
+  
+    
+
+## [Pixel Art Filtering](/post/pixel_art_filtering/)
+
+    
+      
+      An example of non integer scaling of pixel art.Overview Pixel art is living a beautiful renaissance these last years, with more and more studios embracing its visuals and more artists going back to this unique way of describing visuals in a game.One of the most annoying problem we are seeing, especially since we don’t have all the CRT TVs that ‘apply their filters’, is the pixel ‘shimmering’ happening when scaling or moving a pixel art image with non-integer values.
+      
+    
+  
+  
+  
+    
+
+## [Rendering Astronomic Stars](/post/realistic_stars/)
+
+    
+      
+      Overview Since growing up I’ve always been fascinated by stars, and being exposed to anime like Sainy Seiya and Hokuto No Ken just fueled the passion. My 4th year of high-school had a full year course on ‘geographical astronomy’ - an in depth look at our planet and the stars from a scientific perspective. Many years has passed (20+!) and I’ve never dwelved into these kind of topic.
+Then few years ago, while researching for rendering un Just Cause 4 I stumbled upon a couple of papers about realistic rendering of stars.
+      
+    
+  
+  
+  
+    
+
+## [Improving Productivity in Terminals with Aliases](/post/productivity_terminal/productivity_terminal/)
+
+    
+      
+      After reading the great article by Sarah Drasner on productivity I wanted to share some other improvements that I use in my daily work and personal coding life.I am developing mostly rendering and other game-related code, so my OS is Windows 10.I have a background in using Linux-only for work at the beginning of my career, so bash customization and Vim were too useful to be overlooked!
+For Windows I started using Cmder few years ago, but I should check also the revamped powershell.
+      
+    
+  
+  
+  
+    
+
+## [Augmenting shader languages for modern rendering APIs](/post/shader_augment_for_pipelines/shader_augment_for_pipelines/)
+
+    
+      
+      Overview In the last articles we looked at progressively building tools to move rendering code towards data.We looked on how to create a simple lexer, a simple parser and a code generator.With those we were able to create a very simple language to augment shaders.
+Why that ?
+There are few reasons:
+ Shader languages misses any way of linking multiple programs Shader languages misses any way to define render states CGFX and Microsoft FX are mostly dead Ability to use ANY shader language - and just add the infrastructure Ability to generate permutations without manually creating them  Hydra FX aims to add all the missing features and becoming just an augmentation to ANY shader language.
+      
+    
+  
+  
+  
+    
+
+## [Data Driven Rendering: Pipelines](/post/data_driven_rendering_pipeline/)
+
+    
+      
+      Overview Model used in the demo.Data Driven Rendering Series:
+ https://jorenjoestar.github.io/post/writing_shader_effect_language_1/ https://jorenjoestar.github.io/post/writing_shader_effect_language_2/ https://jorenjoestar.github.io/post/writing_shader_effect_language_3/ https://jorenjoestar.github.io/post/data_driven_rendering_pipeline/  We finally arrived in the Rendering Pipeline realm.Some can write that it is useless, some can hate it.Many have some sort of abstraction for it since ages, and others have to now that new APIs like Vulkan and DX12 have it as an explicit part of their design (finally!).
+After we built a basic Material System in the previous article (https://jorenjoestar.
+      
+    
+  
+  
+  
+    
+
+## [Writing a Shader Effect Language Part 3: Materials](/post/writing_shader_effect_language_3/)
+
+    
+      
+      Overview Data Driven Rendering Series:
+ https://jorenjoestar.github.io/post/writing_shader_effect_language_1/ https://jorenjoestar.github.io/post/writing_shader_effect_language_2/ https://jorenjoestar.github.io/post/writing_shader_effect_language_3/ https://jorenjoestar.github.io/post/data_driven_rendering_pipeline/  In Part 2 of this series we added Resource Layouts and Properties to the HFX language, trying to arrive at a point in which we can describe the rendering of a Shader Effect almost entirely.In this article I would like to explore further adds to HFX, especially a proper Material System to be used in conjunction with the HFX language.
+      
+    
+  
+  
+
+  
+
+
+
+
+
+      
+
+    
+    
+    
+    
+    
+
+    
+    
+    
+      
+      
+      
+      
+
+      
+        
+      
+
+      
+        
+        
+        
+        
+        
+      
+
+      
+      
+      
+      
+    
+
+    
+    
+
+    
+    
+    
+    
+
+    
+    
+    
+    
+
+    
+    
+
+    
+    
+    
+    
+
+    
+    
+    
+    
+    
+
+    
+    
+
+    
+    
+    
+    
+    
+    
+    
+    
+    
+      
+    
+    
+    
+    
+    
+
+    
+
+
+
+
+
+
+  
+  
+    
+
+  
+  
+
+  
+
+  
+    
+      
+        
+
+##### Cite
+
+        
+          ×
+        
+      
+      
+        
+
+```
+
+```
+
+
+      
+      
+        **[Copy](#)
+        **[Download](#)

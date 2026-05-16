@@ -1,8 +1,9 @@
 // lessons-check: per-lesson smoke runner.
 //
-// For every `lessons/NN-slug/` directory, extract the first ```odin code
-// block from README.md, write it to a temp file, run it via `odin run
-// <tmp> -file`, and diff stdout against `expected-output.txt`.
+// For every `content/domains/odin/vault/lessons/NN-slug/` directory,
+// extract the first ```odin code block from README.md, write it to a
+// temp file, run it via `odin run <tmp> -file`, and diff stdout against
+// `expected-output.txt`.
 //
 // Lessons without an `expected-output.txt` are skipped (they're stubs or
 // concept-only). Run from the repo root.
@@ -26,18 +27,20 @@ Result :: struct {
     detail:  string,
 }
 
+LESSONS_DIR :: "content/domains/odin/vault/lessons"
+
 main :: proc() {
-    if !is_dir("lessons") {
-        fmt.eprintln("lessons-check: must run from the repo root (no `lessons/` here)")
+    if !is_dir(LESSONS_DIR) {
+        fmt.eprintfln("lessons-check: must run from the repo root (no `%s` here)", LESSONS_DIR)
         os.exit(1)
     }
 
     filter: string
     if len(os.args) >= 2 do filter = os.args[1]
 
-    entries, err := os.read_directory_by_path("lessons", -1, context.allocator)
+    entries, err := os.read_directory_by_path(LESSONS_DIR, -1, context.allocator)
     if err != nil {
-        fmt.eprintfln("lessons-check: cannot read lessons/: %v", err)
+        fmt.eprintfln("lessons-check: cannot read %s: %v", LESSONS_DIR, err)
         os.exit(1)
     }
     defer os.file_info_slice_delete(entries, context.allocator)
@@ -71,8 +74,8 @@ main :: proc() {
 // ---------- per-lesson ----------
 
 run_one :: proc(slug: string) -> Result {
-    readme_path  := join_path("lessons", slug, "README.md")
-    expected_path := join_path("lessons", slug, "expected-output.txt")
+    readme_path  := join_path(LESSONS_DIR, slug, "README.md")
+    expected_path := join_path(LESSONS_DIR, slug, "expected-output.txt")
 
     if !is_file(expected_path) {
         return Result{slug = strings.clone(slug), status = .Skip,
@@ -103,7 +106,7 @@ run_one :: proc(slug: string) -> Result {
     defer delete(expected)
 
     // Write code to a temp file we can hand to `odin run … -file`.
-    tmp := fmt.tprintf("lessons/%s/.lessons-check.odin", slug)
+    tmp := fmt.tprintf("%s/%s/.lessons-check.odin", LESSONS_DIR, slug)
     if werr := os.write_entire_file(tmp, transmute([]byte)code); werr != nil {
         return Result{slug = strings.clone(slug), status = .RunError,
                       detail = fmt.tprintf("cannot write temp: %v", werr)}

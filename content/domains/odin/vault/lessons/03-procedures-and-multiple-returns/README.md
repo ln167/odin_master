@@ -6,7 +6,7 @@ Odin lets you return more than one value, and lets you *name* return values
 (which doubles as documentation).
 
 ## Setup
-1. `cd content/domains/odin/vault/content/domains/odin/vault/lessons/03-procedures-and-multiple-returns`
+1. `cd content/domains/odin/vault/lessons/03-procedures-and-multiple-returns`
 2. Open `main.odin`.
 
 ## Do this

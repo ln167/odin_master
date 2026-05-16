@@ -6,7 +6,7 @@ Unicode codepoint (`i32`). Slicing a string slices *bytes*, not codepoints,
 which matters the moment you touch non-ASCII text.
 
 ## Setup
-1. `cd content/domains/odin/vault/content/domains/odin/vault/lessons/04-strings-and-runes`
+1. `cd content/domains/odin/vault/lessons/04-strings-and-runes`
 2. Open `main.odin`.
 
 ## Do this

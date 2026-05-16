@@ -6,7 +6,7 @@ storage, grows on `append`, and must be freed (`delete` or `defer delete`).
 Think of it as Odin's `Vec<T>` / `std::vector<T>` / `[]T` (Go).
 
 ## Setup
-1. `cd content/domains/odin/vault/content/domains/odin/vault/lessons/07-dynamic-arrays`
+1. `cd content/domains/odin/vault/lessons/07-dynamic-arrays`
 2. Open `main.odin`.
 
 ## Do this
