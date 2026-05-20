@@ -1,0 +1,16 @@
+// Project-local Zed debug configurations. Mirror dap.lua's codelldb launch.
+// Trigger with <space>oD or the debug panel. Requires CodeLLDB on PATH.
+[
+  {
+    "label": "Odin: debug current (codelldb)",
+    "adapter": "CodeLLDB",
+    "request": "launch",
+    "program": "$ZED_DIRNAME/$ZED_STEM.dbg.exe",
+    "cwd": "$ZED_DIRNAME",
+    "stopOnEntry": false,
+    "build": "Odin: build debug current",
+    "initCommands": [
+      "command script import $ZED_WORKTREE_ROOT/tools/debug/odin_lldb.py"
+    ]
+  }
+]

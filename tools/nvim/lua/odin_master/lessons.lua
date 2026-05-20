@@ -27,18 +27,24 @@ end
 
 local function list_lessons(root)
     local out = {}
-    local lessons_dir = root .. "/content/domains/odin/vault/lessons"
-    local entries = vim.fn.readdir(lessons_dir, function(name)
-        return name:match("^%d%d%-") and 1 or 0
-    end)
-    table.sort(entries)
-    for _, name in ipairs(entries) do
-        local readme = lessons_dir .. "/" .. name .. "/README.md"
-        if vim.fn.filereadable(readme) == 1 then
-            table.insert(out, { slug = name, path = readme })
+    local last_dir
+    for _, domain in ipairs({ "odin", "graphics" }) do
+        local lessons_dir = root .. "/content/domains/" .. domain .. "/vault/lessons"
+        last_dir = lessons_dir
+        if vim.fn.isdirectory(lessons_dir) == 1 then
+            local entries = vim.fn.readdir(lessons_dir, function(name)
+                return name:match("^%d%d") and 1 or 0
+            end)
+            table.sort(entries)
+            for _, name in ipairs(entries) do
+                local readme = lessons_dir .. "/" .. name .. "/README.md"
+                if vim.fn.filereadable(readme) == 1 then
+                    table.insert(out, { slug = domain .. "/" .. name, path = readme })
+                end
+            end
         end
     end
-    return out, lessons_dir
+    return out, last_dir
 end
 
 local function open_lesson(lesson)

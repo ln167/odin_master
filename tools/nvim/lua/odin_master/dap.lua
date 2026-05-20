@@ -1,6 +1,9 @@
--- Optional DAP wiring. Requires nvim-dap + codelldb on PATH. Enable with
--- `require("odin_master").setup({ dap = true })`. After that, `<leader>oD`
--- builds the current file in debug mode and launches a session.
+-- Optional DAP wiring. Requires nvim-dap (+ nvim-dap-ui for the GUI panels)
+-- and codelldb on PATH. Enable with `require("odin_master").setup({ dap = true })`.
+--
+-- `<leader>oD` builds the current .odin file and launches a codelldb session.
+-- `<leader>db` toggles a breakpoint at the cursor (works in any buffer once
+-- nvim-dap is installed).
 local M = {}
 
 function M.setup(_opts)
@@ -33,6 +36,34 @@ function M.setup(_opts)
 			initCommands = printer and { "command script import " .. printer } or {},
 		},
 	}
+
+	-- Convenience keymaps for the DAP stepping workflow. These exist whether
+	-- or not the odin_master prefix-keymaps are enabled, because debugging is
+	-- non-Odin-specific.
+	local map = function(lhs, fn, desc)
+		vim.keymap.set("n", lhs, fn, { desc = desc, silent = true })
+	end
+	map("<leader>db", function() require("dap").toggle_breakpoint() end,         "DAP: toggle breakpoint")
+	map("<leader>dc", function() require("dap").continue() end,                  "DAP: continue / start")
+	map("<leader>di", function() require("dap").step_into() end,                 "DAP: step into")
+	map("<leader>do", function() require("dap").step_over() end,                 "DAP: step over")
+	map("<leader>dO", function() require("dap").step_out() end,                  "DAP: step out")
+	map("<leader>dr", function() require("dap").repl.toggle() end,               "DAP: toggle REPL")
+	map("<leader>dq", function() require("dap").terminate() end,                 "DAP: terminate session")
+	map("<F9>",  function() require("dap").toggle_breakpoint() end,              "DAP: toggle breakpoint")
+	map("<F5>",  function() require("dap").continue() end,                       "DAP: continue / start")
+	map("<F10>", function() require("dap").step_over() end,                      "DAP: step over")
+	map("<F11>", function() require("dap").step_into() end,                      "DAP: step into")
+	map("<F12>", function() require("dap").step_out() end,                       "DAP: step out")
+
+	-- Auto-open nvim-dap-ui on session start / close on exit. No-op if dap-ui
+	-- isn't installed; user just gets the bare dap experience.
+	local ui_ok, dapui = pcall(require, "dapui")
+	if ui_ok then
+		dap.listeners.after.event_initialized["odin_master_dapui"] = function() dapui.open() end
+		dap.listeners.before.event_terminated["odin_master_dapui"] = function() dapui.close() end
+		dap.listeners.before.event_exited["odin_master_dapui"]     = function() dapui.close() end
+	end
 end
 
 -- `<leader>oD` — build the current .odin buffer in debug mode (`-file`),
@@ -52,7 +83,15 @@ function M.launch_current()
 		vim.notify("odin build failed:\n" .. rc, vim.log.levels.ERROR); return
 	end
 	local ok, dap = pcall(require, "dap")
-	if not ok then vim.notify("nvim-dap not installed", vim.log.levels.WARN); return end
+	if not ok then
+		vim.notify(
+			"nvim-dap not installed. Install via your plugin manager:\n" ..
+			"  lazy.nvim:  { 'mfussenegger/nvim-dap' }\n" ..
+			"  packer:     use 'mfussenegger/nvim-dap'\n" ..
+			"Or use <leader>oR for the RAD Debugger (no nvim-dap dependency).",
+			vim.log.levels.WARN
+		); return
+	end
 	dap.run({
 		name = "Launch (current)",
 		type = "codelldb",

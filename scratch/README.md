@@ -17,3 +17,4 @@ Or in LazyVim, with the file open: `<leader>or`.
 Format-on-save still works here (odinfmt). LSP works. The lessons track
 also works, but scratch exists so you don't have to scaffold a lesson
 directory just to test one thing.
+.

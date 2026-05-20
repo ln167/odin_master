@@ -1,0 +1,76 @@
+// Project-local Zed tasks. Mirror the nvim <leader>o* commands.
+// Bound to keys in ~/AppData/Roaming/Zed/keymap.json.
+[
+  {
+    "label": "Odin: run current file",
+    "command": "odin",
+    "args": ["run", "$ZED_FILE", "-file"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "save": "current",
+    "reveal": "always",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "tags": ["odin-run"]
+  },
+  {
+    "label": "Odin: doctor",
+    "command": "just",
+    "args": ["doctor"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "reveal": "always",
+    "use_new_terminal": false
+  },
+  {
+    "label": "Odin: open scratch",
+    // Zed CLI; --add reuses the current window even with cli_default_open_behavior=new_window.
+    "command": "zed",
+    "args": ["--add", "scratch/scratch.odin"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "reveal": "never",
+    "hide": "always"
+  },
+  {
+    "label": "Odin: qmd search (selected text)",
+    // No interactive prompt in Zed tasks. Select the query in the buffer first.
+    // Fallback: opens an empty terminal you can re-type into.
+    "command": "python",
+    "args": ["tools/substrate/search.py", "--bm25", "$ZED_SELECTED_TEXT", "--limit", "10"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "reveal": "always"
+  },
+  {
+    "label": "Odin: scaffold verify test",
+    // Runs the substrate verify scaffolder against the symbol under cursor.
+    // Equivalent to nvim's <leader>oV. Errors if no symbol is selected.
+    "command": "python",
+    "args": ["tools/substrate/verify_scaffold.py", "--file", "$ZED_FILE", "--symbol", "$ZED_SYMBOL"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "reveal": "always"
+  },
+  {
+    "label": "Odin: build debug current",
+    // Standalone build step for debugging. Referenced by debug.json.
+    "command": "odin",
+    "args": [
+      "build", "$ZED_FILE", "-file", "-debug",
+      "-out:$ZED_DIRNAME/$ZED_STEM.dbg.exe"
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "save": "current",
+    "reveal": "always",
+    "hide": "on_success"
+  },
+  {
+    "label": "Odin: launch RAD Debugger (current)",
+    // Build, then launch raddbg.exe (Windows-only). Mirrors raddbg.lua.
+    "command": "cmd",
+    "args": [
+      "/c",
+      "odin build \"$ZED_FILE\" -file -debug \"-out:$ZED_DIRNAME/$ZED_STEM.dbg.exe\" && start \"\" \"$ZED_WORKTREE_ROOT/tools/debug/raddbg/raddbg.exe\" \"$ZED_DIRNAME/$ZED_STEM.dbg.exe\""
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "save": "current",
+    "reveal": "always",
+    "hide": "on_success"
+  }
+]

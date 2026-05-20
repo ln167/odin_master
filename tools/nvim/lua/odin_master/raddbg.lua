@@ -29,7 +29,15 @@ function M.launch_current()
 	if vim.v.shell_error ~= 0 then
 		vim.notify("odin build failed:\n" .. rc, vim.log.levels.ERROR); return
 	end
-	vim.fn.jobstart({ raddbg, out }, { detach = true })
+	-- Windows: `cmd /c start "" raddbg.exe target` is the canonical way to
+	-- launch a GUI app that fully detaches from nvim's process tree. vim.fn.
+	-- jobstart with detach=true spawns the process but the window never gets
+	-- a console session and stays invisible.
+	if vim.fn.has("win32") == 1 then
+		vim.fn.jobstart({ "cmd", "/c", "start", "", raddbg, out }, { detach = true })
+	else
+		vim.fn.jobstart({ raddbg, out }, { detach = true })
+	end
 	vim.notify("raddbg launched against " .. vim.fn.fnamemodify(out, ":t"), vim.log.levels.INFO)
 end
 

@@ -30,6 +30,18 @@ Front door for Odin learning. Lessons live at `content/domains/odin/vault/lesson
 | `<leader>oD` | Build current file in debug mode and start LLDB (codelldb) |
 | `<leader>oR` | Build current file in debug mode and start RAD Debugger (Windows; `just raddbg-install` first) |
 
+### DAP stepping (any buffer once `nvim-dap` is installed)
+
+| Key | Action |
+|-----|--------|
+| `<leader>db` / `<F9>`  | Toggle breakpoint at cursor |
+| `<leader>dc` / `<F5>`  | Continue / start session |
+| `<leader>do` / `<F10>` | Step over |
+| `<leader>di` / `<F11>` | Step into |
+| `<leader>dO` / `<F12>` | Step out |
+| `<leader>dr`           | Toggle DAP REPL |
+| `<leader>dq`           | Terminate session |
+
 ## Tooling
 
 - Configs (formatter + LSP): `odinfmt.json` and `ols.json` at repo root

@@ -71,8 +71,9 @@ imgui-build:
 asm dir:
     @cd {{dir}} && odin build . -build-mode:asm -o:speed
 
+[no-cd]
 asm-file path:
-    @cd $(dirname {{path}}) && odin build $(basename {{path}}) -file -build-mode:asm -o:speed
+    @p="{{replace(path, '\\', '/')}}" && cd "$(dirname "$p")" && odin build "$(basename "$p")" -file -build-mode:asm -o:speed
 
 # ─── Debugger (LLDB with Odin pretty-printers) ────────────────────────────
 # Launches lldb with the slice/string/dynamic-array/map summaries pre-loaded.
@@ -89,6 +90,13 @@ debug-dir dir:
 # raddbg picks Odin programs up natively. Install once, then launch.
 raddbg-install:
     @python tools/debug/install_raddbg.py
+
+# ─── codelldb / lldb fixup (Windows: install missing python310.dll) ──────
+# LLVM's Windows binary doesn't ship the Python DLL liblldb links against,
+# and the Odin install expects liblldb under ~/odin/lldb/bin/. This recipe
+# stitches both together so codelldb/lldb-dap actually work.
+lldb-fixup:
+    @python tools/debug/install_lldb_python.py
 
 raddbg binary:
     @tools/debug/raddbg/raddbg.exe {{binary}}
