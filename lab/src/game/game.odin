@@ -134,5 +134,4 @@ game_hot_reloaded :: proc(mem_ptr: rawptr) {
 
 paint_initial :: proc() {
 	slice.fill(g_mem.pixels, u32(0x202030FF))
-	set_pixel(g_mem.pixels, FB_W, FB_H, 200, 50, 0xFFFFFFFF)
 }

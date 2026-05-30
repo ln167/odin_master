@@ -1,132 +1,223 @@
-# Lesson 19 — search-driven learning
+# Lesson 19 - search-driven learning
 
 ## Concept
-The substrate's `odin-source` collection lives next to your editor —
-the official site, the wiki, `~/odin/dist/core/` & `vendor/`, Karl
-Zylinski's blog, gingerBill's articles, `odin-examples`. When you hit
-something you don't understand, search the local corpus *before*
-opening a browser. It's faster (no round trip), authoritative (the
-collection is curated), and citable (every result prints a path you
-can open).
 
-The habit you're building: stuck → search the corpus → open the file
-at the listed path. Browser tab is the last resort, not the first.
+When you have a question about Odin, you have a chain of cheap lookups
+available before asking another human (or an AI). They are faster than
+asking, more authoritative, and they leave you with a citable path
+instead of someone's paraphrase. This lesson teaches the chain.
 
-## Setup
-1. Verify qmd is on your PATH:
+There is no syntax to learn here. The whole lesson is a habit.
 
-       qmd --version
+---
 
-   You should see `qmd 2.1.0` or similar.
+## Why this matters
 
-2. Confirm the `odin-source` collection is registered:
+Two reasons, one short-term, one long-term.
 
-       qmd collection list
+**Speed.** For ~70% of questions you'll hit on a working day --
+"what does `len()` return for this type", "what's the signature of
+`strings.split`", "is there a built-in for X" -- a local search +
+docs lookup is faster than typing the question into a chat box and
+waiting for a reply. Round-trip latency to a person or an LLM is
+seconds-to-minutes. Round-trip to `qmd query` or a Ctrl-F is
+milliseconds.
 
-   You should see `odin-source` listed alongside any other domains
-   you've added.
+**Retention.** You remember answers you found differently from
+answers you were handed. Reading the actual `core:strings` index and
+seeing `split` next to `split_after` and `split_n` gives you
+peripheral context you'd never get from a single AI reply. That
+context is what makes you *fluent* instead of perpetually
+question-asking.
 
-3. Confirm BM25 search works end-to-end:
+The other thing: the AI well runs dry, and the expert well drains
+fast. The official docs and the language source code don't. You're
+practicing the skill that scales.
 
-       just substrate-search --bm25 "context"
+---
 
-   You should see a numbered list of hits with paths and snippets. If
-   the collection is empty, run `qmd status` to see why.
+## The lookup chain (in order)
 
-## Do this
-Run each query. Read the top result. Open the file at the listed path.
+When you hit a question, walk down this ladder. Stop at the rung that
+answers it.
 
-    just substrate-search --bm25 "context allocator"
-    just substrate-search --bm25 "tagged union"
-    just substrate-search --bm25 "hot reload"
-    just substrate-search --bm25 "or_return"
-    just substrate-search --bm25 "soa struct"
+1. **The compiled index** -- `content/domains/odin/compiled/INDEX.md`
+   is the substrate's curated navigation map, regenerated on every
+   Compile pass. Open it first when you already know roughly *where*
+   the answer lives ("the allocators page", "the hot-reload
+   template"). It's faster than searching.
 
-The first hits these queries on this corpus:
+2. **Local hybrid search** -- `just substrate-search "your question"`
+   runs `qmd query` against the local `odin-source` corpus (official
+   site, wiki, `core/`, `vendor/`, Karl Zylinski's blog, gingerBill,
+   `odin-examples`). Hybrid mode is BM25 + vector + LLM rerank, so it
+   finds pages even when your wording doesn't match the docs'
+   wording. Needs embeddings on disk (`qmd embed` once).
 
-- `context allocator` → the `core:runtime` Context page (lesson 08).
-- `tagged union` → gingerBill's tagged-union write-up (lesson 10).
-- `hot reload` → Karl's reload posts (lesson 18).
-- `or_return` → the error-handling page (lesson 11).
-- `soa struct` → the SOA wiki entry (lesson 12).
+3. **Local BM25 search** -- `just substrate-search --bm25 "exact
+   term"` is keyword-only, no embeddings needed. Faster than hybrid
+   and more precise when you already know the corpus's vocabulary
+   ("context allocator", "or_return", "soa struct"). The right tool
+   when you can name the thing.
 
-Each result is a path, a score, and the matching snippet. The paths
-are clickable in WezTerm (Ctrl-click) and any modern terminal.
+4. **The relevant lesson README** (this curriculum) -- by topic,
+   find the lesson, read its `Concept` and `Reference` sections. The
+   lessons are written for the question you're probably asking; they
+   sit on top of the docs, not next to them.
 
-## Now do this — going hybrid
-BM25 is keyword-only: it ranks pages by exact term frequency. That's
-fast and dependency-free, but it misses anything phrased differently
-from your query. The default `qmd query` mode is **hybrid** — BM25
-plus vector similarity plus an LLM rerank — and finds pages even when
-the words don't line up.
+5. **Odin official overview** (`odin-lang.org/docs/overview/`) --
+   Ctrl-F for the keyword. Authoritative on language semantics:
+   syntax, control flow, operators, attribute decorators, build
+   flags. One long page; the find-in-page is the only navigation you
+   need.
 
-Hybrid needs embeddings on disk. Generate them once:
+6. **Odin core / vendor / base package docs** (`pkg.odin-lang.org/
+   core/PACKAGE`, `pkg.odin-lang.org/vendor/PACKAGE`,
+   `pkg.odin-lang.org/base/builtin`, `pkg.odin-lang.org/base/
+   intrinsics`) -- for any `import "core:X"`, `import "vendor:X"`,
+   built-in proc (`len`, `cap`, `size_of`), or compiler intrinsic
+   (`typeid_of`, `align_of`, `atomic_load`). Read the index first,
+   then jump to the proc.
 
-    qmd embed
+7. **The Odin source itself** -- the substrate mirrors `core/` and
+   `vendor/` under `~/odin/dist/`. For built-in procs whose docs are
+   thin, open the actual `.odin` file. Most of `core:strings`,
+   `core:slice`, and `core:mem` is more readable than the docs
+   summarize.
 
-This walks the collection and writes vectors next to the existing
-BM25 index. It runs entirely on-device and takes about a minute on a
-fresh corpus. Re-run after `qmd ingest` adds new content.
+8. **Search the Odin Discord/Discourse archive** -- historical Q&A.
+   When something feels like "surely someone has hit this", they
+   have, and the answer is sitting in a forum thread. Also: Google
+   with `site:github.com/odin-lang/Odin` to grep the compiler's own
+   source.
 
-Now drop the `--bm25` flag and try queries phrased the way *you*
-think, not the way the docs are written:
+9. **Ask the Odin community or an AI** -- last resort. By the time
+   you've walked 1-8 you can ask a sharper question ("I read X, it
+   says Y, but my code does Z, what am I missing") instead of a
+   vague one ("how does X work").
 
-    just substrate-search "lifecycle of an allocator"
-    just substrate-search "what does the caret mean"
-    just substrate-search "cleanup on early return"
+The point is the *order*. Skipping straight to step 9 trains the
+wrong reflex. Walking 1-3 trains the right one.
 
-`lifecycle` likely doesn't appear in the allocator pages at all —
-they say *scope* and *arena reset*. BM25 returns nothing useful;
-hybrid finds the right pages. Same story for `caret` (the docs say
-*pointer dereference*) and `cleanup on early return` (the docs say
-*defer*).
+---
 
-Use BM25 when you know the exact term. Use hybrid when you don't.
+## Worked examples
 
-## Now break it
-Run:
+Three real questions, with the full lookup chain.
 
-    just substrate-search --bm25 "the variable that holds allocator and logger"
+### Example A: "What does `len()` return for a string?"
 
-Zero useful hits. You're querying in your own voice; the corpus uses
-the word **context**. Refine to:
+1. **Compiled index.** Open `INDEX.md`, look for a strings page or a
+   built-ins page. Strings page is listed -- skim it. If it mentions
+   `len`, you're done.
+2. **BM25.** `just substrate-search --bm25 "len string"`. You should
+   get the official overview's "Strings" section and `core:strings`.
+   The overview will say something like: "len(s) returns the number
+   of bytes in the string, not the number of runes."
+3. **Confirm in source.** If you want to be sure, open
+   `core:unicode/utf8` and find `rune_count_in_string` -- the
+   existence of a separate proc for rune-counting confirms that
+   `len` is byte-count.
+4. **Stop.** Total time: under a minute. You now also know there's a
+   separate `utf8.rune_count_in_string` for the other interpretation,
+   which you wouldn't have learned by asking the AI for `len`.
 
-    just substrate-search --bm25 "context"
+### Example B: "How does `or_return` work when the calling proc has no error return?"
 
-Top result is the runtime page. Lesson: BM25 wants the corpus's
-vocabulary, not yours. When you can't guess the word, that's the
-signal to drop `--bm25` and go hybrid.
+1. **Compiled index.** Look for an error-handling page. Lesson 11
+   (`11-error-handling-or-return/`) is the curriculum's coverage.
+2. **Re-read lesson 11's README.** It explains the rewrite rule
+   (`x := foo() or_return` desugars to "assign and return-the-error
+   on the failure path"). If lesson 11 covered your case, stop.
+3. **Hybrid search.** If lesson 11 didn't cover the case where the
+   caller has no error return: `just substrate-search "or_return in
+   proc with no error return"`. The hybrid search should surface the
+   official overview's error-handling section, which spells out:
+   `or_return` requires the enclosing proc to return a compatible
+   error value. If the caller has none, this is a compile error.
+4. **Confirm with the compiler.** Write a five-line proc with no
+   error return, put `x := foo() or_return` in it, run `odin check`,
+   read the error message. The compiler's error text is the most
+   authoritative answer you'll find.
+5. **Stop.** Total time: two or three minutes. You have a working
+   minimal reproduction you can keep.
 
-Also try:
+### Example C: "Is there a way to iterate a map's keys?"
 
-    just substrate-search --bm25 "core:mem.Tracking_Allocator.bad_free"
+1. **Compiled index.** No specific map page jumps out -- but the
+   overview's "Map type" section is listed. Open it.
+2. **Ctrl-F for "for".** The overview shows `for key, value in m`
+   and `for key in m`. The second form is the answer.
+3. **Cross-check `pkg.odin-lang.org/base/builtin`.** Look for
+   anything map-related (`delete_key`, `cap`, `len`). You'll find
+   them, which tells you what else maps support.
+4. **Stop.** Total time: under a minute. As a bonus, you now know
+   `cap(m)` exists for maps, which most people don't.
 
-Probably zero hits — too specific, no chunk happens to contain that
-exact dotted string. Broaden one term at a time:
-`Tracking_Allocator bad_free` → `tracking allocator leak` until you
-find the page, then read up from there.
+---
 
-## The bigger picture
-Search is one of three layers. Use them in order:
+## Anti-patterns
 
-1. **`content/domains/odin/compiled/INDEX.md`** — the substrate's compiled navigation map (regenerated on every Compile pass).
-   Faster than search when you already know roughly *where* the
-   answer lives ("the allocators page", "the hot-reload template").
-   Open it first for navigation.
-2. **`just substrate-search`** (this lesson) — when you know *what*
-   you're looking for but not *where* it is. BM25 for known terms,
-   hybrid for fuzzy intent.
-3. **The `odin` skill in Claude Code** — for "*why* does X work this
-   way" questions that need synthesis across multiple sources. The
-   skill reads the same corpus you just searched, plus it can run
-   code and reason about tradeoffs.
+Short list of habits that slow you down. Watch yourself for these.
 
-The substrate has a **two-outputs rule**: when you ask a non-trivial
-question and arrive at an answer worth keeping, file the distilled
-version back to `content/domains/odin/compiled/from-query/`. Future-you (and
-future-search) gets a clean canonical answer instead of having to
-re-derive it. The corpus grows by use.
+- **Asking an AI before checking the docs.** Slower than the docs
+  for syntax questions, and the AI sometimes hallucinates Odin
+  syntax that looks plausible (it confuses Odin with Go or Jai).
+  The docs don't lie.
+- **Reading the whole docs page when you only need one section.**
+  The Odin overview is long. Use Ctrl-F. Read the surrounding two
+  paragraphs of the hit. Don't read top-to-bottom unless you're
+  studying for the first time.
+- **Skimming an answer without confirming it.** "The AI said X" and
+  "I read that X" are both worthless until you've run code and
+  watched X happen. Always confirm with a five-line repro before
+  building on the answer.
+- **Searching with your own vocabulary when BM25 wants the corpus's.**
+  If `--bm25 "the variable that holds the allocator"` gets you
+  nothing, the corpus calls that thing `context`. Drop `--bm25`
+  for hybrid mode, or refine your terms.
+- **Asking the same question twice in a week.** If you've looked up
+  the same thing more than once, that's a signal to file the answer
+  to `content/domains/odin/compiled/from-query/` so future-you (and
+  future-search) gets it for free.
 
-End of curriculum — you're done. From here, the reps come from real
-projects, the **break-it** sections of earlier lessons, and the
-search habit you just built.
+---
+
+## Tasks
+
+Open `main.odin`. The file is intentionally minimal -- a single proc
+with no real work. The "tasks" are research questions in the
+comments. For each one, walk the lookup chain. The answer lives in
+your notes (or in your head), not in the program output.
+
+When you're done:
+
+    odin run main.odin -file
+
+It will print one line confirming you ran it. The point isn't the
+output; the point is that you found five answers without asking an
+AI.
+
+---
+
+## Building the muscle
+
+The goal isn't to never ask for help. The goal is to ask *after* the
+cheap lookups have failed, with a sharper question than you'd have
+asked otherwise.
+
+Give yourself a week of practice on the chain. By the end of it
+you'll find that for most questions, walking 1-3 is faster than
+typing the question into a chat box. The AI becomes the synthesis
+tool you reach for when you've already done the cheap reading and
+need help connecting pieces -- which is what it's actually good at.
+
+The substrate has a **two-outputs rule**: when you arrive at an
+answer worth keeping, file the distilled version back to
+`content/domains/odin/compiled/from-query/`. The corpus grows by use.
+Every answer you write down is one your future self doesn't have to
+re-derive, and one the search index can return for you.
+
+End of curriculum. From here, the reps come from real projects, the
+**break-it** sections of earlier lessons, and the search habit you
+just built.

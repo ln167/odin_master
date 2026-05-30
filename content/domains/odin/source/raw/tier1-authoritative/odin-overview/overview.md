@@ -1,9 +1,9 @@
 # Odin overview (seed snippet)
 
-This is a seed file shipped with `odin_master` so the indexer has at least one
-tier-1 document on a fresh clone. Replace or augment via
-`odin-master update odin-overview` or by editing this file directly and running
-`odin-master reindex`.
+This is a seed file shipped with `odin_master` so there is at least one tier-1
+document on a fresh clone. It is a `pasted_text` source — maintain it by editing
+this file directly. To make edits searchable, refresh the qmd index
+(`qmd collection add` / `qmd embed`).
 
 ## Reading a file
 

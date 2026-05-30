@@ -1,6 +1,6 @@
 package game
 
-GRAVITY    : [2]f32 : {0, 980}
+GRAVITY    : [2]f32 : {0, 300}
 DT         : f32    : 1.0 / 60.0
 DAMPING    : f32    : 0.9
 PARTICLE_R : f32    : 2

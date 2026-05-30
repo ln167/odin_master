@@ -23,7 +23,7 @@ Once populated, papers domain will primarily produce:
 ## To populate this domain
 
 1. Add manifest entries with `domain: papers`. Likely needs an `arxiv-pdf` fetcher and `pdf-to-markdown` processor (not implemented in v1).
-2. Run `odin-master update --domain papers`.
+2. Run `just substrate-update papers`.
 3. Compile via this skill (which routes to `knowledge-substrate-core` § Compile).
 
 ## Workflow execution

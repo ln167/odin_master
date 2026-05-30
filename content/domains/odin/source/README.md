@@ -9,7 +9,7 @@ This directory holds the immutable source material for the Odin domain. The LLM 
 
 ## Layout
 
-- `raw/` — upstream-mirrored material, refetched by `odin-master update`
+- `raw/` — upstream-mirrored material, refetched by `just substrate-update`
   - `tier1-authoritative/` — odin-lang.org docs, stdlib source (`core:*`), vendor source (`vendor:*`)
   - `tier2-curated/` — Karl Zylinski, gingerBill, jakubtomsu blogs (handpicked curators)
   - `tier3-community/` — odin-examples repo, community gists
@@ -27,4 +27,4 @@ This directory holds the immutable source material for the Odin domain. The LLM 
 
 ## Adding a new source
 
-See `docs/adding-sources.md` for the manifest schema. New sources go into `manifest.yaml` with `domain: odin` and the appropriate tier; running `odin-master update` fetches them into `raw/`.
+See `docs/adding-sources.md` for the manifest schema. New sources go into `manifest.yaml` with `domain: odin` and the appropriate tier; running `just substrate-update odin` fetches `html_mirror` entries into `raw/`. (`pasted_text`/`local_dir`/`git_clone` entries are populated by hand.)

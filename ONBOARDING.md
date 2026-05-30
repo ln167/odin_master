@@ -179,7 +179,7 @@ The substrate has four LLM-driven workflows (live inside the `knowledge-substrat
 - **`just substrate-promote <path>`** — moves a compiled page to `vault/`, rewrites frontmatter (`frozen: true`, `original_provenance:`), updates INDEX.md and any cross-references. Refuses if `doctor` fails.
 - **`just substrate-test [domain]`** — runs `quality-checks.yaml` (structural + semantic gold-set).
 - **`just substrate-search "<query>" [--bm25]`** — qmd-backed search over indexed sources. Hybrid (BM25 + vector + LLM rerank) by default; `--bm25` for keyword-only. Karpathy's recommended search backend.
-- **`just substrate-update [domain]`** — *deferred for v1.* The fetcher pipeline lived in the deleted `tools/indexer/`. Currently an echo stub. For v1, populate `source/raw/` by hand or migrate from elsewhere.
+- **`just substrate-update [domain]`** — fetches `html_mirror` sources from `content/manifest.yaml` into `source/raw/` (BFS crawl, HTML→markdown, provenance frontmatter). Also `just substrate-fetch-id <id>` / `substrate-refetch-id <id>` for a single entry. Only `html_mirror` is automated; `pasted_text`/`local_dir`/`git_clone` entries are populated by hand.
 - **`just new-domain <name>`** — scaffolds a new empty-shell domain from `templates/domain/`.
 
 ## File conventions

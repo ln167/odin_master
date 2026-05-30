@@ -1,6 +1,6 @@
 # {{name}}
 
-Odin command-line tool, scaffolded from `templates/cli` by `odin-master new cli {{name}}`.
+Odin command-line tool, scaffolded from `templates/cli`.
 
 ## Layout
 - `src/main.odin` — entry point, uses `core:flags` for arg parsing.

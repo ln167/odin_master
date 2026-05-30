@@ -1,0 +1,5 @@
+area = 12.566  variant: Circle{r = 2}
+area = 9.000  variant: Square{side = 3}
+area = 10.000  variant: Triangle{base = 4, height = 5}
+it was a Circle with r=7.0
+none == nil -> true  area: 0

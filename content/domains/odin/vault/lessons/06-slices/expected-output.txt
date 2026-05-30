@@ -1,0 +1,9 @@
+prices: [100, 200, 300, 400, 500, 600]
+all: [100, 200, 300, 400, 500, 600] len: 6
+middle: [200, 300, 400] len: 3
+tail: [400, 500, 600] len: 3
+prices after middle[0] = 999: [100, 999, 300, 400, 500, 600]
+prices after sum_into_first(all): [2899, 999, 300, 400, 500, 600]
+inner: [400, 500]
+prices after inner doubled: [2899, 999, 300, 800, 1000, 600]
+owned: [7, 8, 9, 10]

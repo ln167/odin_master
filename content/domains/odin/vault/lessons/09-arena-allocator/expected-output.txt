@@ -1,0 +1,6 @@
+arena ready, capacity: 65536
+squares: [0, 1, 4, 9, 16, 25, 36, 49]
+after frame 1: offset=159 peak=159
+after free_all: offset=0 peak=159 (peak preserved)
+frame 2: big[0]=99 big[last]=-1 len=1024
+after frame 2: offset=8192 peak=8192

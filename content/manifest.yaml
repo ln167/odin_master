@@ -1,6 +1,9 @@
 # odin_master substrate corpus.
 # Add new sources by following docs/adding-sources.md.
-# Note: the v1 update fetcher pipeline is deferred — manifest is data-only for now.
+# Fetcher pipeline is PARTIAL: only `fetcher: html_mirror` is automated
+# (tools/substrate/fetch.py, via `just substrate-update` / `substrate-fetch-id`
+# / `substrate-refetch-id`). `pasted_text`, `local_dir`, and `git_clone` entries
+# are NOT yet automated — their source/ trees are populated by hand.
 #
 # DO NOT INDEX — out of license / out of license-equivalent:
 #   - Discord transcripts (Odin server)

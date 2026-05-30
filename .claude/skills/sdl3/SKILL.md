@@ -24,7 +24,7 @@ Once populated, sdl3 domain will primarily produce:
 ## To populate this domain
 
 1. Add manifest entries with `domain: sdl3`. Fetchers: `html_mirror` for libsdl.org and Khronos docs; `local_dir` if cloning SDL3 headers.
-2. Run `odin-master update --domain sdl3`.
+2. Run `just substrate-update sdl3`.
 3. Compile via this skill.
 
 ## Workflow execution

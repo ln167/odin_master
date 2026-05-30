@@ -1,6 +1,6 @@
 # {{name}}
 
-Karl Zylinski-style hot-reload Odin project, scaffolded by `odin-master new`.
+Karl Zylinski-style hot-reload Odin project, scaffolded from `templates/game`.
 
 ## Layout
 

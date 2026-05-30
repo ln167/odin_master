@@ -1,0 +1,8 @@
+--- step 1: pre-made libc binding ---
+from the bundled binding
+--- step 2: convert Odin string -> cstring ---
+hello, Ada
+--- step 3: hand-written foreign import ---
+from my own foreign import
+--- step 4: my_strlen round-trip ---
+strlen of abcdef = 6

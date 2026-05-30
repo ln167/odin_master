@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""odin-master promote — move a compiled page into the vault.
+"""promote — move a compiled page into the vault (run via `just substrate-promote`).
 
 Refuses to promote if doctor fails on the file's domain. Rewrites frontmatter to
 the vault schema (frozen: true, promoted_from, original_provenance, etc.),

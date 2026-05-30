@@ -57,7 +57,12 @@ Windows, `write` on POSIX). The compiler doesn't insert hidden malloc.
 ## Find more like this
     just substrate-search --bm25 "hellope" --top 5
 
-## Next: `content/domains/odin/vault/lessons/02-types-and-printing/`
+## Next: `01b-packages-and-imports/`
+
+You wrote `package main` and `import "core:fmt"` without explanation.
+Lesson 01b explains the package system: what `package` declarations
+mean, where `core:` comes from, how to build your own multi-file
+packages, and what `@(private)` does.
 
 
 

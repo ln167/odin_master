@@ -1,76 +1,127 @@
-// Project-local Zed tasks. Mirror the nvim <leader>o* commands.
+// Project-local Zed tasks. Native/fast philosophy:
+//   - Per-task `shell: { "program": "cmd.exe" }` forces cmd (no pwsh profile).
+//     Do NOT pass `args: ["/c"]` — Zed already prepends `/S /C` itself,
+//     and adding more positional args produces `cmd.exe /C /S "<cmd>"`
+//     which fails with `'/S' is not recognized`.
+//   - Each Odin task is a thin .bat wrapper in .zed/scripts/ that reads
+//     Zed-supplied env vars and execs the real binary directly.
+//   - env.ZED_FAST_TASK=1 → if a task ever DOES route through pwsh
+//     (Zed Windows quirk), the profile early-returns before PSReadLine,
+//     keeping latency ~0ms either way.
+//
 // Bound to keys in ~/AppData/Roaming/Zed/keymap.json.
 [
   {
+    "label": "Terminal at file dir",
+    "command": "cmd.exe",
+    "cwd": "$ZED_DIRNAME",
+    "use_new_terminal": true,
+    "reveal": "always",
+    "allow_concurrent_runs": true
+  },
+  {
     "label": "Odin: run current file",
-    "command": "odin",
-    "args": ["run", "$ZED_FILE", "-file"],
+    "command": ".zed\\scripts\\odin-run.bat",
     "cwd": "$ZED_WORKTREE_ROOT",
     "save": "current",
     "reveal": "always",
-    "use_new_terminal": false,
+    "use_new_terminal": true,
     "allow_concurrent_runs": false,
-    "tags": ["odin-run"]
+    "tags": ["odin-run"],
+    "env": { "ZED_FAST_TASK": "1" },
+    "shell": { "program": "cmd.exe" }
+  },
+  {
+    "label": "Odin: build current file",
+    "command": ".zed\\scripts\\odin-build.bat",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "save": "current",
+    "reveal": "always",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false,
+    "tags": ["odin-build"],
+    "env": { "ZED_FAST_TASK": "1" },
+    "shell": { "program": "cmd.exe" }
+  },
+  {
+    "label": "Odin: build package (cwd)",
+    "command": ".zed\\scripts\\odin-build-pkg.bat",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "save": "all",
+    "reveal": "always",
+    "use_new_terminal": true,
+    "env": { "ZED_FAST_TASK": "1" },
+    "shell": { "program": "cmd.exe" }
   },
   {
     "label": "Odin: doctor",
-    "command": "just",
-    "args": ["doctor"],
+    "command": ".zed\\scripts\\odin-doctor.bat",
     "cwd": "$ZED_WORKTREE_ROOT",
     "reveal": "always",
-    "use_new_terminal": false
+    "use_new_terminal": true,
+    "env": { "ZED_FAST_TASK": "1" },
+    "shell": { "program": "cmd.exe" }
   },
   {
     "label": "Odin: open scratch",
-    // Zed CLI; --add reuses the current window even with cli_default_open_behavior=new_window.
-    "command": "zed",
-    "args": ["--add", "scratch/scratch.odin"],
+    "command": "zed --add scratch\\scratch.odin",
     "cwd": "$ZED_WORKTREE_ROOT",
-    "reveal": "never",
-    "hide": "always"
+    "reveal": "on_failure",
+    "use_new_terminal": true,
+    "env": { "ZED_FAST_TASK": "1" },
+    "shell": { "program": "cmd.exe" }
   },
   {
     "label": "Odin: qmd search (selected text)",
-    // No interactive prompt in Zed tasks. Select the query in the buffer first.
-    // Fallback: opens an empty terminal you can re-type into.
-    "command": "python",
-    "args": ["tools/substrate/search.py", "--bm25", "$ZED_SELECTED_TEXT", "--limit", "10"],
+    "command": "C:\\Python314\\python.exe tools\\substrate\\search.py --bm25 \"%ZED_SELECTED_TEXT%\" --limit 10",
     "cwd": "$ZED_WORKTREE_ROOT",
-    "reveal": "always"
+    "reveal": "always",
+    "use_new_terminal": true,
+    "env": { "ZED_FAST_TASK": "1" },
+    "shell": { "program": "cmd.exe" }
   },
   {
     "label": "Odin: scaffold verify test",
-    // Runs the substrate verify scaffolder against the symbol under cursor.
-    // Equivalent to nvim's <leader>oV. Errors if no symbol is selected.
-    "command": "python",
-    "args": ["tools/substrate/verify_scaffold.py", "--file", "$ZED_FILE", "--symbol", "$ZED_SYMBOL"],
+    "command": "C:\\Python314\\python.exe tools\\substrate\\verify_scaffold.py --file \"%ZED_FILE%\" --symbol \"%ZED_SYMBOL%\"",
     "cwd": "$ZED_WORKTREE_ROOT",
-    "reveal": "always"
+    "reveal": "always",
+    "use_new_terminal": true,
+    "env": { "ZED_FAST_TASK": "1" },
+    "shell": { "program": "cmd.exe" }
   },
   {
     "label": "Odin: build debug current",
-    // Standalone build step for debugging. Referenced by debug.json.
-    "command": "odin",
-    "args": [
-      "build", "$ZED_FILE", "-file", "-debug",
-      "-out:$ZED_DIRNAME/$ZED_STEM.dbg.exe"
-    ],
+    "command": ".zed\\scripts\\odin-build-debug.bat",
     "cwd": "$ZED_WORKTREE_ROOT",
     "save": "current",
     "reveal": "always",
-    "hide": "on_success"
+    "hide": "on_success",
+    "use_new_terminal": true,
+    "env": { "ZED_FAST_TASK": "1" },
+    "shell": { "program": "cmd.exe" }
   },
   {
     "label": "Odin: launch RAD Debugger (current)",
-    // Build, then launch raddbg.exe (Windows-only). Mirrors raddbg.lua.
-    "command": "cmd",
-    "args": [
-      "/c",
-      "odin build \"$ZED_FILE\" -file -debug \"-out:$ZED_DIRNAME/$ZED_STEM.dbg.exe\" && start \"\" \"$ZED_WORKTREE_ROOT/tools/debug/raddbg/raddbg.exe\" \"$ZED_DIRNAME/$ZED_STEM.dbg.exe\""
-    ],
+    "command": ".zed\\scripts\\odin-raddbg.bat",
     "cwd": "$ZED_WORKTREE_ROOT",
     "save": "current",
     "reveal": "always",
-    "hide": "on_success"
+    "hide": "on_success",
+    "use_new_terminal": true,
+    "env": { "ZED_FAST_TASK": "1" },
+    "shell": { "program": "cmd.exe" }
+  },
+  {
+    // Opens the currently-focused file in Obsidian via its URI handler.
+    // Works for any path — if the file isn't inside a registered Obsidian
+    // vault, Obsidian will prompt to open it as an external file. No
+    // terminal noise — fires and exits in <50ms.
+    "label": "Markdown: open in Obsidian",
+    "command": "start \"\" \"obsidian://open?path=%ZED_FILE%\"",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "reveal": "never",
+    "hide": "always",
+    "allow_concurrent_runs": true,
+    "shell": { "program": "cmd.exe" }
   }
 ]

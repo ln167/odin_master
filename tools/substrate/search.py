@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""odin-master substrate-search — thin wrapper over qmd.
+"""substrate-search — thin wrapper over qmd (run via `just substrate-search`).
 
 Forwards args to `qmd query` (hybrid: BM25 + vector + LLM rerank) by default,
 or `qmd search` (BM25-only, no LLM/embeddings) with --bm25.

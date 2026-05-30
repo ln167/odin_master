@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""odin-master doctor — mechanical health check for the substrate.
+"""doctor — mechanical health check for the substrate (run via `just doctor`).
 
 Validates: frontmatter completeness, citation resolution, provenance/folder
-parity, INDEX.md freshness, log.md parseability. Optional --provenance-check
-re-hashes sources to flag drift. No LLM. Pass/fail report.
+parity, log.md parseability. Optional --provenance-check re-hashes sources to
+flag drift. No LLM. Pass/fail report.
+
+Note: INDEX.md regeneration/freshness is an LLM Compile-step responsibility and
+is NOT validated here — doctor never reads or stats INDEX.md.
 """
 from __future__ import annotations
 

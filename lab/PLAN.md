@@ -11,7 +11,7 @@
 3. **No abstraction until two pieces duplicate.** Direct, named, no helpers-just-in-case.
 4. **No DLL globals carry state.** SDL handles, particles, anything → `Game_Memory`.
 5. **Comments only when removing them would confuse a future reader.** Carmack rule.
-6. **Cross-platform.** `vendor:sdl3` API only. Build + run on both Windows and Linux at every phase boundary.
+6. **Cross-platform by construction, Windows-verified.** Use `vendor:sdl3` API only (no OS-specific calls) so the code *can* port — but actual build+run verification is Windows-only for now. Don't claim Linux/macOS works until it has been gated there.
 7. **Nothing not on the phase list.** No FPS counter, no input tracking, no audio, no PNGs, no text, no menu, no resize.
 
 ## Phase 1: SDL3 window survives reloads

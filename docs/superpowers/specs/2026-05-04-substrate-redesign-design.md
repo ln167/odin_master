@@ -5,6 +5,16 @@
 - **Supersedes (in part):** `2026-04-19-odin-master-template-design.md`
 - **Implementation plan (next):** `docs/superpowers/plans/2026-05-04-substrate-redesign-plan.md`
 
+> **Reader's note (added 2026-05-29).** This is a brainstorming-phase design doc;
+> **`CLAUDE.md` is the live contract.** Where they differ, trust CLAUDE.md:
+> - Commands are `just <recipe>` (see the root `justfile`), **not** `odin-master <verb>` —
+>   there is no `odin-master` binary. The recipe surface is `just doctor`/`doctor-provenance`,
+>   `substrate-promote`, `substrate-test`, `substrate-update`/`substrate-fetch-id`/`substrate-refetch-id`,
+>   `new-domain`, `substrate-search` (so "odin-master promote" below = `just substrate-promote`).
+> - **qmd is active in v1** (`tools/substrate/search.py`), not deferred.
+> - `odinfmt.json` / `ols.json` live at the **repo root**, not under `content/domains/odin/config/`.
+> - graphics is **populated**, not an empty shell.
+
 ## Goals
 
 Redesign `odin_master` from an Odin-specific reference tool into a **multi-domain personal technical-knowledge substrate**. Adopt Andrej Karpathy's "LLM Wiki" pattern as the foundation, extended with rigor borrowed from gist commenters and the OpenBrain critique.

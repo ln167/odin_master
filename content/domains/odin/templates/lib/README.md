@@ -1,6 +1,6 @@
 # {{name}}
 
-Odin library, scaffolded from `templates/lib` by `odin-master new lib {{name}}`.
+Odin library, scaffolded from `templates/lib`.
 
 ## Layout
 - `src/{{name}}/` — library package; import as `import lib "path/to/{{name}}/src/{{name}}"`.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""odin-master test — substrate regression tests.
+"""test — substrate regression tests (run via `just substrate-test`).
 
 Reads quality-checks.yaml. Structural block runs doctor as a subprocess.
 Semantic block invokes the relevant skill via `claude -p` and asserts that

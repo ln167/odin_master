@@ -108,7 +108,7 @@ raddbg-dir dir:
 # `lab` is the long-running peer to `bench` (perf, one-shot) and `tests`
 # (correctness, one-shot). Single host, hot-reloadable game DLL.
 lab:
-    @cd lab && python build.py hot && ./build/hot_reload/lab
+    @cd lab && python build.py watch
 
 lab-build:
     @cd lab && python build.py hot

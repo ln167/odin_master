@@ -1,0 +1,13 @@
+max(3, 7) = 7
+max(2.5, 1.0) = 2.5
+max("alpha", "bravo") = bravo
+sum(ints) = 10
+sum(floats) = 7
+make_constant_array(5, 3) = [3, 3, 3, 3, 3]
+make_constant_array(3, 3.14) = [3.14, 3.14, 3.14]
+Stack(int) data: [10, 20, 30]
+popped from Stack(int): 30
+Stack(int) data after pop: [10, 20]
+Stack(string) data: ["hello", "world"]
+popped from Stack(string): world
+Stack(string) data after pop: ["hello"]

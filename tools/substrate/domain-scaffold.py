@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""odin-master new domain <name> — scaffold a new empty-shell domain.
+"""just new-domain <name> — scaffold a new empty-shell domain.
 
 Copies templates/domain/ into content/domains/<name>/, creates a stub skill at
 .claude/skills/<name>/SKILL.md, and appends a commented manifest entry hint.
@@ -66,7 +66,7 @@ description: Use when the user asks about {domain}-related questions. This domai
 
 # {domain.capitalize()} — Domain Skill (empty shell)
 
-This domain is an **empty shell**. Scaffolded {scaffold_date} via `odin-master new domain {domain}`.
+This domain is an **empty shell**. Scaffolded {scaffold_date} via `just new-domain {domain}`.
 
 ## Domain pointer
 
@@ -77,7 +77,7 @@ This domain is an **empty shell**. Scaffolded {scaffold_date} via `odin-master n
 
 1. Edit `content/domains/{domain}/source/README.md` to fill in tier semantics + description.
 2. Add manifest entries with `domain: {domain}` (see `content/manifest.yaml`).
-3. Run `odin-master update --domain {domain}`.
+3. Run `just substrate-update {domain}`.
 4. Compile via this skill (which routes to `knowledge-substrate-core`).
 """,
         encoding="utf-8",
@@ -105,7 +105,7 @@ This domain is an **empty shell**. Scaffolded {scaffold_date} via `odin-master n
     print("Next steps:")
     print(f"  1. Edit content/domains/{domain}/source/README.md")
     print(f"  2. Add real manifest entries with `domain: {domain}`")
-    print(f"  3. Run: odin-master update --domain {domain}")
+    print(f"  3. Run: just substrate-update {domain}")
     return 0
 
 

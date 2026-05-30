@@ -109,6 +109,31 @@ Our project picks the consistent answer.
 
 ---
 
+## Considered alternatives
+
+### Clay ([nicbarker/clay](https://github.com/nicbarker/clay), Odin bindings under `bindings/odin`)
+
+Evaluated 2026-05-29. **Verdict: not now; bookmark for a polished game front-end.**
+
+Clay looks like an ImGui competitor because both are immediate-mode, but they sit at **different layers**:
+
+| | Dear ImGui (chosen) | Clay |
+|---|---|---|
+| What it is | Full IMGUI **toolkit** | IMGUI **layout engine only** (~4.8k-LOC single header, zlib) |
+| Widgets | ✅ buttons, sliders, text input, trees, tables, docking | ❌ none — you build every widget |
+| Draws pixels | ✅ ships backends incl. `sdlgpu3` | ❌ outputs a `RenderCommandArray` (rects/text/borders/images); **you** render it |
+| Input | ✅ owns mouse/keyboard | ❌ you feed pointer state; it gives `Hovered()`, you wire clicks |
+| Text | ✅ font atlas + rendering | ❌ you supply a measure-text fn and draw glyphs |
+| Layout | stacking + a few helpers (its weak spot) | **flexbox-like: wrapping, scroll containers, aspect-ratio, responsive** (its whole point) |
+
+**Why not Clay now:** our UI need is debug overlay + live-param sliders + state display + eventual HUD/menus (see "The problem" above). Dear ImGui covers all of that *today* — widgets + an SDL3-GPU backend already wired through Capati/odin-imgui. Choosing Clay would mean hand-building every slider/button/text-field **and** a renderer for Clay's command output — strictly more work for a dev-tools UI where ImGui's look is exactly right. That is the "months of yak-shaving that doesn't advance the engine" this doc already rejects.
+
+**The wrinkle:** Clay's "I hand you boxes and text positions, you render them" model actually fits this engine's foundations-first / no-batteries / write-everything-above-the-framebuffer ethos *better* than ImGui (the one batteries-included exception we accept). But for a solo learning project ImGui's pragmatism wins now; Clay's purity only pays off if a polished front-end becomes a real goal.
+
+**When to revisit:** only if we later want a **shipping, art-directed HUD/menu** with genuine responsive layout (text wrapping, scroll panels, aspect-ratio scaling), drawn through *our own* SDL3-GPU renderer in our own visual style — i.e. exactly ImGui's stated weakness. Even then, Clay would sit **alongside** ImGui (ImGui stays the dev-tools layer; Clay becomes the game-facing layout layer), never replacing it. Caveat: the Odin bindings are reasonably complete (every C macro has a `clay.UI()` equivalent) but ship **no** official Odin renderer example — we'd write the SDL3-GPU renderer for Clay's output ourselves.
+
+---
+
 ## What lesson 09b covers
 
 Concept lesson (no GPU prerequisite). After lesson 09 (CPU rasterizer is done, you can draw shaded textured triangles) and before lesson 10 (SDL3-GPU intro), you:

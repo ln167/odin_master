@@ -22,15 +22,15 @@ Every compiled page has `provenance: from-ingest` or `provenance: from-query` in
 
 ### Two-outputs-per-task rule
 
-Non-trivial queries produce both an answer (in chat) and a wiki update (page in `compiled/from-query/`). Trivial queries (single-fact lookups, signature recall) skip both — no log entry, no page.
+Non-trivial queries produce both an answer (in chat) and a wiki update (page in `compiled/from-query/`). Trivial queries (single-fact lookups, signature recall) skip both — no log entry, no page. This is an **LLM-workflow discipline**: no shell tool verifies that a `from-query` page was actually written.
 
 ### Validator-at-compile-time
 
-Compile rejects pages with malformed frontmatter, broken citations, missing required sections, or empty TLDRs. The LLM retries.
+Compile and its validator are **LLM skill-workflow steps** — there is no compile/validator binary. Compile rejects pages with malformed frontmatter, broken citations, missing required sections, or empty TLDRs, and the LLM retries. The mechanical backstop is `doctor` (a post-hoc linter), which enforces a *subset*: frontmatter schema, provenance/folder parity, `source_ids` existence, Sources-section parity, wikilink resolution, and `log.md` format. `doctor` does **not** check TLDR length or per-template required sections.
 
 ### INDEX.md is regenerated every Compile
 
-Mandatory. The skill workflow refuses to mark Compile complete without it.
+Mandatory — but enforced by **LLM skill-workflow discipline only**. No shell tool regenerates or staleness-checks INDEX.md: `doctor` does not look at INDEX.md, and `promote` only patches a single link in place (leaving a clean rebuild to the next Compile).
 
 ### `log.md` format
 
@@ -48,12 +48,12 @@ In compiled and vault page bodies, `[[wikilinks]]` always use **repo-relative pa
 
 - Skill orchestrator: `.claude/skills/knowledge-substrate-core/SKILL.md`
 - Per-domain skills: `.claude/skills/{odin,papers,sdl3,engines,graphics}/SKILL.md`
-- Shell tools: `tools/substrate/{doctor,promote,test,domain-scaffold}.py`
+- Shell tools (`tools/substrate/*.py`): `doctor.py` (lint + provenance/folder parity), `promote.py` (vault promotion), `test.py` (regression harness), `domain-scaffold.py` (new-domain generator), `fetch.py` (Ingest engine; run via `substrate-update`), `search.py` (qmd wrapper), `verify_all.py` (executable-verification runner)
 - Page templates: `templates/page-types/*.template.md`
 - Manifest: `content/manifest.yaml`
 - Quality checks: `content/quality-checks.yaml`
 
-User-facing commands are `just` recipes. The justfile dispatches to `python tools/substrate/<tool>.py`. There is no `odin-master` CLI binary in v1 — the spec's "odin-master <verb>" notation is shorthand for "the substrate command" (currently invoked as `just <verb>` or `python tools/substrate/<verb>.py`).
+User-facing commands are `just` recipes (see the root `justfile`), which dispatch to `python tools/substrate/<tool>.py`. There is no `odin-master` CLI binary in v1 — the spec's "odin-master <verb>" notation is shorthand. **Recipe names are not 1:1 with the script filenames.** The real substrate recipes are: `just doctor [domain]` and `just doctor-provenance [domain]` (→ doctor.py), `just substrate-promote <path>` (→ promote.py), `just substrate-test [domain]` (→ test.py), `just substrate-update [domain]` / `just substrate-fetch-id <id>` / `just substrate-refetch-id <id>` (→ fetch.py, the Ingest engine), `just new-domain <name>` (→ domain-scaffold.py), `just substrate-search "<query>" [--bm25]` (→ search.py), and `just verify` / `just verify-all` (executable verifications).
 
 ## Git / VCS policy
 
@@ -67,9 +67,15 @@ Search backend is **qmd** (Karpathy's recommended local-only hybrid search). Act
 - From the substrate: `just substrate-search "<query>"` (hybrid) or `just substrate-search "<query>" --bm25` (BM25-only, no embeddings needed). The wrapper at `tools/substrate/search.py` invokes qmd directly via node on Windows (the npm shim's `/bin/sh` shebang doesn't work from cmd.exe).
 - Workflow: INDEX.md is still the primary navigator. qmd is the fallback when INDEX doesn't reveal the right page or when you need to find a phrase across raw sources.
 - Do not propose Ollama, custom embeddings, or DIY vector infrastructure — qmd handles all of it on-device.
+- **Index setup is manual and not wired into any recipe.** `search.py` only *queries* qmd; nothing in the substrate creates or refreshes the index. Run `qmd collection add <path> --name <name>` once, then `qmd embed` before using hybrid mode. Without `qmd embed`, only `--bm25` works.
 
 The old `odin-search` BM25 CLI has been deleted; qmd replaces it.
 
+## Testing & verification
+
+- `just substrate-test [domain]` — regression harness: `doctor` (structural) plus a **semantic gold-set** (`content/quality-checks.yaml` `semantic:` block) that shells out to the `claude` CLI and makes real model calls. It is slow and non-hermetic (needs `claude` on PATH), not a CI-style check. The `quality-checks.yaml` `structural:` list is descriptive only — the code hardwires structural checks to `doctor`.
+- `just verify <name>` / `just verify-all` — **executable verification**: each `tests/<name>/` is a reference Odin program whose deterministic stdout fingerprint is diffed against `expected.txt` (`tools/substrate/verify_all.py` runs them all). Background: `docs/superpowers/specs/2026-05-08-executable-verification-idea.md`.
+
 ## Initial scope (v1)
 
-The substrate's primary intent is to support learning Odin + game programming + graphics programming. Odin is populated; papers/sdl3/engines/graphics are empty shells reserved for that learning extending. Don't over-build for hypothetical future domains.
+The substrate's primary intent is to support learning Odin + game programming + graphics programming. Odin and graphics are populated; papers/sdl3/engines are empty shells reserved for extending into those areas. Don't over-build for hypothetical future domains.

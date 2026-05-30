@@ -1,0 +1,6 @@
+[INFO ] --- [<timestamp>] Starting test runner with 4 threads. Set with -define:ODIN_TEST_THREADS=n.
+[INFO ] --- [<timestamp>] The random seed sent to every test is: <seed>. Set with -define:ODIN_TEST_RANDOM_SEED=n.
+[INFO ] --- [<timestamp>] Memory tracking is enabled. Tests will log their memory usage if there's an issue.
+[INFO ] --- [<timestamp>] < Final Mem/ Total Mem> <  Peak Mem> (#Free/Alloc) :: [package.test_name]
+
+Finished 4 tests in <duration>. All tests were successful.

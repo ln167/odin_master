@@ -1,0 +1,10 @@
+a: Particle{pos = [1, 2, 3], vel = [0, -10, 0], mass = 1.5}
+b: Particle{pos = [0, 0, 0], vel = [0, 0, 0], mass = 0}
+size_of(Particle):        28
+size_of([N]Particle):     112
+size_of(#soa [N]Particle): 112
+aos after step: [Particle{pos = [0.5, 0, 0], vel = [1, 0, 0], mass = 1}, Particle{pos = [1.5, 0, 0], vel = [1, 0, 0], mass = 1}, Particle{pos = [2.5, 0, 0], vel = [1, 0, 0], mass = 1}, Particle{pos = [3.5, 0, 0], vel = [1, 0, 0], mass = 1}]
+soa after step: [Particle{pos = [0.5, 0, 0], vel = [1, 0, 0], mass = 1}, Particle{pos = [1.5, 0, 0], vel = [1, 0, 0], mass = 1}, Particle{pos = [2.5, 0, 0], vel = [1, 0, 0], mass = 1}, Particle{pos = [3.5, 0, 0], vel = [1, 0, 0], mass = 1}]
+soa.pos column:  [[0.5, 0, 0], [1.5, 0, 0], [2.5, 0, 0], [3.5, 0, 0]]
+soa.mass column: [1, 1, 1, 1]
+addresses agree

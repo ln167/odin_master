@@ -1,0 +1,7 @@
+scores: [10, 20, 30, 40] len: 4 cap: 8
+  scores[0] = 10
+  scores[1] = 20
+  scores[2] = 30
+  scores[3] = 40
+sum: 100
+big: [0, 1, 4, 9, 16] len: 5 cap: 1024

@@ -23,7 +23,7 @@ Once populated, engines domain will primarily produce:
 ## To populate this domain
 
 1. Add manifest entries with `domain: engines`. Fetchers: `git_clone` for engine repos (godot, bevy), `html_mirror` for engine docs.
-2. Run `odin-master update --domain engines`.
+2. Run `just substrate-update engines`.
 3. Compile via this skill.
 
 ## Workflow execution

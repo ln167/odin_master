@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""odin-master fetch — html_mirror fetcher with BFS crawl.
+"""fetch — html_mirror fetcher with BFS crawl (run via `just substrate-update`).
 
 Walks content/manifest.yaml, finds entries with fetcher: html_mirror, fetches
 each URL, converts HTML to markdown, writes to

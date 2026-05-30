@@ -1,0 +1,10 @@
+p1=1 m1=1
+rule: p1 = m1 would not compile (distinct types do not assign across)
+player 1 takes 10 damage
+rule: damage_player(m1, 10) would not compile (Monster_Id is not Player_Id)
+distance=100m time=4s
+velocity (raw f32): 25 m/s
+rule: distance - time would not compile (Meters and Seconds are distinct)
+serialize p1 as raw int: 1
+good="hello" ok=true
+bad="" ok=false

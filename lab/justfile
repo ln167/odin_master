@@ -1,12 +1,14 @@
 set windows-shell := ["cmd.exe", "/c"]
 
-default: build
+default: watch
 
+# build + run host + auto-rebuild on every src/ save (the normal dev loop)
+watch:
+    python build.py watch
+
+# one-shot DLL/host build, no watch
 build:
     python build.py hot
-
-run: build
-    ./build/hot_reload/lab
 
 clean:
     python build.py clean

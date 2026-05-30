@@ -12,7 +12,7 @@ Front door for Odin learning. Lessons live at `content/domains/odin/vault/lesson
 2. **Pre-flight** — `just verify-all` runs every reference solution under `tests/` and confirms the curriculum scaffolding still builds. Worth doing after a pull or before sinking time into a fresh lesson.
 3. **Type the code** — typing is the rep, not pasting. Each lesson tells you what to type and what you should see.
 4. **Break it** — every lesson ends with "Now break it." Read the compiler's error message before fixing.
-5. **Search the corpus** — `<leader>oq` opens a qmd-backed search prompt. Hits open in a terminal split with file paths + line numbers. Non-trivial answers get filed back to `content/domains/<d>/compiled/from-query/`, so the act of asking grows the corpus you can search later. For deeper "why does X work this way?" questions ask the odin skill in Claude Code; it cites `compiled/` and `source/raw/`.
+5. **Get unstuck** — in practice: official Odin docs for facts, and ask an LLM for conceptual "why does X work this way?" questions (the odin skill in Claude Code cites `compiled/` and `source/raw/`). A qmd-backed corpus search exists (`<leader>oq`) but is **deprioritized** — it hasn't proven useful day-to-day, so don't rely on it.
 6. **Scratch a thought** — `<leader>op` opens `scratch/scratch.odin`. Run with `<leader>or`.
 
 ## Hotkey map (default prefix `<leader>o`)
@@ -20,7 +20,7 @@ Front door for Odin learning. Lessons live at `content/domains/odin/vault/lesson
 | Key | Action |
 |-----|--------|
 | `<leader>ol` | Toggle OLS (LSP) on/off — practice without crutches |
-| `<leader>oq` | qmd search over the corpus (replaces former `<leader>os`) |
+| `<leader>oq` | qmd search over the corpus (deprioritized — see daily-loop step 5) |
 | `<leader>or` | Run the current `.odin` file |
 | `<leader>oh` | Pick a lesson |
 | `<leader>oH` | Open the next lesson |
@@ -50,4 +50,4 @@ Front door for Odin learning. Lessons live at `content/domains/odin/vault/lesson
 
 ## What changed from v0
 
-`odin-search` is gone, replaced by [qmd](https://github.com/tobi/qmd) (Karpathy's recommended search backend). For deep "why does X work this way?" questions, ask the odin skill in Claude Code; it cites compiled wiki + raw sources and files non-trivial answers to `compiled/from-query/`.
+`odin-search` is gone, replaced by [qmd](https://github.com/tobi/qmd) as the wired search backend — though qmd/search is currently **deprioritized** (hasn't proven useful in practice; see daily-loop step 5). For "why does X work this way?" questions, ask the odin skill in Claude Code; it cites compiled wiki + raw sources.

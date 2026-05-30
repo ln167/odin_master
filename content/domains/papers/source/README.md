@@ -18,5 +18,5 @@ This domain is an **empty shell**. Reserved for ingestion of research papers (pe
 ## To populate
 
 1. Add manifest entries with `domain: papers`. The `arxiv-pdf` fetcher and `pdf-to-markdown` processor will likely need to be implemented at that point (see spec § Multi-domain pattern).
-2. Run `odin-master update --domain papers`.
+2. Run `just substrate-update papers`. (Note: papers would likely use an `arxiv-pdf` fetcher / `pdf-to-markdown` processor that is not implemented yet; only `html_mirror` is automated.)
 3. Compile via the `papers` skill.

@@ -18,5 +18,5 @@ This domain is an **empty shell**. Reserved for ingestion of SDL3 documentation,
 ## To populate
 
 1. Add manifest entries with `domain: sdl3`. Fetchers: `html_mirror` for libsdl.org/khronos.org docs, `local_dir` if cloning SDL3 headers locally.
-2. Run `odin-master update --domain sdl3`.
+2. Run `just substrate-update sdl3`. (Only `html_mirror` entries are fetched automatically; `local_dir` clones are populated by hand.)
 3. Compile via the `sdl3` skill.

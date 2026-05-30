@@ -1,0 +1,16 @@
+0 Fire
+1 Ice
+2 Lightning
+3 Physical
+Fire is hot
+Ice is cold
+Lightning is fast
+Physical is blunt
+Fire resistant?      true
+Ice resistant?       true
+Lightning resistant? false
+Physical resistant?  false
+a | b = Element{Fire, Ice, Physical}
+a & b = Element{Fire}
+a - b = Element{Ice}
+Can open door? true

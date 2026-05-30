@@ -1,6 +1,6 @@
 # lab
 
-Hot-reload host + game DLL. Phase 0: stdout only. SDL3 window arrives in Phase 1.
+Hot-reload host + game DLL. Phases 0–4 done (Windows-verified): hot reload, SDL3 window surviving reloads, CPU framebuffer, software rasterizer (Bresenham + filled rect), one Verlet particle that falls and bounces.
 
 ## What this is (and is not)
 
@@ -24,25 +24,23 @@ hot-reload pattern in `../content/domains/odin/vault/lessons/18-hot-reload-tour/
 From the substrate root:
 
 ```sh
-just lab          # build DLL + start host
-just lab-build    # rebuild DLL only (host auto-reloads)
+just lab          # build + run host + auto-rebuild on every src/ save (the dev loop)
+just lab-build    # one-shot DLL/host build, no watch
 just lab-clean    # wipe build/
 ```
 
-From inside `lab/`, two terminals:
+`just lab` (= `python build.py watch`) is the normal loop: **one terminal.** It
+builds, launches the host, then watches `src/` and rebuilds automatically every
+time you save. Edit anything in `src/game/`, hit save, and the host picks up the
+new DLL within ~16 ms — no second terminal, no manual rebuild command.
+`Game_Memory` survives the swap; `g_mem.counter` keeps ticking through reloads,
+proving the swap is non-destructive.
 
-```sh
-# Terminal 1 (run once):
-python build.py hot
-./build/hot_reload/lab[.exe]
+Stop with Ctrl+C (or close the window). A `Game_Memory` struct-shape change still
+needs a restart — the host refuses an `api_version` mismatch rather than corrupt
+state; close and re-run `just lab`.
 
-# Terminal 2 (every save):
-python build.py hot
-```
-
-Edit anything in `src/game/`, run `python build.py hot`, the host picks up the
-new DLL within ~16 ms. `Game_Memory` survives the swap; `g_mem.counter` keeps
-ticking through reloads, proving the swap is non-destructive.
+`build.py hot` (one-shot, no watch) still exists for scripted/CI use.
 
 ## Layout
 
@@ -52,7 +50,7 @@ src/
   game/
     game.odin            DLL exports (game_init, game_update, ...)
     game_memory.odin     Game_Memory struct + g_mem
-build.py                 wraps `odin build` (hot / clean only)
+build.py                 odin build wrapper: watch (default loop) / hot / clean
 justfile                 same recipes via `just`
 ```
 
@@ -82,13 +80,14 @@ justfile                 same recipes via `just`
 
 Deliberately deferred:
 
-- **No SDL3, no graphics, no window.** Lands in Phase 1. SDL3 init will live
-  in the DLL (`game_init_window`, exported), matching Karl's pattern. The
-  window survives reloads regardless of where init lives, because `init_window`
-  is called once at startup and never re-called on reload.
+- **SDL3 window + framebuffer + software rasterizer + one Verlet particle: DONE**
+  (Phases 1–4, Windows-verified — see `PLAN.md` and `HANDOFF_FROM_WINDOWS.md`).
+  SDL init lives in the DLL (`sdl.Init` in `game_init_window`; window/renderer/
+  texture in `game_init`), matching Karl's pattern, so the window survives reloads.
 - **No `force_reload` / `force_restart` exports.** Add only when needed.
-- **No automatic file watcher.** Two-terminal manual rebuild is fine for now.
-  Add `watchexec` if it feels slow.
+- **File watcher: DONE** (`build.py watch`, `just lab`). Pure-stdlib mtime poll
+  over `src/**/*.odin` every 0.25s — no `watchexec` dependency. Rebuilds on save;
+  a failed build prints the error and waits for the next save (doesn't re-fire).
 - **No GPU.** Software rasterizer through Phase 8+ at least. PIVOT.md
   "Building Principles" explains why.
 - **No `wait_writable` retry loop.** The mtime-poll loop self-recovers if the
@@ -98,9 +97,11 @@ Deliberately deferred:
 
 Known issues to fix when they next bite:
 
-- **`api_version` mismatch check missing.** Required *before* the first time
-  `Game_Memory` changes shape between reloads (Phase 2 candidate). Without it,
-  a layout-change reload silently corrupts state.
+- **`api_version` mismatch guard: DONE.** `game_api_version` (currently
+  `API_VERSION :: 4`) is exported and the host compares it on every reload; a
+  shape change skips the swap and asks for a restart instead of corrupting
+  `Game_Memory`. Still missing: *migration functions* to preserve state across a
+  shape change — for now a `Game_Memory` field add/remove just means restart.
 - **No Spall instrumentation in lab/ yet.** Shared
   `tools/domains/odin/odin_lib/instrument/` is ready. Wire when there's a real
   frame-time question to answer.

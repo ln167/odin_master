@@ -1,4 +1,4 @@
-# odin-master quality-checks — substrate regression tests.
+# substrate quality-checks — regression tests.
 # Run via `just substrate-test` (or `python tools/substrate/test.py`).
 #
 # - `structural` checks are mechanical (run via doctor). No LLM. Fast.
