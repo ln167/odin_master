@@ -1,0 +1,11 @@
+- Odin can't do side affects without pointers
+    - Pointer you explicitly use with primitive types_(int, etc)
+    - Pointer-bearing types []T slice, [dynamic]T, map, data behind string
+
+- Strings are not arrays of chars
+
+- 
+
+    
+
+

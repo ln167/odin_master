@@ -6,7 +6,7 @@ import "core:os"
 import "core:slice"
 import sdl "vendor:sdl3"
 
-API_VERSION :: 4
+API_VERSION :: 5
 
 @(export)
 game_api_version :: proc() -> int {
@@ -41,8 +41,8 @@ game_init :: proc() {
 		return
 	}
 	g_mem.pixels = make([]u32, FB_W * FB_H)
-	g_mem.particle.pos      = {400, 100}
-	g_mem.particle.pos_prev = {400, 100}
+	g_mem.particle = {PARTICLE_START, PARTICLE_START}
+	bind_defaults()
 	paint_initial()
 	fmt.printfln("[lab] init: window=%p renderer=%p texture=%p pixels=%d", g_mem.window, g_mem.renderer, g_mem.texture, len(g_mem.pixels))
 }
@@ -51,12 +51,20 @@ game_init :: proc() {
 game_update :: proc() -> bool {
 	ev: sdl.Event
 	for sdl.PollEvent(&ev) {
-		if ev.type == .QUIT {
+		#partial switch ev.type {
+		case .QUIT:
 			g_mem.quit = true
+		case .KEY_DOWN:
+			if !ev.key.repeat {
+				handle_key(ev.key.scancode)
+			}
 		}
 	}
 	slice.fill(g_mem.pixels, u32(0x202030FF))
-	step_particle(&g_mem.particle)
+	if !g_mem.paused || g_mem.step {
+		step_particle(&g_mem.particle)
+		g_mem.step = false
+	}
 	if g_mem.frame % 60 == 0 {
 		fmt.printfln("[lab] frame=%d particle.y=%.2f", g_mem.frame, g_mem.particle.pos.y)
 	}
@@ -97,6 +105,7 @@ game_shutdown :: proc() {
 		}
 	}
 	delete(g_mem.pixels)
+	delete(g_mem.bindings)
 	if g_mem.texture != nil {
 		sdl.DestroyTexture(g_mem.texture)
 	}
