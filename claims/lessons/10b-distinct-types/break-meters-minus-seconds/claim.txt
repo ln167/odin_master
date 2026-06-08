@@ -1,0 +1,1 @@
+fails main.odin Mismatched types in binary expression 'distance - time' : 'Meters' vs 'Seconds'

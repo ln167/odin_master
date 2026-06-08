@@ -31,14 +31,17 @@ import "core:c/libc"
 //
 //     @(default_calling_convention="c")
 //     foreign my_libc {
-//         my_puts   :: proc(s: cstring) -> i32  ---
-//         my_strlen :: proc(s: cstring) -> uint ---
+//         @(link_name="puts")   my_puts   :: proc(s: cstring) -> i32  ---
+//         @(link_name="strlen") my_strlen :: proc(s: cstring) -> uint ---
 //     }
 //
 // Notice we renamed them `my_puts` and `my_strlen` so they don't
 // collide with `libc.puts` and `libc.strlen` from the core import
-// above. This is also a useful technique in real bindings when a C
-// library uses names that clash with Odin's standard library.
+// above -- a useful technique when a C library's names clash with
+// Odin's standard library. IMPORTANT: renaming the Odin identifier
+// also changes the *link name*, so each proc needs `@(link_name="...")`
+// naming the real C symbol. Omit it and the linker hunts for `my_puts`
+// (which nothing exports) and fails with an unresolved-external error.
 
 // TODO: paste the `when ODIN_OS == ...` block here for step 3.
 

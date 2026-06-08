@@ -1,0 +1,21 @@
+after inner block, x = 4
+after defers
+--- timed_load start ---
+normal success path
+--- timed_load end ---
+--- iteration_demo start ---
+  iter 0: top of body
+  iter 0: middle of body
+  iter 0: deferred print
+  iter 1: top of body
+  iter 1: middle of body
+  iter 1: deferred print
+  iter 2: top of body
+  iter 2: middle of body
+  iter 2: deferred print
+--- iteration_demo end ---
+y at defer-fire time = 99
+defer 3
+defer 2
+defer 1
+outer x = 234

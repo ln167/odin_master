@@ -36,7 +36,7 @@ Destruction in a voxel world is three operations composed:
    brickmap representation of its voxels gets handed to the physics
    layer.
 
-This is the architectural thesis of `../projects/ultimate-flat/PIVOT.md`:
+This is the architectural thesis of `from_old_repo_references/PIVOT.md`:
 the brickmap is the source of truth for structure; islands become
 dynamic; the renderer (lesson 17 raymarch) sees both unified.
 
@@ -123,7 +123,7 @@ What's next is your call: ray-traced reflections, multi-material
 shading, networked destruction sync, audio-reactive geometry, asset
 pipeline for hand-modeled brickmaps. Lesson 20+ is for you to draft.
 
-See `ENGINE.md` at the repo root for the longer-term vision (the six
+See `GAME.md` at the repo root for the longer-term vision (the six
 dev tools, hot-reload affordances, when to build what), and
 `../README.md` (this curriculum's master index) for cross-reference
 against `lab/PLAN.md` phases.

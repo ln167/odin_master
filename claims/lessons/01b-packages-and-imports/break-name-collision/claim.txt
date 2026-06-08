@@ -1,0 +1,1 @@
+fails . Duplicate declaration of 'package strings'

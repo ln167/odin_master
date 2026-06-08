@@ -81,15 +81,6 @@
     "shell": { "program": "cmd.exe" }
   },
   {
-    "label": "Odin: scaffold verify test",
-    "command": "C:\\Python314\\python.exe tools\\substrate\\verify_scaffold.py --file \"%ZED_FILE%\" --symbol \"%ZED_SYMBOL%\"",
-    "cwd": "$ZED_WORKTREE_ROOT",
-    "reveal": "always",
-    "use_new_terminal": true,
-    "env": { "ZED_FAST_TASK": "1" },
-    "shell": { "program": "cmd.exe" }
-  },
-  {
     "label": "Odin: build debug current",
     "command": ".zed\\scripts\\odin-build-debug.bat",
     "cwd": "$ZED_WORKTREE_ROOT",

@@ -202,9 +202,14 @@ Slicing produces a `[]T` slice (covered properly in lesson 06):
 
     middle := nums[1:3]   // type []int, length 2
 
-Out-of-bounds access:
+Out-of-bounds access. A *constant* index is caught at compile time:
 
-    nums[10]              // runtime panic with file:line in debug builds
+    a[10]                 // COMPILE error: Index '10' is out of bounds range 0..<4
+
+An index the compiler can't prove triggers a *runtime* bounds check:
+
+    i := len(os.args) + 9
+    a[i]                  // runtime panic: Index 10 is out of range 0..<4
 
 Bounds checks can be turned off project-wide with the `-no-bounds-
 check` build flag once you've measured and decided it matters.
@@ -231,10 +236,15 @@ done.
 
 Append two more lines to `main` after everything works:
 
-1. Read `nums[10]`. Build, run, read the panic. Note the file and line
-   number it points at, and note that this is a **runtime** error,
-   not a compile error. (Odin can't always prove an index is in
-   range; it inserts a check.)
+1. Read `a[10]`. Build it. Because `10` is a compile-time constant, Odin
+   proves it is outside `0..<4` and **rejects it at compile time**:
+   `Index '10' is out of bounds range 0..<4`. No runtime check is even
+   emitted. The bounds *check* you may have heard about is only for
+   indices the compiler can't prove — e.g.
+   `i := len(os.args) + 9` then `a[i]`, where `i` isn't known until
+   runtime. *That* version builds, then **panics at runtime**:
+   `Index 10 is out of range 0..<4`. So: constant index → compile error;
+   unprovable index → runtime panic.
 2. Try to add a `[3]f32` and a `[4]f32`. Build. Read the compile
    error. This one IS a compile error, because the lengths are part
    of the types. Compare to the C version, where the analogous code

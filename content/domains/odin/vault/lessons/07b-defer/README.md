@@ -371,23 +371,24 @@ Edge case, but worth knowing because it surprises people.
 
 ## Named return values: defer can't change them
 
-The Odin docs are explicit:
+A `defer` runs *after* the return value has been handed back, so it can't
+affect what's returned — and current Odin makes that explicit by rejecting
+the attempt at **compile time**:
 
 ```odin
 foo :: proc() -> (n: int) {
     defer {
-        n = 456   // does NOT affect the returned value
-    }
+        n = 456   // COMPILE ERROR: Assignments to named return values
+    }             // within 'defer' will not affect the value that is returned
     n = 123
-    return        // returns 123
+    return
 }
 ```
 
-`defer` runs *after* the return value has already been handed back to
-the caller. Modifying `n` inside the defer is too late — the caller
-already has the value. Go's `defer`, being a runtime closure-stack
-construct, CAN reach back and modify named returns. Odin's deliberately
-can't, because it's the simpler, more predictable mechanism.
+Go's `defer`, being a runtime closure-stack construct, CAN reach back and
+modify named returns; Odin's deliberately can't, and the compiler stops you
+from even writing code that looks like it might. (Older Odin let this
+compile and silently returned 123; the current compiler errors instead.)
 
 If you need to mutate the return value, do it before `return`. If you
 need cleanup that doesn't touch the return, `defer` is correct.
@@ -421,8 +422,10 @@ After your file works, try these one at a time:
    then `x = 234`. The deferred statement captures the *expression to
    run*, not a snapshot of x's current value — when it fires, it reads
    the *current* value of x, which is 234 by then.
-4. **Try to change a named return value from a defer.** Write the docs'
-   `foo` example. Verify the return value is unchanged.
+4. **Try to change a named return value from a defer.** Write the `foo`
+   example above. The compiler rejects it: "Assignments to named return
+   values within 'defer' will not affect the value that is returned." Odin
+   catches the mistake at compile time rather than silently ignoring it.
 
 ---
 

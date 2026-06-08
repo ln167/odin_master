@@ -1,0 +1,1 @@
+fails main.odin Expected 2 return values, got 1

@@ -192,7 +192,7 @@
     First entry in the graphics domain. Author is Sebastian Aaltonen
     (ex-Ubisoft/EA Frostbite, GPU-driven rendering pioneer). The
     "No Graphics API" post (2025-12-16) is the load-bearing reference
-    for our graphics-API path-not-taken decision (see ENGINE.md).
+    for our graphics-API path-not-taken decision (see GAME.md).
     Initial mirror was performed manually on 2025-05-09 pending the
     html_mirror fetcher.
 

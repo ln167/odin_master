@@ -1,0 +1,7 @@
+explicit ok: 5
+or_else result: 0
+or_else result: 5
+chain(16, 4) -> 2 err: None
+chain(10, 0) -> 0 err: Divide_By_Zero
+chain(-4, 1) -> 0 err: Negative_Sqrt
+ignored err, r2: 33

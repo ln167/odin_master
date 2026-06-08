@@ -1,0 +1,1 @@
+fails main.odin Assignments to named return values within 'defer' will not affect the value that is returned

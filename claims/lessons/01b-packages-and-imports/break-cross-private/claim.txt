@@ -1,0 +1,1 @@
+fails . 'secret_seed' is not exported by 'mymath'

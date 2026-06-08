@@ -12,11 +12,11 @@ experiment that sits in `src/game/`. The current contents of `src/game/` are the
 Peer to `bench/` (perf, one-shot programs) and `tests/` (correctness,
 one-shot programs). `lab/` is the only one of the three that runs as a
 persistent process. See `../tests/README.md` for the lifecycle table, and
-`../ENGINE.md` § "Programs vs profilers" for how `odin test` / `bench` /
+`../GAME.md` § "Programs vs profilers" for how `odin test` / `bench` /
 `tests` / Spall / Tracy fit together.
 
-Forward-looking vision in `../ENGINE.md`. Architectural framing in
-`../../projects/ultimate-flat/PIVOT.md`. Lesson-form tour of the underlying
+Forward-looking vision in `../GAME.md`. Architectural framing in
+`from_old_repo_references/PIVOT.md`. Lesson-form tour of the underlying
 hot-reload pattern in `../content/domains/odin/vault/lessons/18-hot-reload-tour/`.
 
 ## Quick start
@@ -37,8 +37,8 @@ new DLL within ~16 ms — no second terminal, no manual rebuild command.
 proving the swap is non-destructive.
 
 Stop with Ctrl+C (or close the window). A `Game_Memory` struct-shape change still
-needs a restart — the host refuses an `api_version` mismatch rather than corrupt
-state; close and re-run `just lab`.
+needs a restart — the host sees the `size_of` mismatch, skips the swap rather than
+corrupt state, and asks you to close and re-run `just lab`.
 
 `build.py hot` (one-shot, no watch) still exists for scripted/CI use.
 
@@ -68,9 +68,9 @@ justfile                 same recipes via `just`
    Odin nightly 2026-04 + Windows 11 where `FreeLibrary` followed by `LoadLibrary`
    surfaces `MOD_NOT_FOUND`, but the data-preservation reason is the deeper one.
    Each old DLL costs ~600 KB, freed at process exit.
-3. **PDB filename includes a timestamp** (`-pdb-name:game_<unix>.pdb`). Lets you
+3. **PDB filename includes a timestamp** (`-pdb-name:game_<ns>.pdb`). Lets you
    keep a debugger attached across rebuilds without PDB lock conflicts. Karl's
-   template uses an incrementing counter file; we use `int(time.time())` because
+   template uses an incrementing counter file; we use `time.time_ns()` because
    it's simpler and not worth a counter-file roundtrip.
 4. **`g_mem` is a single pointer; all state behind it.** No DLL globals carry
    state. The host owns the `Game_Memory` allocation; reload re-attaches the
@@ -86,8 +86,10 @@ Deliberately deferred:
   texture in `game_init`), matching Karl's pattern, so the window survives reloads.
 - **No `force_reload` / `force_restart` exports.** Add only when needed.
 - **File watcher: DONE** (`build.py watch`, `just lab`). Pure-stdlib mtime poll
-  over `src/**/*.odin` every 0.25s — no `watchexec` dependency. Rebuilds on save;
-  a failed build prints the error and waits for the next save (doesn't re-fire).
+  over `src/**/*.odin` every 0.05s — no `watchexec` dependency. One scan is 0.55 ms
+  (~1% duty cycle), so detection is ≤50 ms; the ~350 ms DLL build is the real floor.
+  Rebuilds on save (clears the screen first so a compile error isn't buried under
+  host frame logs); a failed build prints the error and waits for the next save.
 - **No GPU.** Software rasterizer through Phase 8+ at least. PIVOT.md
   "Building Principles" explains why.
 - **No `wait_writable` retry loop.** The mtime-poll loop self-recovers if the
@@ -97,11 +99,14 @@ Deliberately deferred:
 
 Known issues to fix when they next bite:
 
-- **`api_version` mismatch guard: DONE.** `game_api_version` (currently
-  `API_VERSION :: 4`) is exported and the host compares it on every reload; a
-  shape change skips the swap and asks for a restart instead of corrupting
-  `Game_Memory`. Still missing: *migration functions* to preserve state across a
-  shape change — for now a `Game_Memory` field add/remove just means restart.
+- **Shape-change guard: DONE.** The host compares `game_memory_size()` (=
+  `size_of(Game_Memory)`) across every reload; a size change skips the swap and asks
+  for a restart instead of corrupting `Game_Memory`. No manual version constant to
+  forget. Caveat: a pure same-size field *reorder* isn't caught. By design there is
+  no auto state-migration — the restart is your deliberate "ready to reload" gate
+  (a field add/remove means close + re-run `just lab`). A headless reload-survival
+  check lives in `src/test` (`just test`): it asserts `game_hot_reloaded` re-attaches
+  the same allocation and keeps state.
 - **No Spall instrumentation in lab/ yet.** Shared
   `tools/domains/odin/odin_lib/instrument/` is ready. Wire when there's a real
   frame-time question to answer.

@@ -1,0 +1,1 @@
+fails main.odin Undeclared name: some_local_bool

@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What is a header? — Odin memory model</title>
+<style>
+  :root{
+    --paper:#15130f; --card:#1d1a14; --ink:#ece6d8; --muted:#9a9182;
+    --rule:#332e24; --accent:#5ec8b8; --accent-soft:#1f342f;
+    --share:#e0875a; --hi:#3a2f17; --hi-edge:#caa23c;
+    --mono:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace;
+    --serif:Georgia,"Iowan Old Style","Times New Roman",serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper);color:var(--ink)}
+  body{font-family:var(--serif);line-height:1.6;
+    -webkit-font-smoothing:antialiased;padding:0 20px}
+  .page{max-width:880px;margin:0 auto;padding:54px 0 90px}
+
+  .kicker{font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;
+    text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+  h1{font-size:34px;line-height:1.15;margin:0 0 6px;font-weight:600;letter-spacing:-.01em}
+  .deck{color:var(--muted);font-size:17px;margin:0 0 26px}
+  .rule{height:1px;background:var(--rule);margin:0 0 26px}
+
+  /* chapter tabs — quiet text, underline on active */
+  nav{display:flex;gap:26px;flex-wrap:wrap;margin-bottom:34px;
+    font-family:var(--mono);font-size:13px}
+  nav button{background:none;border:0;padding:0 0 6px;cursor:pointer;color:var(--muted);
+    border-bottom:2px solid transparent;letter-spacing:.02em}
+  nav button:hover{color:var(--ink)}
+  nav button.on{color:var(--ink);border-color:var(--accent)}
+  nav .num{color:var(--accent);margin-right:7px}
+
+  .lead{font-size:21px;line-height:1.45;font-weight:500;margin:0 0 30px;max-width:42em}
+  .lead em{font-style:italic;color:var(--share)}
+
+  /* the figure */
+  figure{margin:0 0 14px}
+  .canvas{position:relative;background:var(--card);border:1px solid var(--rule);
+    border-radius:14px;padding:40px 34px 46px;box-shadow:0 1px 0 rgba(0,0,0,.02)}
+  #wires{position:absolute;inset:0;overflow:visible;pointer-events:none;z-index:1}
+  .rows{position:relative;z-index:2;display:flex;flex-direction:column;gap:46px}
+  .row{display:flex;gap:70px;justify-content:center;flex-wrap:wrap}
+
+  .frame{min-width:230px}
+  .frame .tag{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--muted);margin-bottom:9px}
+  .frame.heap .tag{color:var(--share)}
+  .box{background:#241f17;border:1px solid #3d3528;border-radius:9px;overflow:hidden}
+  .frame.heap .box{border-style:dashed;border-color:#5a4530;background:#221b13}
+
+  .cell{display:flex;justify-content:space-between;align-items:baseline;gap:18px;
+    padding:11px 14px;border-bottom:1px solid #322c21;font-family:var(--mono);font-size:13px}
+  .cell:last-child{border-bottom:0}
+  .cell .nm{color:var(--muted);font-size:12px}
+  .cell .vl{font-weight:600;letter-spacing:.01em}
+  .cell.ptr .vl{color:var(--share)}
+  .cell .ad{display:block;font-size:10px;color:#7a7263;margin-top:3px;letter-spacing:0}
+  .cell.hot{background:var(--hi);box-shadow:inset 3px 0 0 var(--hi-edge)}
+  .cell.hot .vl{color:#e8bd5a}
+
+  /* a nested header sub-box (the {.data,.len} bundle) */
+  .group{margin:10px;border:1px solid var(--accent-soft);border-radius:8px;
+    background:var(--accent-soft)}
+  .group .gh{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;
+    color:var(--accent);padding:7px 12px 5px;text-transform:uppercase}
+  .group .box{margin:0 8px 8px;border-color:#2f4a44}
+
+  figcaption{font-family:var(--mono);font-size:12px;color:var(--muted);
+    text-align:center;margin-top:16px}
+  .addrnote{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;
+    margin-top:7px;opacity:.85}
+  .addrnote b{color:var(--share);font-weight:600}
+
+  /* ---- intro: stack column + axis + IDE mock ---- */
+  .introwrap{display:flex;gap:54px;justify-content:center;flex-wrap:wrap;align-items:flex-start}
+  .stackcol{display:flex;gap:14px;align-items:stretch}
+  .axis{display:flex;flex-direction:column;justify-content:space-between;align-items:center;
+    font-family:var(--mono);font-size:10px;color:var(--muted);text-align:center;padding:4px 0}
+  .axis .bar{flex:1;width:2px;background:linear-gradient(var(--rule),var(--share));margin:6px auto;border-radius:2px}
+  .stackframes{display:flex;flex-direction:column;gap:0}
+  .stackframes .frame{min-width:220px}
+  .stackframes .frame+.frame .box{border-top:0}
+  .ghostframe{border:1px dashed #4a4030;border-radius:9px;min-width:220px;padding:13px 14px;
+    font-family:var(--mono);font-size:12px;color:#6f6655;background:repeating-linear-gradient(
+      45deg,transparent,transparent 7px,#211c14 7px,#211c14 14px)}
+  .ide{width:300px;border:1px solid var(--rule);border-radius:10px;overflow:hidden;background:#14110b}
+  .ide .pane+ .pane{border-top:1px solid var(--rule)}
+  .ide .ph{font-family:var(--mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--muted);padding:9px 12px;background:#1b1810}
+  .ide .frow{font-family:var(--mono);font-size:12px;padding:8px 12px;color:var(--ink);
+    display:flex;justify-content:space-between;gap:10px}
+  .ide .frow .loc{color:var(--muted);font-size:11px}
+  .ide .frow.cur{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}
+  .ide .frow.cur::before{content:"▶ ";color:var(--accent)}
+  .ide .vrow{font-family:var(--mono);font-size:12px;padding:8px 12px;display:flex;
+    justify-content:space-between;gap:10px}
+  .ide .vrow .vn{color:var(--share)}
+  .ide .popline{font-family:var(--mono);font-size:11px;color:var(--muted);padding:7px 12px;font-style:normal}
+
+  /* stepper */
+  .stepper{display:flex;align-items:center;justify-content:center;gap:22px;margin:22px 0 34px}
+  .stepper button{font-family:var(--mono);font-size:13px;background:none;border:0;
+    color:var(--accent);cursor:pointer;padding:6px 4px}
+  .stepper button:disabled{color:#4a4334;cursor:default}
+  .dots{display:flex;gap:9px}
+  .dots i{width:9px;height:9px;border-radius:50%;background:#473f30;cursor:pointer;display:block}
+  .dots i.on{background:var(--accent);transform:scale(1.15)}
+
+  .teach{font-size:17px;line-height:1.65;max-width:40em;margin:0 auto 30px}
+  .teach code{font-family:var(--mono);font-size:.86em;background:#2a2519;
+    padding:1px 5px;border-radius:4px}
+  .teach b{color:var(--share)}
+
+  details{max-width:40em;margin:0 auto;border-top:1px solid var(--rule);padding-top:14px}
+  summary{font-family:var(--mono);font-size:12.5px;color:var(--muted);cursor:pointer;list-style:none}
+  summary::before{content:"▸ ";color:var(--accent)}
+  details[open] summary::before{content:"▾ "}
+  pre{font-family:var(--mono);font-size:12.5px;line-height:1.7;background:#1a1710;
+    border:1px solid var(--rule);border-radius:9px;padding:14px 16px;overflow:auto;margin:14px 0 0}
+  pre .hot{display:block;background:var(--accent-soft);margin:0 -16px;padding:0 16px}
+  pre .cm{color:#9a9384}
+
+  .foot{font-family:var(--mono);font-size:11.5px;color:var(--muted);
+    text-align:center;margin-top:50px}
+  .foot a{color:var(--accent);cursor:pointer;text-decoration:none}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="kicker">Odin · memory model</div>
+  <h1>What is a “header”?</h1>
+  <p class="deck">Where values actually live, what gets copied across a call, and why some changes escape a procedure while others don’t.</p>
+  <div class="rule"></div>
+
+  <nav id="nav"></nav>
+
+  <p class="lead" id="lead"></p>
+
+  <figure>
+    <div class="canvas">
+      <svg id="wires"></svg>
+      <div class="rows" id="rows"></div>
+    </div>
+    <figcaption id="cap"></figcaption>
+    <div class="addrnote" id="addrnote"></div>
+  </figure>
+
+  <div class="stepper">
+    <button id="prev">‹ back</button>
+    <div class="dots" id="dots"></div>
+    <button id="next">next ›</button>
+  </div>
+
+  <p class="teach" id="teach"></p>
+
+  <details>
+    <summary>the Odin code</summary>
+    <pre id="code"></pre>
+  </details>
+
+  <div class="foot">
+    figures match the real programs in <span style="color:var(--ink)">scratch/odin_proofs/</span> ·
+    <a id="addrToggle">toggle addresses</a>
+  </div>
+</div>
+
+<script>
+/* ----- addresses (match the p2/p5/p6 proof runs) ----- */
+const A={score:'0x..FFA28',shadow:'0x..FF968',score2:'0x..FF9F8',
+  hdrMain:'0x..FBF0',backing:'0x..FC90',hdrCallee:'0x..FB90',big:'0x..F200'};
+
+/* =================== CONTENT =================== */
+const SCENARIOS={
+  stackframe:{tab:'Stack frame',intro:true,lead:'First: what <em>is</em> a “stack frame”? It’s the patch of memory holding one in-progress call’s local variables. Calls push frames; returns pop them.',steps:3,
+    build(step){
+      // frames listed TOP (high address) → BOTTOM (low address); stack grows downward
+      const frames=[{id:'main',tag:'main · frame',addr:A.score,cells:[{nm:'score : int',vl:'5',ad:A.score}]}];
+      if(step===1) frames.push({id:'callee',tag:'add_caller · frame',addr:A.shadow,cells:[{nm:'p : ^int',vl:A.score,ad:A.shadow,ptr:true}]});
+      // mock IDE debugger view
+      let ide;
+      if(step<1) ide={stack:[{fn:'main',loc:'main.odin:6',cur:true}],vt:'score',vars:[{nm:'score',vl:'5  (int)'}]};
+      else if(step===1) ide={stack:[{fn:'add_caller',loc:'main.odin:2',cur:true},{fn:'main',loc:'main.odin:6'}],vt:'add_caller',vars:[{nm:'p',vl:A.score+'  (^int)'}]};
+      else ide={stack:[{fn:'main',loc:'main.odin:7',cur:true}],vt:'main',vars:[{nm:'score',vl:'6  (int)'}],popped:'add_caller'};
+      const narr=[
+        `Only <code>main</code> is running, so the stack holds <b>one frame</b>. Its local <code>score</code> lives inside it. In a debugger that’s the single row in the <b>Call Stack</b> panel; click it and the <b>Variables</b> panel shows <code>score = 5</code>.`,
+        `Calling <code>add_caller</code> <b>pushes a new frame</b> on top (at a <i>lower</i> address — the stack grows downward). It holds that call’s own local, <code>p</code>. The debugger now lists <b>two</b> frames; the current one is on top.`,
+        `<code>add_caller</code> returns, so its frame is <b>popped — destroyed</b>. Back to one frame. Any copy that lived in the popped frame is simply gone; this is <i>why</i> a shadowed parameter’s change can’t survive the call.`
+      ][step];
+      return {intro:true,frames,ide,narr,codeLine:[5,5,1][step],
+        code:['add_caller :: proc(p: ^int) {','    p^ += 1','}','','','score := 5','add_caller(&score)   // push frame, then pop it']};
+    }},
+
+  int_value:{tab:'Plain int',lead:'An <code>int</code> <em>is</em> its value. Pass it, and Odin copies the whole thing to a fresh slot — so a local change can never escape.',steps:3,
+    build(step){
+      const regions=[{id:'main',tag:'main · stack frame',cells:[
+        {nm:'score : int',vl:'5',ad:A.score}]}];
+      if(step>=1) regions.push({id:'callee',tag:'add_local · stack frame',cells:[
+        {nm:'n  (a copy)',vl: step>=2?'6':'5',ad:A.shadow,hot:step>=2}]});
+      const narr=[
+        `Before the call, only <code>main</code> exists. <code>score</code> holds <b>5</b> directly inside main’s frame — an int has no storage anywhere else.`,
+        `Calling <code>add_local(score)</code> copies the int (it’s ≤16 bytes) into a new slot at a <b>different address</b>. After <code>n := n</code> we can mutate this private copy.`,
+        `<code>n += 1</code> makes the copy <b>6</b> — but <code>score</code> back in main is still <b>5</b>. Different address means the change has nowhere to travel.`
+      ][step];
+      return {regions,stackOnly:true,narr,codeLine:[5,1,2][step],
+        code:['add_local :: proc(n: int) {','    n := n        // a NEW local','    n += 1        // mutate the copy','    return n','}','score := 5; add_local(score)   // score stays 5']};
+    }},
+
+  pointer:{tab:'Pointer ^int',lead:'A pointer copies an <em>address</em> instead of a value. Write “through” it and you land back in the caller’s own slot — so the change sticks.',steps:3,
+    build(step){
+      const regions=[{id:'main',tag:'main · stack frame',cells:[
+        {nm:'score : int',vl:step>=2?'6':'5',ad:A.score2,hot:step>=2}]}];
+      const wires=[];
+      if(step>=1){regions.push({id:'callee',tag:'add_caller · stack frame',cells:[
+        {nm:'p : ^int',vl:A.score2,ad:A.hdrCallee,ptr:true}]});
+        wires.push({from:'callee.0',to:'main.0',label:'points back here'});}
+      const narr=[
+        `<code>score</code> sits at ${A.score2} holding <b>5</b>.`,
+        `<code>add_caller(&score)</code> passes an <b>address</b>. The param <code>p</code> is still a copied value — but the value it copies is ${A.score2}, the location of main’s own <code>score</code>.`,
+        `<code>p^ += 1</code> means “add 1 at the address in <code>p</code>.” That address <b>is</b> main’s <code>score</code>, so it becomes <b>6</b>. This is your scoreboard.`
+      ][step];
+      return {regions,stackOnly:true,wires,narr,codeLine:[4,0,1][step],
+        code:['add_caller :: proc(p: ^int) {','    p^ += 1       // write THROUGH the address','}','','score := 5','add_caller(&score)   // score is now 6']};
+    }},
+
+  slice:{tab:'Slice header',lead:'A slice is <em>not</em> the array. It’s a tiny 16-byte record — <code>{.data, .len}</code> — that points at an array living somewhere else.',steps:3,
+    build(step){
+      const main={id:'main',tag:'main · stack frame',cells:[
+        {group:'[]int header · 16 bytes',addr:A.hdrMain,inner:[
+          {nm:'.data',vl:A.backing,ptr:true},
+          {nm:'.len',vl:'3'}]}]};
+      const heap={id:'heap',tag:'backing array · the real data',heap:true,addr:A.backing,cells:[
+        {nm:'[0]',vl:step>=2?'999':'10',hot:step>=2},
+        {nm:'[1]',vl:'20'},{nm:'[2]',vl:'30'}]};
+      const regions=[main];
+      const wires=[{from:'main.data',to:'heap',label:'.data points here'}];
+      if(step>=1){regions.push({id:'callee',tag:'callee · stack frame',cells:[
+        {group:'[]int header · a COPY',addr:A.hdrCallee,hot:step===1,inner:[
+          {nm:'.data',vl:A.backing,ptr:true},
+          {nm:'.len',vl:'3'}]}]});
+        wires.push({from:'callee.data',to:'heap',label:'same .data'});}
+      const narr=[
+        `The 16-byte <b>header</b> lives in main’s frame at ${A.hdrMain}. Its <code>.data</code> field holds ${A.backing} — the address of a <b>separate</b> block where 10·20·30 actually live.`,
+        `<code>callee(backing)</code> copies the <b>header</b> to a new address (${A.hdrCallee}). Copying the header copies the address it holds, so both <code>.data</code> fields read ${A.backing}: <b>two headers, one array</b>.`,
+        `<code>s[0] = 999</code> follows <code>.data</code> to the shared array and writes there. Main’s <code>backing</code> now reads <b>[999, 20, 30]</b> — even though its header was never touched. Header: private. Data: shared.`
+      ][step];
+      return {regions,heapRegion:'heap',wires,narr,codeLine:[4,0,1][step],
+        code:['callee :: proc(s: []int) {','    s[0] = 999      // follows .data → shared array','}','','backing := []int{10, 20, 30}','callee(backing)     // backing is now [999,20,30]']};
+    }},
+
+  big:{tab:'Big struct',lead:'Structs over 16 bytes are passed <em>by reference</em> automatically. Usually invisible — until a by-value param and a pointer alias the same memory.',steps:3,
+    build(step){
+      const regions=[{id:'main',tag:'main · stack frame',cells:[
+        {nm:'b : Big  .a',vl:step>=2?'999':'1',ad:A.big,hot:step>=2},
+        {nm:'         .b .c .d',vl:'2  3  4'}]}];
+      const wires=[];
+      if(step>=1){regions.push({id:'callee',tag:'test_big · stack frame',cells:[
+        {nm:'v : Big (param)',vl:'aliases →',ad:A.big,ptr:true},
+        {nm:'p : ^Big',vl:A.big,ptr:true}]});
+        wires.push({from:'callee.0',to:'main.0',label:'v IS main.b'});
+        wires.push({from:'callee.1',to:'main.0',label:'p → main.b'});}
+      const narr=[
+        `<code>Big</code> is 32 bytes. <code>b.a</code> = <b>1</b> at ${A.big}.`,
+        `The <code>"odin"</code> calling convention passes anything <b>over 16 bytes by reference</b>. So the “by value” param <code>v</code> is secretly the <b>same memory</b> as <code>b</code> — not a copy. <code>p</code> points at it too.`,
+        `<code>p.a = 999</code> writes to ${A.big}. Because <code>v</code> aliases that address, the supposedly-copied <code>v.a</code> reads <b>999</b> as well. The fix: force a real copy with <code>v := v</code>.`
+      ][step];
+      return {regions,stackOnly:true,wires,narr,codeLine:[5,0,1][step],
+        code:['test_big :: proc(v: Big, p: ^Big) {','    p.a = 999      // also changes v.a !','}','','// Big is 32 bytes  →  passed by reference','b := Big{1,2,3,4}; test_big(b, &b)']};
+    }},
+};
+
+/* =================== PRESENTATION =================== */
+const state={scn:'stackframe',step:0,addr:true};
+const $=s=>document.querySelector(s);
+
+function buildNav(){
+  const n=$('#nav'); n.innerHTML='';
+  Object.entries(SCENARIOS).forEach(([id,s],i)=>{
+    const b=document.createElement('button');
+    b.className=id===state.scn?'on':'';
+    b.innerHTML=`<span class="num">${i+1}</span>${s.tab}`;
+    b.onclick=()=>{state.scn=id;state.step=0;render();};
+    n.appendChild(b);
+  });
+}
+
+function cellHTML(c){
+  if(c.group){
+    let inner=c.inner.map(f=>`<div class="cell ${f.ptr?'ptr':''}">
+        <span class="nm">${f.nm}</span><span class="vl">${f.vl}</span></div>`).join('');
+    return `<div class="group ${c.hot?'':''}">
+        <div class="gh">${c.group}${state.addr&&c.addr?` · @ ${c.addr}`:''}</div>
+        <div class="box ${c.hot?'hot':''}" style="${c.hot?'box-shadow:inset 3px 0 0 var(--hi-edge);background:var(--hi)':''}">${inner}</div></div>`;
+  }
+  return `<div class="cell ${c.ptr?'ptr':''} ${c.hot?'hot':''}">
+      <span class="nm">${c.nm}</span>
+      <span class="vl">${c.vl}${state.addr&&c.ad?`<span class="ad">@ ${c.ad}</span>`:''}</span></div>`;
+}
+
+function render(){
+  document.querySelectorAll('#nav button').forEach((b,i)=>
+    b.classList.toggle('on',Object.keys(SCENARIOS)[i]===state.scn));
+  const scn=SCENARIOS[state.scn], max=scn.steps-1;
+  state.step=Math.max(0,Math.min(state.step,max));
+  const d=scn.build(state.step);
+
+  $('#lead').innerHTML=scn.lead;
+  $('#teach').innerHTML=d.narr;
+  const capStep = d.intro ? ['one frame','push a frame','pop the frame'][state.step]
+                          : ['the setup','the call','the write'][state.step];
+  $('#cap').textContent=`Figure — step ${state.step+1} of ${scn.steps}: ${capStep}`;
+  $('#addrnote').innerHTML = state.addr
+    ? `<b>@ 0x…</b> = a memory address in hexadecimal (where the value lives in RAM). Leading digits trimmed for space.`
+    : ``;
+
+  const frameHTML=r=>`<div class="frame ${r.heap?'heap':''}" data-rid="${r.id}">
+      <div class="tag">${r.tag}</div>
+      <div class="box">${r.cells.map(cellHTML).join('')}</div></div>`;
+
+  if(d.intro){
+    renderIntro(d, frameHTML);
+  } else {
+    // split into stack row + optional heap row, so layout reads top→down
+    const stack=d.regions.filter(r=>r.id!==d.heapRegion);
+    const heap=d.regions.filter(r=>r.id===d.heapRegion);
+    let rows=`<div class="row">${stack.map(frameHTML).join('')}</div>`;
+    if(heap.length) rows+=`<div class="row">${heap.map(frameHTML).join('')}</div>`;
+    $('#rows').innerHTML=rows;
+  }
+
+  // dots
+  $('#dots').innerHTML=Array.from({length:scn.steps},(_,i)=>
+    `<i class="${i===state.step?'on':''}" data-s="${i}"></i>`).join('');
+  $('#dots').querySelectorAll('i').forEach(i=>i.onclick=()=>{state.step=+i.dataset.s;render();});
+  $('#prev').disabled=state.step===0; $('#next').disabled=state.step===max;
+
+  // code
+  $('#code').innerHTML=d.code.map((l,i)=>{
+    const t=l.replace(/(\/\/.*)$/,'<span class="cm">$1</span>');
+    return i===d.codeLine?`<span class="hot">${t}</span>`:t;
+  }).join('\n');
+
+  requestAnimationFrame(()=>drawWires(d.wires));
+}
+
+function renderIntro(d, frameHTML){
+  // left: address axis + vertically stacked frames (high addr on top)
+  const framesHTML = d.frames.map(frameHTML).join('');
+  const ghost = d.ide.popped
+    ? `<div class="ghostframe">${d.ide.popped} · frame &nbsp;✗ popped (destroyed)</div>` : '';
+  const stackCol = `<div class="stackcol">
+      <div class="axis"><span>high<br>addr</span><div class="bar"></div><span>low<br>addr<br>↓ grows</span></div>
+      <div class="stackframes">${framesHTML}${ghost}</div>
+    </div>`;
+
+  // right: mock IDE debugger
+  const i=d.ide;
+  const callRows=i.stack.map(f=>`<div class="frow ${f.cur?'cur':''}">
+      <span>${f.fn}</span><span class="loc">${f.loc}</span></div>`).join('');
+  const varRows=i.vars.map(v=>`<div class="vrow"><span class="vn">${v.nm}</span><span>${v.vl}</span></div>`).join('');
+  const popLine=i.popped?`<div class="popline">— ${i.popped}'s frame removed —</div>`:'';
+  const ide=`<div class="ide">
+      <div class="pane"><div class="ph">Call Stack</div>${callRows}${popLine}</div>
+      <div class="pane"><div class="ph">Variables · ${i.vt}</div>${varRows}</div>
+    </div>`;
+
+  $('#rows').innerHTML=`<div class="introwrap">${stackCol}${ide}</div>`;
+}
+
+function anchorFor(key){
+  // key like "callee.data" (header field) or "main.0" (plain cell index)
+  const [rid,sel]=key.split('.');
+  const frame=document.querySelector(`[data-rid="${rid}"]`);
+  if(!frame) return null;
+  if(sel==='data'){ // first .data field inside a group
+    return frame.querySelector('.group .cell.ptr')||frame.querySelector('.cell.ptr');
+  }
+  return frame.querySelectorAll('.box > .cell, .group .cell')[+sel]||frame;
+}
+
+function drawWires(wires){
+  const svg=$('#wires'); svg.innerHTML='';
+  const stage=$('.canvas').getBoundingClientRect();
+  svg.setAttribute('width',stage.width); svg.setAttribute('height',stage.height);
+  let body=`<defs><marker id="ah" markerWidth="8" markerHeight="8" refX="6" refY="3"
+      orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="var(--share)"/></marker></defs>`;
+  (wires||[]).forEach(w=>{
+    const a=anchorFor(w.from), b=w.to.includes('.')?anchorFor(w.to):document.querySelector(`[data-rid="${w.to}"]`);
+    if(!a||!b) return;
+    const ar=a.getBoundingClientRect(), br=b.getBoundingClientRect();
+    const ax=ar.right-stage.left, ay=ar.top+ar.height/2-stage.top;
+    let bx,by;
+    if(br.top> ar.bottom-4){ bx=br.left+br.width/2-stage.left; by=br.top-stage.top; } // target below
+    else { bx=br.left-stage.left; by=br.top+Math.min(br.height/2,20)-stage.top; }
+    const cx=(ax+bx)/2;
+    body+=`<path d="M${ax},${ay} C${cx},${ay} ${cx},${by} ${bx},${by}" fill="none"
+        stroke="var(--share)" stroke-width="1.5" marker-end="url(#ah)" opacity=".85"/>`;
+    if(w.label) body+=`<text x="${cx}" y="${(ay+by)/2-7}" text-anchor="middle"
+        font-family="var(--mono)" font-size="11" fill="var(--share)">${w.label}</text>`;
+  });
+  svg.innerHTML=body;
+}
+
+$('#next').onclick=()=>{state.step++;render();};
+$('#prev').onclick=()=>{state.step--;render();};
+$('#addrToggle').onclick=()=>{state.addr=!state.addr;render();};
+addEventListener('resize',render);
+addEventListener('keydown',e=>{
+  if(e.key==='ArrowRight')$('#next').click();
+  if(e.key==='ArrowLeft')$('#prev').click();
+});
+buildNav(); render();
+</script>
+</body>
+</html>

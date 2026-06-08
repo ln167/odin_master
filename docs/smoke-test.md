@@ -122,9 +122,9 @@ Expected: PASS (healthy empty shell).
 
 ### 14. Cleanup
 
-```sh
-rm -rf content/domains/test-domain
-rm -rf .claude/skills/test-domain
+```powershell
+Remove-Item -Recurse -Force content/domains/test-domain
+Remove-Item -Recurse -Force .claude/skills/test-domain
 # Then manually remove the trailing commented manifest hint in content/manifest.yaml
 ```
 

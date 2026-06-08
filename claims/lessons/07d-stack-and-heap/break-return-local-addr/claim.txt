@@ -1,0 +1,1 @@
+fails main.odin It is unsafe to return the address of a local variable

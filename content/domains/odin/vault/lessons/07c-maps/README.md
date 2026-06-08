@@ -275,11 +275,13 @@ After your file works, try each of these in turn, observe the
 behavior, then revert:
 
 1. **Forget `make`.** Change `name_to_score := make(map[string]int)`
-   to just `name_to_score: map[string]int` (no `make`). Build. The
-   build succeeds -- declaration is legal. Now run it. The first
-   `name_to_score[k] = v` crashes at runtime with a nil-map write.
-   This is the most common new-to-Odin mistake on maps. The fix is
-   one line.
+   to just `name_to_score: map[string]int` (no `make`). Build and run.
+   In current Odin this does **not** crash: a nil map auto-allocates its
+   storage on the first `name_to_score[k] = v`, so it just works. (Older
+   Odin, like Go, crashed here -- a lot of advice online still says it
+   does.) Confirm the auto-allocation by printing `len` before and after
+   the first write: 0, then 1. The reason to still write `make` + `defer
+   delete` is ownership and allocator control, not avoiding a crash.
 2. **Single-value lookup of a missing key.** Print `name_to_score
    ["Liberty"]` directly without the comma-ok form. Observe that it
    prints `0`, looks completely fine, and silently lies. A real `0`
@@ -298,8 +300,12 @@ behavior, then revert:
    have a bug waiting to happen.
 5. **Use after `delete`.** Add `delete(name_to_score)` near the top
    (delete, not delete_key), then try `name_to_score["Crim"] = 5` on
-   the next line. The map is back to nil and the write crashes. Same
-   shape of bug as item 1.
+   the next line. Like item 1 this won't reliably *crash* -- it's a
+   use-after-free: `delete` frees the backing buckets but leaves the
+   header's stale fields, so the next write scribbles through them (you
+   may see a stale `len`, a re-allocation, or silent corruption).
+   "Doesn't crash" is not "is fine" -- it's undefined behavior. Don't
+   touch a map after you delete it.
 
 ---
 
@@ -333,13 +339,12 @@ behavior, then revert:
 
 ---
 
-## Next: `08-context-and-allocators/`
+## Next: `07d-stack-and-heap/`
 
-You've now seen three allocator-aware containers in a row:
-`[dynamic]T` (lesson 07), the `defer delete` discipline that pairs
-with them (lesson 07b), and `map[K]V` (this lesson). They all share a
-hidden parameter: the allocator they pull memory from. Lesson 08
-makes that parameter visible -- what `context.allocator` is, how to
-swap it for a scope (arena allocators, tracking allocators, per-frame
-temp allocators), and why every Odin proc implicitly takes a hidden
-`context` parameter.
+You've now built every container - `[dynamic]T`, `map[K]V`, slices -
+and each one quietly pulled memory from "the heap." Lesson 07d zooms out
+to the foundation under all of it: what the stack and the heap actually
+are, what a stack frame is, why your locals clean themselves up but
+`new`/`make` need `free`/`delete`, and why every language converges on
+exactly these two regions. It's the floor that makes lessons 08
+(allocators) and 09 (arenas) make sense.

@@ -29,9 +29,11 @@ The cursor lives at `~/.cache/odin_master/lesson-cursor.txt`.
 | 05b | `enums-and-bit-sets`                  | `enum`, `[Enum]T`, `bit_set[Enum]`, set ops   |
 | 06  | `slices`                              | `[]T` = pointer + len                         |
 | 06b | `pointers`                            | `^T`, `&`, `^` deref, `[^]T` multi-pointers   |
+| 06c | `parameters-and-passing`              | immutable params, pass-by-value, calling convention, when to use `^T` |
 | 07  | `dynamic-arrays`                      | `[dynamic]T`, `append`, allocator             |
 | 07b | `defer`                               | `defer` fires at scope exit; vs Go's defer    |
 | 07c | `maps`                                | `map[K]V`, comma-ok lookup, `delete_key`      |
+| 07d | `stack-and-heap`                      | stack frames, the heap, `new`/`make` vs `free`/`delete`, why both exist |
 | 08  | `context-and-allocators`              | Implicit `context`, swapping allocators       |
 | 09  | `arena-allocator`                     | Bump allocator, scope-based reset             |
 | 10  | `tagged-unions`                       | `union`, `switch in`                          |

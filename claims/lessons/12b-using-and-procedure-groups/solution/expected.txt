@@ -1,0 +1,7 @@
+e.x = 1  e.y = 2  e.z = 3  e.hp = 100
+Red feels warm
+entity at (1, 2, 3) hp=100
+area(circle r=1)        = 3.14159
+area(square side=3)     = 9
+area(triangle 4x5)      = 10
+proc group rejected non-shape types at compile time

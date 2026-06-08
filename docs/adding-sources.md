@@ -17,11 +17,10 @@ Every entry needs:
 
 | fetcher | required keys | what it does |
 |---|---|---|
-| `local_file`  | `source_path` | reads a single file or directory |
-| `pasted_text` | `source_path` | same but treats text as authoritative markdown |
-| `pdf`         | `source_path` | reads a PDF and converts to markdown |
+| `html_mirror` | `url`         | fetches an HTML page (or recursively mirrors with `mirror: true`) and converts to markdown — **the only automated fetcher** |
+| `pasted_text` | `source_path` | treats an existing hand-placed file/dir as authoritative markdown |
+| `local_dir`   | `source_path` | reads a local source tree (e.g. `${ODIN_ROOT}/core`) |
 | `git_clone`   | `git_url`     | clones a repo into the destination |
-| `html_mirror` | `url`         | fetches an HTML page (or recursively mirrors) and converts to markdown |
 
 ## Workflow
 
@@ -36,8 +35,7 @@ Every entry needs:
      processor: html-to-markdown
      last_updated: 2026-05-04
    ```
-2. (When the update fetcher pipeline is implemented) run `just substrate-update odin`.
-   For v1, the fetcher pipeline is deferred — the manifest is data-only and `source/raw/` is populated by hand or by migration.
+2. For `html_mirror` entries, run `just substrate-update odin`. Other fetcher kinds (`pasted_text`, `local_dir`, `git_clone`) are not automated — populate `source/raw/` by hand.
 3. Trigger a focused Compile pass via the relevant per-domain skill (e.g., the `odin` skill).
 4. Verify with `just doctor odin`.
 5. Optionally add a query to `content/quality-checks.yaml` (semantic block) so future regressions are caught by `just substrate-test odin`.

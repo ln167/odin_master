@@ -1,0 +1,1 @@
+fails main.odin is out of bounds range 0..<4

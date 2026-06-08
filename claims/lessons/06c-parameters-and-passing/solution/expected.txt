@@ -1,0 +1,5 @@
+bump_local returns: 11 | caller score: 10
+after two add_point, score: 12
+after zero_first, nums: [0, 6, 7]
+after allowed move: Entity{x = 3, y = 4}
+after blocked move: Entity{x = 3, y = 4}

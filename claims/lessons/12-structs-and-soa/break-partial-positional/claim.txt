@@ -1,0 +1,1 @@
+fails main.odin Too few values in structure literal, expected 3, got 2

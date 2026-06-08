@@ -118,18 +118,21 @@ where the slice could outlive its backing storage:
         &v[..]                // compile error: `v` doesn't live long enough
     }
 
-Odin will happily compile the same shape:
+Odin now rejects the same *direct* shape too, via a targeted escape check:
 
     dangling :: proc() -> []int {
         nums := [3]int{1, 2, 3}
-        return nums[:]        // compiles; returns pointer into dead stack frame
-    }
+        return nums[:]        // COMPILE ERROR: unsafe to return a slice
+    }                         // of a local variable
 
-There is no lifetime tracking and no warning. The slice header you return
-points at a stack frame that has been popped, and the next procedure
-call will overwrite it. You are responsible for not writing this. The
-rule of thumb: a slice is valid only as long as its backing storage is
-valid, and the language can't help you reason about that.
+The difference from Rust is *scope*, not presence. Odin's check catches a
+direct return of a pointer or slice into a local. It does **not** track
+lifetimes in general: a slice that escapes indirectly (through an
+out-pointer or a struct the caller keeps), or one into a `[dynamic]T` you
+then reallocate, or into `make`-d memory you then `delete`, still compiles
+silently and dangles. Rust's borrow checker covers all of those; Odin
+guards the obvious case and leaves the rest to you. The rule of thumb
+stands: a slice is valid only as long as its backing storage is valid.
 
 Rust also distinguishes `&[T]` from `&mut [T]` at the type level. Odin
 doesn't; `[]T` is always mutable through.
@@ -151,7 +154,8 @@ The expression `nums[lo:hi]` is **half-open**: it includes index `lo`,
 excludes index `hi`. `len(nums[lo:hi]) == hi - lo`. Both bounds are
 optional; omit `lo` for "from the start", omit `hi` for "to the end",
 omit both for "everything". Out-of-range bounds (lo < 0, hi > len,
-lo > hi) panic at runtime in debug builds.
+lo > hi) are a **compile error** when the bounds are constants, and
+otherwise panic at runtime in debug builds.
 
 ### Length, capacity, indexing
 
@@ -286,12 +290,15 @@ Compare against `expected-output.txt`.
 After the file works, try each of these in turn, observe the result,
 then revert:
 
-1. **Out-of-bounds slice expression.** Add `bad := nums[2:99]` after the
-   array is declared and print it. Build, run, read the panic. Note that
-   bounds checks include the *upper* index: `nums[2:6]` is fine on a
-   6-element array because the upper bound is exclusive, but `nums[2:7]`
-   panics. This is a runtime check that the compiler inserts in debug
-   builds; it can be disabled with `-no-bounds-check`.
+1. **Out-of-bounds slice expression.** Add `bad := prices[2:99]` after the
+   array is declared and build it. Because `99` is a compile-time constant,
+   Odin proves it exceeds the length and **rejects it at compile time**:
+   `Index '99' is out of bounds range 0..<6`. The *runtime* bounds check a
+   slice expression carries is only for bounds the compiler can't prove —
+   e.g. `hi := len(os.args) + 98` then `prices[2:hi]`, which builds and then
+   **panics at runtime**: `Invalid slice indices 2:99 is out of range 0..<6`.
+   Either way the upper bound is exclusive: `prices[2:6]` is fine on a
+   6-element array. (Runtime checks can be disabled with `-no-bounds-check`.)
 
 2. **Mutate through a slice, watch the array change.** You already do
    this in the tasks, but try the opposite direction: write to
@@ -300,21 +307,20 @@ then revert:
    memory, many names" rule from the model above, and it goes both
    ways.
 
-3. **Dangling slice.** Write a small proc:
+3. **Dangling slice - now a compile error.** Write a small proc:
 
        leak :: proc() -> []int {
            local: [4]int = {1, 2, 3, 4}
            return local[:]
        }
 
-   Call it from `main`, store the result in a variable, then call a
-   second function that uses some stack space (a few `fmt.println`s with
-   intermediate computations will do), then print the slice. The
-   compiler will not warn you. You may see the original values, you may
-   see garbage, you may see whatever the next stack frame happened to
-   write. This is the dangling-slice failure mode and it is what the
-   "you are responsible for not outliving the backing storage" line
-   means in practice.
+   Build it. Odin **rejects** it: `Error: It is unsafe to return a slice
+   of a local variable ('local[:]')`. The compiler guards this direct
+   case. To see the hazard it does *not* catch, let the slice escape
+   indirectly instead - assign it through an `out: ^[]int` parameter, or
+   store it in a struct the caller keeps. Those compile, and the slice
+   points into a popped frame. "You are responsible for not outliving the
+   backing storage" is about exactly those uncaught cases.
 
 4. **Slice header copy vs element copy.** Take a slice `a := nums[:]`,
    make a second variable `b := a`, then write `b[0] = 777`. Print

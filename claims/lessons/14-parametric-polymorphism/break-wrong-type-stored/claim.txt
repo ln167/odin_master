@@ -1,0 +1,1 @@
+fails main.odin Cannot convert '42' to 'string'

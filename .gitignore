@@ -8,6 +8,13 @@ profiles/
 build/
 target/
 
+# Regenerable build / debug / crash outputs — never commit
+*.exe
+*.stackdump
+*.ppm
+*.rdi
+*.S
+
 # Assembly / IR dumps from `just asm` / `just asm-file`
 bench/**/*.S
 bench/**/*.s
@@ -43,19 +50,20 @@ content/domains/odin/source/raw/tier3-community/odin-examples/
 scratch/*.odin
 !scratch/scratch.odin
 
-# Built Odin binaries (lessons-check)
-tools/domains/odin/lessons-check/lessons-check.exe
-tools/domains/odin/lessons-check/lessons-check
-content/domains/odin/vault/lessons/**/.lessons-check.odin
-
 # qmd local cache (per-machine; index lives elsewhere)
 .qmd/
 
-# Verification test scratch (just verify writes .actual.txt; odin run -out:.bin writes a binary)
-tests/**/.actual.txt
+# Claim/verification scratch (odin -out:.bin writes a binary)
 tests/**/.bin
 tests/**/.bin.exe
 tests/**/.bin.pdb
+claims/**/.bin
+claims/**/.bin.exe
+claims/**/.bin.pdb
+
+# Generated equiv dispatcher (regenerated each run)
+tests/**/gen_dispatch.odin
+claims/**/gen_dispatch.odin
 
 # Debug builds from `just debug-dir` and `<leader>oD`
 **/.dbg.exe

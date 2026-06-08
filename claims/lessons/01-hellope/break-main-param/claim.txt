@@ -1,0 +1,1 @@
+fails main.odin Procedure type of 'main' was expected to be 'proc()'

@@ -132,6 +132,9 @@ def check_compiled_page(path: Path, expected_provenance: str, report: Report,
         return
     # source_ids paths exist
     for sid in fm.get("source_ids") or []:
+        if not isinstance(sid, dict) or "path" not in sid:
+            report.add(f"source_id: {rel}", False, f"malformed entry {sid!r}")
+            return
         sp = REPO / sid["path"]
         if not sp.exists():
             report.add(

@@ -59,9 +59,9 @@ Each domain has three storage tiers with strict ownership rules.
 |---|---|---|---|---|
 | `source/` | `content/domains/<d>/source/` | Upstream maintainers (under `raw/`) + you (manifest, `contradictions.md`, optional `notes/`) | Immutable from LLM's perspective | No — refetched via `update` |
 | `compiled/` | `content/domains/<d>/compiled/` | LLM | Regenerated on every Compile | Yes — idempotent |
-| `vault/` | `content/domains/<d>/vault/` | Human (LLM original, you blessed) | Frozen; only changes via `promote` | No — promote is one-way |
+| `vault/` | `content/domains/<d>/vault/` | LLM (`lessons/`) + you-blessed (rest) | `vault/lessons/` LLM-editable; rest frozen, changes via `promote` | No — promote is one-way |
 
-**Prime directive:** the LLM never writes to `source/` or `vault/`. Compile produces only into `compiled/`. Promote moves one file at a time from `compiled/` to `vault/`, rewriting frontmatter to mark it frozen.
+**Prime directive:** the LLM never writes to `source/` or `scratch/`; in `vault/`, only `vault/lessons/` is LLM-editable. Compile produces only into `compiled/`. Promote moves one file at a time from `compiled/` to the frozen part of `vault/`, rewriting frontmatter to mark it frozen.
 
 ### Multi-domain layout
 

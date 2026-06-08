@@ -1,0 +1,1 @@
+fails main.odin Invalid type of a key for a map, got '[dynamic]int'

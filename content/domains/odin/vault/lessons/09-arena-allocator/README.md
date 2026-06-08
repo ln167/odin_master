@@ -260,10 +260,13 @@ behavior, then revert:
 
 1. **Blow past the arena's capacity.** Shrink the backing buffer to
    something small (say 256 bytes), then try to `make([]int, 1000)`
-   inside the arena. Odin's `make` panics with an allocator error.
-   The arena will not silently grow; that's the price of the
-   bump-pointer simplicity. (If you *want* growth, use
-   `mem.dynamic_arena_init` or `core:mem/virtual`.)
+   inside the arena. The arena will not grow -- but `make` does **not**
+   panic. It returns an empty slice (len 0, nil data) plus an
+   `Out_Of_Memory` error. The single-value form `big := make([]int, 1000)`
+   silently discards that error and leaves you a zero-length slice; the
+   two-value form `big, err := make([]int, 1000)` is how you catch it.
+   *That silent discard* is the real footgun here, not a crash. (If you
+   want growth, use `mem.dynamic_arena_init` or `core:mem/virtual`.)
 2. **Forget to `free_all` between frames.** Comment out the
    `arena_free_all` call. The second frame's allocations stack on
    top of the first frame's, and `arena.offset` keeps climbing.
@@ -271,8 +274,11 @@ behavior, then revert:
    discipline is yours.
 3. **Try to free an individual item.** Allocate a slice in the arena
    and call `delete(slice)` on it. The arena allocator returns
-   `Mode_Not_Implemented` for `.Free`, which `delete` surfaces as a
-   runtime error. The contract is one-way: allocate many, reset all.
+   `Mode_Not_Implemented` for `.Free` -- but as an **error value**, not a
+   crash. `delete` returns that error; the bare `delete(slice)` discards
+   it and the call is a silent no-op (`err := delete(slice)` lets you see
+   the `Mode_Not_Implemented`). The contract is one-way: allocate many,
+   reset all -- individual frees just quietly do nothing.
 4. **Save a pointer across the reset.** Before `arena_free_all`,
    stash a pointer to one of the arena's allocations. After the
    reset, allocate again and print the contents at the saved

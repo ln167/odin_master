@@ -8,14 +8,13 @@ import "core:time"
 Game_API :: struct {
 	init_window:     proc(),
 	init:            proc(),
-	update:          proc() -> bool,
+	update:          proc(),
 	should_run:      proc() -> bool,
 	shutdown:        proc(),
 	shutdown_window: proc(),
 	memory:          proc() -> rawptr,
 	memory_size:     proc() -> int,
 	hot_reloaded:    proc(rawptr),
-	api_version:     proc() -> int,
 	lib:             dynlib.Library,
 	mtime:           time.Time,
 }
@@ -58,9 +57,13 @@ main :: proc() {
 			ptr := api.memory()
 			next, next_ok := load_game(version)
 			if next_ok {
-				if next.api_version() != api.api_version() {
-					fmt.eprintfln("[host] api shape changed (%d -> %d); skipping swap, restart required",
-						api.api_version(), next.api_version())
+				// size_of(Game_Memory) differs => fields added/removed/retyped, so the
+				// old allocation can't be reinterpreted. Skip the swap and wait for a
+				// manual restart. (A pure same-size reorder slips through — rare, and the
+				// restart is yours to trigger when you're ready.)
+				if next.memory_size() != api.memory_size() {
+					fmt.eprintfln("[host] Game_Memory shape changed (%d -> %d bytes); skipping swap. Close the window and re-run `just lab` when ready.",
+						api.memory_size(), next.memory_size())
 					api.mtime = mt
 				} else {
 					api = next

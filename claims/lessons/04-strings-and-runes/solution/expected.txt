@@ -1,0 +1,8 @@
+byte len: 6
+rune count: 5
+  byte 0 -> rune h (U+0068)
+  byte 1 -> rune é (U+00E9)
+  byte 3 -> rune l (U+006C)
+  byte 4 -> rune l (U+006C)
+  byte 5 -> rune o (U+006F)
+hi, héllo!

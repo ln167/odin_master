@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Odin union — from layout to why it matters</title>
+<style>
+  :root{
+    --paper:#15130f; --card:#1d1a14; --ink:#ece6d8; --muted:#9a9182;
+    --rule:#332e24; --accent:#5ec8b8; --accent-soft:#1f342f;
+    --tag:#e0875a; --pad:#5a544a; --overlap:#332e24; --bad:#e0675a;
+    --mono:"Cascadia Mono","Cascadia Code",Consolas,ui-monospace,"SF Mono",monospace;
+    --serif:-apple-system,"Segoe UI Variable Text","Segoe UI",system-ui,Roboto,"Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper);color:var(--ink)}
+  body{font-family:var(--serif);line-height:1.6;padding:0 20px;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-feature-settings:"kern" 1,"liga" 1}
+  .page{max-width:860px;margin:0 auto;padding:46px 0 90px}
+  .kicker{font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+  h1{font-size:30px;line-height:1.15;margin:0 0 18px;font-weight:600;letter-spacing:-.01em}
+
+  /* level tabs */
+  .levels{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+  .levels button{flex:1;min-width:150px;text-align:left;background:var(--card);border:1px solid var(--rule);
+    color:var(--muted);border-radius:10px;padding:11px 14px;cursor:pointer;transition:.12s;font-family:var(--serif)}
+  .levels button:hover{border-color:var(--accent)}
+  .levels button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--ink)}
+  .levels .lv{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);display:block;margin-bottom:3px}
+  .levels .tt{font-size:14px}
+  .rule{height:1px;background:var(--rule);margin:22px 0 26px}
+
+  .deck{color:var(--muted);font-size:17px;margin:0 0 24px;line-height:1.5}
+  .deck b{color:var(--ink)}
+  h2{font-size:21px;margin:0 0 14px;font-weight:600}
+  p.teach{font-size:16px;line-height:1.62;max-width:46em}
+  p.teach code,.il{font-family:var(--mono);font-size:.86em;background:#2a2519;padding:1px 5px;border-radius:4px}
+  .teach b{color:var(--tag)}
+  .section{display:none}
+  .section.on{display:block}
+
+  nav.sub{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;font-family:var(--mono);font-size:13px}
+  nav.sub button{background:var(--card);border:1px solid var(--rule);color:var(--muted);border-radius:8px;padding:8px 14px;cursor:pointer;transition:.12s}
+  nav.sub button:hover{color:var(--ink);border-color:var(--accent)}
+  nav.sub button.on{color:var(--ink);border-color:var(--accent);background:var(--accent-soft)}
+  .hint{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin:0 0 20px}
+
+  .canvas{background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:30px 28px}
+  .slotlabel{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
+
+  .fieldrow{display:grid;grid-template-columns:repeat(16,1fr);gap:6px;margin-bottom:6px;height:22px}
+  .fieldspan{grid-row:1;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:11px;color:var(--accent);border-bottom:2px solid var(--accent);border-radius:2px}
+  .strip{display:grid;grid-template-columns:repeat(16,1fr);gap:6px}
+  .byte{aspect-ratio:1/1.15;border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:var(--mono);position:relative;border:1px solid transparent}
+  .byte .hx{font-size:13px;font-weight:600}
+  .byte .ix{position:absolute;top:2px;left:4px;font-size:8px;color:var(--muted);opacity:.7}
+  .b-used{background:var(--accent-soft);border-color:var(--accent);color:#cdeee7}
+  .b-overlap{background:#241f17;border-color:#332e24;color:#6f6655}
+  .b-tag{background:#3a2417;border-color:var(--tag);color:#f0b48a}
+  .b-pad{background:#201d17;border-color:#332e24;color:#5a544a;background-image:repeating-linear-gradient(45deg,transparent,transparent 4px,#262119 4px,#262119 8px)}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;margin-top:18px;font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+  .legend span{display:flex;align-items:center;gap:7px}
+  .chip{width:13px;height:13px;border-radius:3px;border:1px solid}
+  .c-used{background:var(--accent-soft);border-color:var(--accent)}
+  .c-overlap{background:#241f17;border-color:#332e24}
+  .c-tag{background:#3a2417;border-color:var(--tag)}
+  .c-pad{background:#201d17;border-color:#332e24}
+
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:26px}
+  @media(max-width:680px){.cols{grid-template-columns:1fr}}
+  .panel h3{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 12px;font-weight:600}
+  .sizes{font-family:var(--mono);font-size:13px;line-height:2}
+  .sizes .n{color:var(--accent);font-weight:600}
+  .sizes .big{color:var(--tag);font-weight:600}
+
+  pre{font-family:var(--mono);font-size:12.5px;line-height:1.7;background:#1a1710;border:1px solid var(--rule);border-radius:10px;padding:16px 18px;overflow:auto;margin:22px 0 0;white-space:pre-wrap}
+  pre .cm{color:#6f6655}
+  pre .kw{color:var(--accent)}
+  pre .er{color:var(--bad)}
+
+  /* level 2: command buffer */
+  .cmdstrip{display:flex;gap:4px;margin:6px 0 6px;flex-wrap:wrap}
+  .cmd{flex:1;min-width:84px;background:var(--accent-soft);border:1px solid var(--accent);border-radius:7px;padding:9px 8px;font-family:var(--mono);font-size:11px;text-align:center;color:#cdeee7}
+  .cmd .tg{display:block;font-size:9px;color:var(--tag);margin-top:3px}
+  .arrowdown{text-align:center;color:var(--muted);font-family:var(--mono);font-size:12px;margin:4px 0}
+  .oopstrip{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}
+  .oopcell{flex:1;min-width:84px;background:#241f17;border:1px dashed #5a4530;border-radius:7px;padding:9px 8px;font-family:var(--mono);font-size:10px;text-align:center;color:#8a7a66}
+  .heaplabel{font-family:var(--mono);font-size:10px;color:var(--bad);text-align:center;margin-top:8px}
+
+  /* level 3 bars */
+  .bar{height:30px;border-radius:6px;display:flex;align-items:center;font-family:var(--mono);font-size:12px;padding-left:10px;color:#0e0c08;font-weight:600;margin:6px 0;transition:width .3s,background .2s}
+  .bar.used{background:var(--accent)}
+  .bar.waste{background:repeating-linear-gradient(45deg,#5a544a,#5a544a 6px,#48433b 6px,#48433b 12px);color:var(--ink)}
+  .barrow{display:flex;align-items:center;gap:10px}
+  .barrow .lab{font-family:var(--mono);font-size:11px;color:var(--muted);width:120px;flex:none}
+
+  .note{background:#1a1710;border:1px solid var(--rule);border-left:3px solid var(--tag);
+    border-radius:10px;padding:15px 18px;margin-top:24px;font-size:15px;line-height:1.6;color:var(--muted)}
+  .note b{color:var(--ink)}
+  .note .h{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--tag);display:block;margin-bottom:8px}
+  .foot{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;margin-top:34px}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="kicker">Odin · tagged unions</div>
+  <h1>A union, four levels deep</h1>
+
+  <div class="levels" id="levelnav"></div>
+  <div class="rule"></div>
+
+  <!-- ===================== LEVEL 1 ===================== -->
+  <section class="section" id="s1">
+    <p class="deck">A union is <b>one chunk of memory, reused to hold any one shape at a time</b>. Putting a Rectangle in it writes over the exact same bytes a Circle would have used — they can't both be there. One extra number at the end remembers which shape is in there right now. Pick a shape and watch which bytes change.</p>
+    <nav class="sub" id="nav"></nav>
+    <div class="hint">Real bytes, measured from a compiled Odin program (little-endian, f32). Byte index is top-left of each cell.</div>
+    <div class="canvas">
+      <div class="slotlabel" id="slotlabel"></div>
+      <div class="fieldrow" id="fieldrow"></div>
+      <div class="strip" id="strip"></div>
+      <div class="legend">
+        <span><i class="chip c-used"></i> bytes this shape uses</span>
+        <span><i class="chip c-overlap"></i> shared slot, idle now</span>
+        <span><i class="chip c-tag"></i> tag — which shape</span>
+        <span><i class="chip c-pad"></i> padding</span>
+      </div>
+    </div>
+    <div class="cols">
+      <div class="panel"><h3>Sizes (size_of)</h3>
+        <div class="sizes">
+          Circle&nbsp;&nbsp;&nbsp;= <span class="n">4</span><br>Rectangle = <span class="n">8</span><br>Triangle&nbsp;= <span class="n">12</span><br><br>
+          <b style="color:var(--ink)">Shape (union)</b> = <span class="big">16</span><br>&nbsp;= 12 biggest + 1 tag + 3 pad
+        </div>
+      </div>
+      <div class="panel"><h3>What you're seeing</h3><p class="teach" id="teach"></p></div>
+    </div>
+  </section>
+
+  <!-- ===================== LEVEL 2 ===================== -->
+  <section class="section" id="s2">
+    <p class="deck">Level 1 was <i>what it is</i>. Now: the case where <b>not</b> using a union is genuinely the wrong call — a renderer's <b>command buffer</b>.</p>
+    <p class="teach">Every frame, a renderer re-records the commands to run, in order — and <b>how many, which kinds, and in what order all change frame to frame</b> as the scene changes. The example below is just <i>one</i> frame; hit "record another frame" and watch it come out a different length and mix. You can't know the count or the types ahead of time — which is exactly why this needs a <b>dynamic array</b> (growable, unknown count) whose element is a <b>union</b> (mixed command kinds): <span class="il">[dynamic]RenderCommand</span>, where <span class="il">RenderCommand :: union { Clear, SetViewport, BindTexture, DrawMesh, DrawText, SetScissor }</span>.</p>
+
+    <div class="canvas">
+      <div class="slotlabel" id="cmdlabel"></div>
+      <div class="cmdstrip" id="cmdstrip"></div>
+      <div class="arrowdown">Because every slot is the same size, getting <span class="il" style="background:#241f17">commands[i]</span> is a direct jump: go to the start of the array, step <i>i</i> slots over, you're there — no following a pointer off to somewhere else in memory. That direct jump is the speed of a packed array. And yet the length, the command kinds, and their order are all built fresh at runtime.</div>
+      <nav class="sub" style="justify-content:center;margin:14px 0 0"><button id="nextframe">▸ record another frame</button></nav>
+    </div>
+
+    <p class="teach"><b>The emergent property:</b> because every variant is forced to the same fixed size (Level 1), a <i>different</i> mix of command types every frame still packs into <i>one</i> contiguous array. A union is what lets you have a homogeneous array of heterogeneous things — and a command buffer, whose contents you can't predict, is exactly that. If the sequence were always the same fixed five calls, you wouldn't need any of this — you'd just write the five calls. The union + dynamic array earn their keep <i>because</i> the sequence is different every frame.</p>
+
+    <h2 style="margin-top:30px">Why the alternatives are worse</h2>
+    <div class="canvas">
+      <div class="slotlabel" style="color:var(--bad)">the OOP version: array of pointers to scattered heap objects</div>
+      <div class="oopstrip">
+        <div class="oopcell">ptr →</div><div class="oopcell">ptr →</div><div class="oopcell">ptr →</div><div class="oopcell">ptr →</div><div class="oopcell">ptr →</div><div class="oopcell">ptr →</div>
+      </div>
+      <div class="heaplabel">each → a separate heap allocation, somewhere else in memory, with a vtable. the CPU jumps for every command.</div>
+    </div>
+    <p class="teach">
+      <b>Inheritance + virtual dispatch</b> (<span class="il">abstract class Command</span>): one heap allocation per command, a vtable pointer on each, dispatch chases pointers — death by cache miss in a loop that runs thousands of times per frame.<br><br>
+      <b>A separate array per command type</b> (all the DrawMeshes here, all the Clears there): now you've <b>lost the order</b> — and order is the whole point (you must set the viewport <i>before</i> you draw into it). This isn't slower, it's <i>broken</i>.<br><br>
+      <b>A hand-rolled C <span class="il">struct { enum tag; union payload; }</span></b>: that <i>is</i> a tagged union — you've just rebuilt Odin's <span class="il">union</span> by hand, without the tag maintained for you and without the exhaustiveness check (Level 4). More code, same idea, more bugs.
+    </p>
+  </section>
+
+  <!-- ===================== LEVEL 3 ===================== -->
+  <section class="section" id="s3">
+    <p class="deck">Level 2 sold you on the union. Level 3 is the bill: <b>the slot is as big as the biggest variant — every slot, always.</b> One fat variant taxes all the others.</p>
+    <p class="teach">Say you add a sprite command that holds its pixels <b>inline</b>: <span class="il">Sprite :: struct { pixels: [64]u8 }</span>. Now every command in the array — even a tiny <span class="il">Clear</span> — is sized for the sprite. Toggle it:</p>
+
+    <nav class="sub" id="fatnav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="fatlabel"></div>
+      <div class="barrow"><div class="lab">one slot</div><div style="flex:1"><div class="bar used" id="bar-slot"></div></div></div>
+      <div class="barrow"><div class="lab">a Clear's real need</div><div style="flex:1"><div class="bar used" id="bar-need" style="background:#3a6e64"></div><div class="bar waste" id="bar-waste"></div></div></div>
+      <div class="sizes" id="fatsizes" style="margin-top:16px"></div>
+    </div>
+
+    <p class="teach"><b>The fix:</b> keep the variants similar-sized, and push big payloads <b>out of line</b> — store a <span class="il">[]u8</span> slice (a 16-byte pointer+len) that points at the pixels living elsewhere, instead of the 64 bytes inline. The union holds the small handle; the bulk lives in its own buffer. Same data, the slot stays lean, and the array stays cache-friendly. This is the same "size is a worst-case tax paid by everyone" lesson behind data-oriented layout in general.</p>
+
+    <div class="note">
+      <span class="h">not the same as #packed</span>
+      Odin's <span class="il">#packed</span> tag is a different kind of "packing": it removes the alignment padding <b>between a struct's fields</b> — e.g. <span class="il">struct #packed { x: u8, y: i32, z: u16, w: u8 }</span> shrinks from 12 → 8 bytes. It does <b>nothing</b> to a union's size. The waste you see above isn't field padding — it's the slot being sized to the <b>biggest variant</b>, and <span class="il">#packed</span> can't change that. Different waste, different tool. (The one that <i>does</i> touch unions, <span class="il">#raw_union</span>, is the opposite of what you want: it's a C-style <b>untagged</b> union — overlapping bytes with no tag at all, so you'd lose the safety from Level 4.)
+    </div>
+  </section>
+
+  <!-- ===================== LEVEL 4 ===================== -->
+  <section class="section" id="s4">
+    <p class="deck">The last level isn't about bytes — it's a correctness property that <b>emerges</b> once a union has many variants and many places that dispatch on it.</p>
+    <p class="teach">Odin makes a plain <span class="il">switch</span> over a union <b>exhaustive</b>: if you don't handle every variant, <b>the build fails</b>. Not a warning, not a runtime surprise — a compile error, by default:</p>
+    <pre><span class="kw">switch</span> v <span class="kw">in</span> cmd {
+<span class="kw">case</span> Clear:       <span class="cm">// ...</span>
+<span class="kw">case</span> SetViewport: <span class="cm">// ...</span>
+<span class="kw">case</span> DrawMesh:    <span class="cm">// ...</span>
+}   <span class="cm">// forgot DrawText and BindTexture</span>
+
+<span class="er">main.odin(12:2) Unhandled switch case: BindTexture</span>
+<span class="er">    Suggestion: Was '#partial switch' wanted?</span></pre>
+
+    <p class="teach"><b>The emergent payoff:</b> the day you add a new command — say <span class="il">Glow</span> — to the union, the compiler lights up <b>every</b> <span class="il">switch</span> in the codebase that doesn't handle it yet. In a real renderer with dozens of dispatch sites, "did I update everywhere?" stops being a runtime bug hunt and becomes a <b>compile-time to-do list the compiler writes for you</b>. Adding a variant is safe because the type system won't let you forget a spot.</p>
+    <p class="teach">When you genuinely mean to handle only some cases, you opt out explicitly with <span class="il">#partial switch</span> — so the exhaustive default is the safe one, and "I'm being partial on purpose" is the thing you have to say out loud.</p>
+    <p class="teach" style="margin-top:24px;color:var(--muted)">That's the arc: <b style="color:var(--ink)">L1</b> one reused chunk + a tag → <b style="color:var(--ink)">L2</b> that sameness lets mixed commands share one flat ordered array → <b style="color:var(--ink)">L3</b> the slot costs the biggest variant, so push bulk out of line → <b style="color:var(--ink)">L4</b> the compiler guards every dispatch, so growth stays safe.</p>
+  </section>
+
+  <div class="foot">probes reproduce with <span style="color:var(--ink)">odin run</span> · sizes &amp; the L4 error are real compiler output</div>
+</div>
+
+<script>
+/* ---------- Level 1 data (real measured bytes) ---------- */
+const V = {
+  nil:       { label:'(nil)', used:0, fields:[], bytes:[0,0,0,0,0,0,0,0,0,0,0,0,0x00,0,0,0] },
+  Circle:    { label:'Circle{radius = 2}', used:4, fields:[['radius',0,4]],
+               bytes:[0x00,0x00,0x00,0x40,0,0,0,0,0,0,0,0,0x01,0,0,0] },
+  Rectangle: { label:'Rectangle{w = 2, h = 3}', used:8, fields:[['w',0,4],['h',4,8]],
+               bytes:[0x00,0x00,0x00,0x40,0x00,0x00,0x40,0x40,0,0,0,0,0x02,0,0,0] },
+  Triangle:  { label:'Triangle{1, 1, 1}', used:12, fields:[['a',0,4],['b',4,8],['c',8,12]],
+               bytes:[0x00,0x00,0x80,0x3f,0x00,0x00,0x80,0x3f,0x00,0x00,0x80,0x3f,0x03,0,0,0] },
+};
+const TEACH = {
+  nil:`No shape is set: every data byte is zero and the <b>tag is 0</b>. That's the empty state a fresh <code>Shape</code> starts in.`,
+  Circle:`<code>Circle</code> needs only its one <code>radius</code> float, so just bytes <b>0–3</b> are used. 4–11 sit idle. <b>Tag (byte 12) = 01</b> → "this is a Circle."`,
+  Rectangle:`<code>Rectangle</code> uses bytes <b>0–7</b> for <code>w</code> and <code>h</code> — the <i>same</i> bytes the Circle's radius used. The bytes didn't move; their meaning changed. <b>Tag = 02.</b>`,
+  Triangle:`<code>Triangle</code> is the biggest variant and fills all <b>12 data bytes</b>. This is why the slot is 12 wide — it must fit the largest one. <b>Tag = 03.</b>`,
+};
+let cur='Rectangle';
+function regionClass(i,used){ if(i<12) return i<used?'b-used':'b-overlap'; if(i===12) return 'b-tag'; return 'b-pad'; }
+function renderL1(){
+  document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('on',b.dataset.v===cur));
+  const v=V[cur];
+  document.getElementById('slotlabel').textContent=`Shape = ${v.label}   —   16-byte slot`;
+  let fr=''; for(const [n,lo,hi] of v.fields) fr+=`<div class="fieldspan" style="grid-column:${lo+1}/${hi+1}">${n}</div>`;
+  document.getElementById('fieldrow').innerHTML=fr;
+  let s=''; for(let i=0;i<16;i++){ const hx=v.bytes[i].toString(16).padStart(2,'0');
+    s+=`<div class="byte ${regionClass(i,v.used)}"><span class="ix">${i}</span><span class="hx">${hx}</span></div>`; }
+  document.getElementById('strip').innerHTML=s;
+  document.getElementById('teach').innerHTML=TEACH[cur];
+}
+const nav=document.getElementById('nav');
+for(const k of Object.keys(V)){ const b=document.createElement('button'); b.dataset.v=k;
+  b.textContent=k==='nil'?'nil (unset)':k; b.onclick=()=>{cur=k;renderL1();}; nav.appendChild(b); }
+
+/* ---------- Level 2: a different command buffer every frame ---------- */
+let frameNo = 0;
+function genFrame(){
+  frameNo++;
+  const seq = [['Clear',1],['SetViewport',2]];          // a frame usually starts here
+  const pool = [['BindTexture',3],['DrawMesh',4],['DrawMesh',4],['DrawText',5],['SetScissor',6]];
+  const extra = 2 + Math.floor(Math.random()*6);        // 2..7 more commands
+  for(let i=0;i<extra;i++) seq.push(pool[Math.floor(Math.random()*pool.length)]);
+  if(Math.random()<0.6) seq.push(['DrawText',5]);       // often some UI text on top
+  document.getElementById('cmdlabel').textContent =
+    `frame ${frameNo} — ${seq.length} commands in [dynamic]RenderCommand (this frame only)`;
+  document.getElementById('cmdstrip').innerHTML =
+    seq.map(([n,t])=>`<div class="cmd">${n}<span class="tg">tag ${t}</span></div>`).join('');
+}
+document.getElementById('nextframe').onclick = genFrame;
+
+/* ---------- Level 3 toggle (real measured sizes) ---------- */
+const FAT = {
+  inline: { label:'Sprite holds [64]u8 INLINE', slot:68, need:1, note:'Base 16 → <span class="big">68</span>. A 1000-command array: 16 KB → <span class="big">68 KB</span>. Most of it padding behind small commands.' },
+  out:    { label:'Sprite holds a []u8 handle (out of line)', slot:24, need:1, note:'Slim <span class="n">24</span>. The 64 bytes of pixels live in their own buffer; the union holds a 16-byte pointer+len. 1000-command array: <span class="n">24 KB</span>.' },
+};
+let fatMode='inline';
+function renderL3(){
+  document.querySelectorAll('#fatnav button').forEach(b=>b.classList.toggle('on',b.dataset.m===fatMode));
+  const f=FAT[fatMode];
+  document.getElementById('fatlabel').textContent=f.label+`  —  slot = ${f.slot} bytes`;
+  const pct=Math.round(f.slot/68*100);
+  document.getElementById('bar-slot').style.width=pct+'%';
+  document.getElementById('bar-slot').textContent=f.slot+' bytes / command';
+  document.getElementById('bar-need').style.width=Math.round(1/68*100*4)+'%';
+  document.getElementById('bar-need').textContent='~4B';
+  document.getElementById('bar-waste').style.width=Math.round((f.slot-4)/68*100)+'%';
+  document.getElementById('bar-waste').textContent=(f.slot-4)+' wasted';
+  document.getElementById('fatsizes').innerHTML=f.note;
+}
+const fatnav=document.getElementById('fatnav');
+[['inline','inline [64]u8'],['out','out-of-line []u8']].forEach(([m,t])=>{
+  const b=document.createElement('button'); b.dataset.m=m; b.textContent=t; b.onclick=()=>{fatMode=m;renderL3();}; fatnav.appendChild(b);
+});
+
+/* ---------- Level navigation ---------- */
+const LEVELS=[
+  ['1','What it is','one reused chunk + a tag'],
+  ['2','Why use it','the render command buffer'],
+  ['3','The cost','biggest variant taxes all'],
+  ['4','Why it stays safe','exhaustive switch'],
+];
+let level='1';
+function setLevel(n){
+  level=n;
+  document.querySelectorAll('.levels button').forEach(b=>b.classList.toggle('on',b.dataset.n===n));
+  for(const [k] of LEVELS) document.getElementById('s'+k).classList.toggle('on',k===n);
+  if(n==='1') renderL1();
+  if(n==='2' && frameNo===0) genFrame();
+  if(n==='3') renderL3();
+}
+const lnav=document.getElementById('levelnav');
+for(const [n,tt,sub] of LEVELS){ const b=document.createElement('button'); b.dataset.n=n;
+  b.innerHTML=`<span class="lv">Level ${n} · ${sub}</span><span class="tt">${tt}</span>`;
+  b.onclick=()=>setLevel(n); lnav.appendChild(b); }
+setLevel('1');
+</script>
+</body>
+</html>

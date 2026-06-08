@@ -1,0 +1,1 @@
+Particle{pos = [1, 1, 1], vel = [2, 2, 2], mass = 3}

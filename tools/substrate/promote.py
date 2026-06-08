@@ -78,6 +78,10 @@ def promote(compiled_path: Path, note: str | None, dry_run: bool) -> int:
     text = compiled_path.read_text(encoding="utf-8")
     fm, body = split_frontmatter(text)
 
+    if fm["domain"] != compiled_path.relative_to(DOMAINS_DIR).parts[0]:
+        print(f"error: frontmatter domain {fm['domain']!r} != folder domain", file=sys.stderr)
+        return 1
+
     domain_dir = DOMAINS_DIR / fm["domain"]
     page_type = fm["type"]
     vault_dir = domain_dir / "vault" / page_type
@@ -108,7 +112,6 @@ def promote(compiled_path: Path, note: str | None, dry_run: bool) -> int:
 
     vault_dir.mkdir(parents=True, exist_ok=True)
     vault_path.write_text(new_text, encoding="utf-8")
-    compiled_path.unlink()
 
     # Rewrite links in remaining compiled/ pages
     old_link = str(rel).replace("\\", "/")
@@ -138,6 +141,7 @@ def promote(compiled_path: Path, note: str | None, dry_run: bool) -> int:
         encoding="utf-8",
     )
 
+    compiled_path.unlink()
     print(f"promoted: {old_link} → {new_link}")
     return 0
 

@@ -34,7 +34,7 @@ fingerprint (specific pixel values or projected coordinates) to stdout.
 
 ```sh
 just verify lesson-00-frame-buffer   # one test
-just verify-all                      # all tests; harness at tools/substrate/verify_all.py
+just verify-all                      # all claims; harness at tools/substrate/claim.py
 ```
 
 Each test compiles a tiny binary via `odin run main.odin -file`, captures

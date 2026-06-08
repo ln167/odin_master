@@ -51,8 +51,12 @@ Windows, `write` on POSIX). The compiler doesn't insert hidden malloc.
 ## Now break it
 1. Remove the `package main` line. Re-run. The compiler tells you
    exactly what's missing — read the message before fixing it.
-2. Change `proc()` to `proc(x: int)` but leave the call empty. Re-run.
-   The error names the call site and the missing argument.
+2. Give `main` a parameter: change `main :: proc()` to
+   `main :: proc(x: int)`. Re-run. `main` is the program entry point and
+   must be `proc()`, so the compiler rejects the *signature itself*:
+   `Procedure type of 'main' was expected to be 'proc()', got proc(int)`.
+   (This is not a missing-argument error — the runtime calls `main`, so
+   its type is fixed.)
 
 ## Find more like this
     just substrate-search --bm25 "hellope" --top 5

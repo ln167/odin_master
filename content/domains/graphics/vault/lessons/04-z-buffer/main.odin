@@ -47,6 +47,8 @@ triangle_aabb :: proc(p0, p1, p2: [2]int) -> (xmin, ymin, xmax, ymax: int) {
 //        w1 = f32(e1) / f32(tot)
 //        w2 = f32(e2) / f32(tot)
 //      depth: z_pixel = w0*z0 + w1*z1 + w2*z2
+//      (linear interp is OK here — z is hand-set/flat; a projected pipeline
+//       interpolates NDC z or 1/w perspective-correctly, like lesson 07's UV.)
 //      if z_pixel < z[idx]:
 //        z[idx]      = z_pixel
 //        pixels[idx] = color

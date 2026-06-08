@@ -1,0 +1,1 @@
+fails main.odin 'aos' of type '[4]Particle' has no field 'pos'

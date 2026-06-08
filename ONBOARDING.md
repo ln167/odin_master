@@ -22,9 +22,9 @@ Every domain (`content/domains/<d>/`) has three storage tiers with strict owners
 |---|---|---|---|
 | `source/` | upstream-mirrored docs + your manifest + (optional) your hand-written notes | upstream maintainers + you | LLM never writes here |
 | `compiled/` | LLM-generated wiki: concepts, summaries, INDEX.md, log.md | LLM | regenerated on every Compile pass |
-| `vault/` | blessed, frozen artifacts (studies, lessons) | human (LLM original, you blessed) | only changes via `just substrate-promote` |
+| `vault/` | blessed artifacts (lessons, studies) | LLM (lessons) + you (blessed rest) | `vault/lessons/` LLM-editable; rest via `just substrate-promote` |
 
-**Prime directive:** the LLM never writes to `source/` or `vault/`. If you see the LLM trying to, stop it. The whole substrate's discipline rests on this.
+**Prime directive:** the LLM never writes to `source/` or anywhere under `scratch/` (your notes, conclusions, and experiments). In `vault/`, only `vault/lessons/` is LLM-editable — the rest is frozen (`just substrate-promote` only). If you see the LLM writing outside those bounds, stop it.
 
 ### Provenance split inside `compiled/`
 
@@ -88,10 +88,9 @@ odin_master/
 │       └── plans/            implementation plans + reviews
 │
 ├── tools/
-│   ├── substrate/            the four shell tools — doctor, promote, test, domain-scaffold
-│   ├── domains/odin/         Odin-specific helpers (odin_lib, lessons-check)
+│   ├── substrate/            shell tools — doctor, promote, test, domain-scaffold, fetch, search, claim
+│   ├── domains/odin/         Odin-specific helpers (odin_lib)
 │   ├── nvim/                 nvim integration (LSP, formatter, lessons hotkeys)
-│   ├── install/              bootstrap scripts
 │   ├── git-hooks/, obsidian/, debug/    pre-existing utilities
 │
 ├── build/, tests/, lab/, bench/, scratch/    untouched by the substrate redesign
@@ -120,7 +119,7 @@ content/domains/<d>/
 │   └── from-query/           pages produced by Query workflow (two-outputs rule)
 │       └── concepts/  cross-refs/
 │
-└── vault/                    ← BLESSED, FROZEN — only changes via `just substrate-promote`
+└── vault/                    ← lessons/ LLM-editable; rest BLESSED/FROZEN (substrate-promote)
     └── <free-form subfolders, no enforced naming>
 ```
 
@@ -147,23 +146,23 @@ Each domain defines what its tiers mean (codified in `content/domains/<d>/source
 
 | File / location | Author |
 |---|---|
-| `content/domains/<d>/source/raw/...` | Upstream maintainers; mirrored by manifest (deferred fetcher pipeline; populate by hand for v1) |
+| `content/domains/<d>/source/raw/...` | Upstream maintainers; `html_mirror` entries via `just substrate-update`, other fetcher kinds populated by hand |
 | `content/domains/<d>/source/contradictions.md` | You, with LLM proposals to approve |
 | `content/domains/<d>/source/notes/...` | You (currently empty by default; substrate doesn't require any) |
 | `content/domains/<d>/source/README.md` | You; describes the domain's tier semantics |
 | `content/domains/<d>/compiled/...` | **LLM only**, via Compile workflow. You don't hand-edit. |
-| `content/domains/<d>/vault/...` | LLM originally, you blessed via `just substrate-promote`. Frozen — don't edit. |
+| `content/domains/<d>/vault/...` | `lessons/`: LLM, edited directly. Rest: LLM originally, you blessed via `just substrate-promote` (frozen). |
 | `content/manifest.yaml` | You; declarative ingest spec |
 | `content/quality-checks.yaml` | You; regression test definitions |
 | `templates/page-types/*.md` | You; rare changes |
 | `.claude/skills/<d>/SKILL.md` | You; tells the LLM how to handle this domain |
-| `tools/substrate/*.py` | You; the four shell utilities |
+| `tools/substrate/*.py` | You; the shell utilities |
 
-The hard rule: **LLM never writes to `source/` or `vault/`.**
+The hard rule: **the LLM never writes to `source/` or `scratch/`; in `vault/`, only `vault/lessons/` is LLM-editable.**
 
 ## Workflows (plain English)
 
-The substrate has four LLM-driven workflows (live inside the `knowledge-substrate-core` skill) and four mechanical shell tools.
+The substrate has four LLM-driven workflows (live inside the `knowledge-substrate-core` skill) and a set of mechanical shell tools.
 
 ### LLM workflows (invoked through Claude Code)
 
@@ -248,7 +247,7 @@ Compile rejects pages missing required sections, with broken citations, with emp
 ## How to add a new source
 
 1. Edit `content/manifest.yaml`. Add an entry; required fields: `id`, `tier`, `domain`, `destination`, `fetcher`, `processor`, `last_updated`. Full schema in `docs/adding-sources.md`.
-2. (Once the update fetcher is implemented) `just substrate-update <domain>`. For v1, populate `source/raw/` manually.
+2. `just substrate-update <domain>` for `html_mirror` entries; other fetcher kinds are populated by hand.
 3. Trigger an Ingest pass: ask the relevant per-domain skill to "ingest <new-source-name>".
 4. Verify: `just doctor <domain>`.
 5. Optionally add a query to `content/quality-checks.yaml` semantic block.
@@ -289,16 +288,12 @@ just substrate-promote content/domains/odin/compiled/from-query/concepts/some-pa
 just new-domain my-domain
 
 # Odin-specific (pre-existing recipes)
-just build               # odin build
-just run                 # odin run
-just test                # odin test (the Odin compiler's test, not substrate-test)
-just check               # odin check -vet -strict-style
 just format              # odinfmt over the tree
 ```
 
 ## Things NOT to do
 
-- **Don't write to `source/` or `vault/` from the LLM.** This is the prime directive.
+- **Don't write to `source/` or `scratch/` from the LLM, or to frozen `vault/` content — only `vault/lessons/` is editable.** This is the prime directive.
 - **Don't hand-edit `compiled/` pages.** Compile regenerates them — your edits will be lost. If a compiled page needs to be preserved, `substrate-promote` it to `vault/`.
 - **Don't skip INDEX.md regen during a Compile pass.** It's load-bearing.
 - **Don't auto-resolve contradictions.** Propose to `contradictions.md` as `[pending]`; let the human decide.
@@ -325,7 +320,6 @@ just format              # odinfmt over the tree
 
 ## Future work (deliberately out-of-scope for v1)
 
-- Update fetcher pipeline (deleted with `tools/indexer/`; deferred).
 - Image handling for image-heavy sources (papers).
 - Batch ingest mode.
 - Wiki-as-living-document mode (Karpathy's in-place edit pattern).

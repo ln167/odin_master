@@ -1,0 +1,10 @@
+x = 42
+addr of x = <addr>
+p^ = 42
+after p^ = 100, x = 100
+player after pp.hp = 50: Player{name = "Ada", hp = 50}
+ben after heal: Player{name = "Benjamin", hp = 50}
+heap_player: Player{name = "Grace", hp = 200}
+mp[0] = 10
+mp[3] = 40
+tail: [20, 30]

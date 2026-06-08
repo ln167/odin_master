@@ -316,12 +316,17 @@ revert:
    This is the "no implicit conversion" rule of Odin in action -
    the group is a closed list and the type must match one member
    exactly.
-3. **Bring two enums into scope with `using` and collide labels.**
-   Inside a proc, declare `Color :: enum { Red, Green }` and
-   `Mood :: enum { Red, Calm }`. Try `using Color` then
-   `using Mood`. Build. The compiler tells you `Red` is now
-   ambiguous. This is the namespace pollution the docs warn about,
-   made concrete.
+3. **`using` as a statement is disallowed by default.** Inside a
+   proc, try `using Color`. In current Odin you do not even reach a
+   label collision -- the build is rejected first: `'using' has been
+   disallowed as it is considered bad practice to use as a
+   statement/procedure parameter outside of immediate refactoring`. The
+   message points you at `#+feature using-stmt` (a per-file opt-in, used
+   on line 1 of this lesson's file). *With* that flag enabled, you can
+   then reproduce the original hazard: `using Color` (with `Red`,
+   `Green`) plus `using Mood` (with `Red`, `Calm`) makes the bare name
+   `Red` ambiguous -- the namespace pollution the docs warn about. The
+   default-off status is the language's way of steering you away from it.
 
 ---
 

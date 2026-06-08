@@ -9,7 +9,7 @@ This skill defines the workflows that operate on every domain in `content/domain
 
 ## Prime directives (non-negotiable)
 
-1. **The LLM never writes to `source/` or `vault/`.** Compile produces only into `compiled/`. Promote (a shell tool) is the only way content moves into `vault/`.
+1. **The LLM never writes to `source/` or `scratch/`; in `vault/`, only `vault/lessons/` is LLM-editable.** Compile produces only into `compiled/`. Promote (a shell tool) is the only way content moves into the frozen part of `vault/`.
 2. **Compiled output is split by provenance.** Pages produced by Ingest go to `compiled/from-ingest/`. Pages produced by Query (under the two-outputs rule) go to `compiled/from-query/`. The frontmatter `provenance:` field must match the folder.
 3. **INDEX.md is regenerated on every Compile pass.** No exceptions. The workflow does not mark Compile complete without writing INDEX.md.
 4. **Validator-at-compile-time is non-negotiable.** Pages with malformed frontmatter, broken citations, missing required sections, or empty TLDRs are rejected and retried.

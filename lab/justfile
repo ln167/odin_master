@@ -10,5 +10,9 @@ watch:
 build:
     python build.py hot
 
+# headless input/sim test (no window) — agent-runnable
+test:
+    python build.py test
+
 clean:
     python build.py clean

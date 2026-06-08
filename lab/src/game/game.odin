@@ -6,18 +6,11 @@ import "core:os"
 import "core:slice"
 import sdl "vendor:sdl3"
 
-API_VERSION :: 5
-
-@(export)
-game_api_version :: proc() -> int {
-	return API_VERSION
-}
-
 @(export)
 game_init_window :: proc() {
 	if !sdl.Init({.VIDEO}) {
 		fmt.eprintfln("[lab] sdl.Init failed: %s", sdl.GetError())
-		return
+		os.exit(1)
 	}
 	fmt.println("[lab] init window")
 }
@@ -28,17 +21,17 @@ game_init :: proc() {
 	g_mem.window = sdl.CreateWindow("lab", 800, 600, {})
 	if g_mem.window == nil {
 		fmt.eprintfln("[lab] CreateWindow failed: %s", sdl.GetError())
-		return
+		os.exit(1)
 	}
 	g_mem.renderer = sdl.CreateRenderer(g_mem.window, nil)
 	if g_mem.renderer == nil {
 		fmt.eprintfln("[lab] CreateRenderer failed: %s", sdl.GetError())
-		return
+		os.exit(1)
 	}
 	g_mem.texture = sdl.CreateTexture(g_mem.renderer, .RGBA8888, .STREAMING, FB_W, FB_H)
 	if g_mem.texture == nil {
 		fmt.eprintfln("[lab] CreateTexture failed: %s", sdl.GetError())
-		return
+		os.exit(1)
 	}
 	g_mem.pixels = make([]u32, FB_W * FB_H)
 	g_mem.particle = {PARTICLE_START, PARTICLE_START}
@@ -48,7 +41,7 @@ game_init :: proc() {
 }
 
 @(export)
-game_update :: proc() -> bool {
+game_update :: proc() {
 	ev: sdl.Event
 	for sdl.PollEvent(&ev) {
 		#partial switch ev.type {
@@ -61,10 +54,7 @@ game_update :: proc() -> bool {
 		}
 	}
 	slice.fill(g_mem.pixels, u32(0x202030FF))
-	if !g_mem.paused || g_mem.step {
-		step_particle(&g_mem.particle)
-		g_mem.step = false
-	}
+	sim_frame()
 	if g_mem.frame % 60 == 0 {
 		fmt.printfln("[lab] frame=%d particle.y=%.2f", g_mem.frame, g_mem.particle.pos.y)
 	}
@@ -86,7 +76,6 @@ game_update :: proc() -> bool {
 	sdl.RenderPresent(g_mem.renderer)
 	g_mem.frame += 1
 	g_mem.counter += 1
-	return true
 }
 
 @(export)
@@ -139,6 +128,13 @@ game_hot_reloaded :: proc(mem_ptr: rawptr) {
 	g_mem = (^Game_Memory)(mem_ptr)
 	paint_initial()
 	fmt.printfln("[lab] reloaded; counter survived = %d", g_mem.counter)
+}
+
+sim_frame :: proc() {
+	if !g_mem.paused || g_mem.step {
+		step_particle(&g_mem.particle)
+		g_mem.step = false
+	}
 }
 
 paint_initial :: proc() {

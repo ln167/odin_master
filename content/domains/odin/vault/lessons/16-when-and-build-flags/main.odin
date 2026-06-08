@@ -100,8 +100,10 @@ main :: proc() {
 	// Run with:
 	//     odin run main.odin -file
 	//
-	// Compare output to expected-output.txt (which shows the default
-	// build on Windows). Then re-run with overrides:
+	// Compare output to expected-output.txt (the default build on Windows:
+	// `Build: RELEASE`, because ODIN_DEBUG is false unless you pass `-debug`
+	// -- add `-debug` and the same program prints `Build: DEBUG`). Then
+	// re-run with overrides:
 	//
 	//     odin run main.odin -file -define:MY_FEATURE=true
 	//     odin run main.odin -file -define:GREETING="hi"

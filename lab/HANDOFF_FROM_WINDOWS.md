@@ -13,8 +13,8 @@ the gotchas mostly overlap.
   (or `lab.exe` on Windows). `just lab` from repo root does both.
 - Hot reload: edit anything in `src/game/`, run `python build.py hot` from a
   second terminal, host picks up the new DLL within ~16 ms. State in
-  `Game_Memory` survives the swap; api-version mismatch guard skips reloads
-  that change the struct shape.
+  `Game_Memory` survives the swap; a `size_of(Game_Memory)` mismatch skips
+  reloads that change the struct shape (close + re-run to pick them up).
 
 ## Cross-platform stuff already handled
 

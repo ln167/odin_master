@@ -321,11 +321,14 @@ revert:
    The compiler refuses - a struct body is a list of fields, not a
    class body. The fix is to write a free procedure that takes a
    `^Particle`.
-2. **Partial positional literal.** Try `Particle{1, 2, 3}` (three
-   positional values, but the struct has three fields after expansion
-   - `pos`, `vel`, `mass`, where `pos` is a `[3]f32`). The error
-   tells you positional literals must supply every field. Switch to
-   named: `Particle{mass = 1}`. Unset fields zero-initialize.
+2. **Partial positional literal.** A positional literal must supply
+   *every* field. Try `Particle{1, 2}` (two values for three fields):
+   the error is `Too few values in structure literal, expected 3, got 2`.
+   (Careful: `Particle{1, 2, 3}` does **not** error -- it supplies all
+   three fields, and each scalar *broadcasts* to its field type, so you
+   get `pos = [1, 1, 1]`, `vel = [2, 2, 2]`, `mass = 3`. A surprise worth
+   knowing.) The safe form is named: `Particle{mass = 1}`, where unset
+   fields zero-initialize.
 3. **`aos.pos` is meaningless.** On a normal `[4]Particle`, try
    `aos.pos`. The compiler rejects it - there is no `pos` field on
    `[4]Particle`, only on `Particle`. Only `#soa` arrays expose

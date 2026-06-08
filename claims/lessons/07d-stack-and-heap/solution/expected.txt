@@ -1,0 +1,4 @@
+same stack slot reused across calls: true
+deeper frame is at a lower address: true
+heap counter survived the return: 2
+heap slice built: 0 1 4 9

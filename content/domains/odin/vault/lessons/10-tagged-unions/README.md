@@ -1,5 +1,16 @@
 # Lesson 10 - tagged unions
 
+> **Interactive:** open `union-memory-layout.html` in a browser — a
+> four-level walkthrough. **L1** the 16-byte slot for a real
+> `union { Circle, Rectangle, Triangle }` (pick a variant, watch them
+> overlap the same bytes while the tag changes). **L2** the use case where
+> *not* using a union is wrong — a renderer's command buffer (one ordered
+> array of mixed commands). **L3** the cost — the slot is as big as the
+> biggest variant (16 → 68 bytes when one variant goes fat), and the
+> push-payloads-out-of-line fix. **L4** exhaustive `switch` as a
+> compile-time correctness guard. All sizes and the L4 error are real
+> compiler output.
+
 ## Concept
 
 A **tagged union** in Odin, written `union { A, B, C }`, is a type whose

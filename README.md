@@ -3,27 +3,15 @@
 Personal multi-domain technical-knowledge substrate. v1 is for learning Odin + game programming + graphics programming.
 
 ## Daily loop cheat-sheet
-test (main Δ16)> just asm-file .\main.odin
-The file '.main.odin' was not found.
-error: Recipe `asm-file` failed on line 75 with exit code 1
-test (main Δ16)> ls
 
-    Directory: C:\Users\user1\dev\odin_master\lessons\01-hellope\test
-
-Mode                 LastWriteTime         Length Name
-----                 -------------         ------ ----
--a---           5/16/2026  4:32 PM         607744 main.dbg.exe
--a---           5/16/2026  4:32 PM        4304896 main.dbg.pdb
--a---           5/16/2026  3:55 PM        2022260 main.dbg.rdi
--a---           5/19/2026  6:04 PM            151 main.odin
-
-test (main Δ16)>
+Editor hotkeys (full table in `LEARNING.md`):
 
 | | |
 |---|---|
 | `<leader>oh` / `<leader>oH` | Pick / next lesson (odin + graphics) |
 | `<leader>oq` | qmd search the indexed corpus |
 | `<leader>or` | Run current `.odin` file |
+| `<leader>ow` | Toggle run-on-save watch — rerun current file on every save |
 | `<leader>op` | Open `scratch/scratch.odin` |
 | `<leader>oV` | Scaffold a verification test for the proc under cursor |
 | `<leader>oD` | Debug current file with codelldb (nvim-dap session) |
@@ -34,13 +22,14 @@ test (main Δ16)>
 | `<leader>di` / `<F11>` | Step into |
 | `just verify-all` | Run all reference tests (pre-flight before a lesson) |
 | `just bench <name>` | Run a microbenchmark |
+| `just watch <file>` | Rerun an `.odin` file on every save (native poll, no deps) |
 | `just asm <dir>` | Dump optimized assembly next to source |
 | `just tracy-build` / `just imgui-build` / `just raddbg-install` / `just lldb-fixup` | One-time machine setup |
 
-Full hotkey table + daily loop discussion: `LEARNING.md`. Engine vision: `ENGINE.md`. Tooling deep-dives: `tools/profiler/README.md` + sections below.
+Full hotkey table + daily loop discussion: `LEARNING.md`. The game / dev side: `GAME.md`. Tooling deep-dives: `tools/profiler/README.md` + sections below.
 
 - `docs/superpowers/specs/2026-05-04-substrate-redesign-design.md` — current design spec
-- `docs/superpowers/plans/INDEX.md` — implementation plans
+- `docs/superpowers/plans/2026-05-04-substrate-redesign-plan.md` — implementation plan
 - `docs/adding-sources.md` — extend the corpus
 - `docs/smoke-test.md` — end-to-end runbook
 
@@ -49,7 +38,7 @@ Full hotkey table + daily loop discussion: `LEARNING.md`. Engine vision: `ENGINE
 - `content/domains/<d>/` — per-domain knowledge (source/compiled/vault three-tier)
 - `templates/page-types/` — page templates per source type (article, paper, code-symbol, blog-post, concept, summary)
 - `templates/domain/` — scaffold for adding a new domain
-- `tools/substrate/` — shell tools (doctor, promote, test, domain-scaffold)
+- `tools/substrate/` — shell tools (doctor, promote, test, domain-scaffold, fetch, search, claim)
 - `.claude/skills/knowledge-substrate-core/` — workflow orchestration
 - `.claude/skills/<domain>/` — thin per-domain skills
 
@@ -96,7 +85,7 @@ Invoke via the relevant per-domain skill (`odin`, etc.) in Claude Code; the skil
 ## Tooling (engine + learning side)
 
 - `LEARNING.md` — daily loop, hotkey table, lesson workflow
-- `ENGINE.md` — engine vision; the six dev tools (lab / bench / tests / scratch / profiles / substrate)
+- `GAME.md` — the bespoke game + its dev tools (lab / bench / tests / scratch / profiles / substrate)
 - `tools/profiler/README.md` — Spall + Tracy zone profiling
 
 ### Profiler (Tracy)

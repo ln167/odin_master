@@ -95,6 +95,10 @@ lambert :: proc(n, l: [3]f32) -> f32 {
 	return d
 }
 
+gamma_encode :: proc(c: f32) -> u8 {
+	return u8(math.pow(clamp(c, 0, 1), 1.0 / 2.2) * 255)
+}
+
 // Bumpy-quad rasterizer. For each pixel: barycentric-interp world position,
 // world normal, world tangent, and UV; resample tangent-space normal from the
 // map; apply TBN; light via lambert; write.
@@ -133,9 +137,9 @@ draw_bumpy_triangle :: proc(pixels: []u32, w, h: int,
 				tn := sample_normal(nmap, u, v)
 				world_n := apply_tbn(n, t, tn)
 				lit := lambert(world_n, light_dir)
-				r := u8(min(f32(255), base.x * lit * 255))
-				g := u8(min(f32(255), base.y * lit * 255))
-				b := u8(min(f32(255), base.z * lit * 255))
+				r := gamma_encode(base.x * lit)
+				g := gamma_encode(base.y * lit)
+				b := gamma_encode(base.z * lit)
 				pixels[y * w + x] = (u32(r) << 24) | (u32(g) << 16) | (u32(b) << 8) | 0xFF
 			}
 		}

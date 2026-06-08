@@ -6,27 +6,26 @@ import "core:fmt"
 Vec3 :: [3]f32
 
 main :: proc() {
-	// 1. Declare a fixed array of four ints named `nums`, initialized
+	// 1. Declare a fixed array of four ints named `a`, initialized
 	//    to the values 10, 20, 30, 40. Use an explicit type annotation
 	//    `[4]int` on the left so you see the syntax once; later you'll
 	//    let Odin infer it.
 	a: [4]int = {10, 20, 30, 40}
-	fmt.println(a)
 
 
 	// 2. Print three things on one line: the array's length (use the
 	//    builtin `len`), its first element, and its last element. Use
-	//    `len(nums) - 1` for "last" rather than hardcoding 3, so
+	//    `len(a) - 1` for "last" rather than hardcoding 3, so
 	//    changing the array size wouldn't break the print.
 	//
 	//    Use `fmt.println` and pass the labels as separate arguments:
-	//    `fmt.println("len:", len(nums), "first:", nums[0], "last:", nums[len(nums)-1])`
+	//    `fmt.println("len:", len(a), "first:", a[0], "last:", a[len(a)-1])`
 	//    Note that `fmt.println` adds spaces between arguments for you.
 
 	// 3. Iterate over the array printing each index and value on its
-	//    own line, indented two spaces, formatted like `  nums[0] = 10`.
+	//    own line, indented two spaces, formatted like `  a[0] = 10`.
 	//
-	//    Use `for v, i in nums { ... }`. Notice that VALUE comes first
+	//    Use `for v, i in a { ... }`. Notice that VALUE comes first
 	//    and INDEX comes second. That's reversed from Go and Python.
 	//    The rationale: you usually want the value, so it's named
 	//    first. Use `fmt.printf` here because you want explicit
@@ -39,9 +38,9 @@ main :: proc() {
 	//    arithmetic with the regular operators, no library, no loop).
 	//    Print `"p + q ="` and the result.
 
-	// 5. Take a slice of the middle two elements of `nums` using
-	//    `nums[1:3]`. The result is a `[]int` slice, a view into
-	//    `nums`'s storage. Print `"nums[1:3] ="`, the slice, and
+	// 5. Take a slice of the middle two elements of `a` using
+	//    `a[1:3]`. The result is a `[]int` slice, a view into
+	//    `a`'s storage. Print `"a[1:3] ="`, the slice, and
 	//    `"len:"` plus its length.
 
 	// Run with: odin run main.odin -file

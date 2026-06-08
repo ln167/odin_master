@@ -1,0 +1,1 @@
+fails main.odin It is unsafe to return a slice of a local variable

@@ -1,0 +1,7 @@
+lesson 01b - packages and imports
+contains 'hello' in 'hello world': true
+length of [3, 4] = 5.0000
+circumference of r=1 circle = 6.2832
+mymath version: 0.1.0
+shouted: HELLOPE
+PI from constants.odin, used by vectors.odin: 3.14159265358979

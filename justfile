@@ -4,33 +4,10 @@ default:
     @just --list --unsorted
 
 # ─── Bootstrap and environment ─────────────────────────────────────────────
-bootstrap:
-    @bash tools/install/install.sh
-
-bootstrap-lite:
-    @bash tools/install/install.sh --lite
-
 check-odin-version:
-    @cat .odin-version
+    @odin version | grep -q "$(cat .odin-version)" && echo "odin pin OK: $(cat .odin-version)" || (echo "DRIFT: .odin-version wants $(cat .odin-version); have:"; odin version; exit 1)
 
-update-odin:
-    @echo "see tools/install/install.sh — re-run bootstrap to bump"
-
-# ─── Build / run (Odin compiler wrappers) ─────────────────────────────────
-build profile="debug":
-    @odin build . -out:build/{{profile}}/app $(if [ "{{profile}}" = "release" ]; then echo "-o:speed -no-bounds-check"; else echo "-debug"; fi)
-
-run profile="debug":
-    @odin run . $(if [ "{{profile}}" = "release" ]; then echo "-o:speed"; else echo "-debug"; fi)
-
-# `test` runs the Odin compiler's test on this directory's Odin code.
-# For substrate regression tests, see `substrate-test` below.
-test profile="debug":
-    @odin test .
-
-check:
-    @odin check . -vet -strict-style
-
+# ─── Clean / format ───────────────────────────────────────────────────────
 clean:
     @rm -rf build target profiles/*.spall
 
@@ -44,15 +21,33 @@ bench name:
 profile-run binary:
     @SPALL_OUT=profiles/$(basename {{binary}}).spall {{binary}}
 
-# ─── Verify (executable verifications) ────────────────────────────────────
-# Each tests/<name>/ is a reference-solution program. Running it prints a
-# deterministic fingerprint to stdout; we diff against expected.txt.
+# ─── Claims (compile / output / behavior verification) ────────────────────
+# A claim is a dir under tests/ or claims/. Its claim.txt picks the assertion
+# (compiles / fails / panics / output / equiv / faster / test); a tests/<name>/ with
+# main.odin + expected.txt is an implicit output claim. <file> may be "." to build the
+# whole dir as a package. panics: build ok then run crashes nonzero. test: odin test .
+# must pass. equiv fuses variant_A/variant_B and diffs their output; faster times them
+# (-o:speed) and certifies B >= kx faster, else FAIL / INCONCLUSIVE (exit 0/1/2).
+# claim.py runs one (just claim <name>) or all.
+claim name:
+    @python tools/substrate/claim.py {{name}}
+
 verify name:
-    @cd tests/{{name}} && odin run main.odin -file -out:.bin > .actual.txt
-    @diff tests/{{name}}/expected.txt tests/{{name}}/.actual.txt && echo "verify {{name}}: PASS" || (echo "verify {{name}}: FAIL"; exit 1)
+    @python tools/substrate/claim.py {{name}}
 
 verify-all:
-    @python tools/substrate/verify_all.py
+    @python tools/substrate/claim.py
+
+# ─── Watch (save → rerun; native mtime poll, no dependency) ────────────────
+# Rerun an Odin -file program on every save (path is relative to your cwd).
+#   cd scratch && just watch scratch.odin
+[no-cd]
+watch file:
+    @python "{{justfile_directory()}}/tools/watch.py" '{{file}}'
+
+# Rerun a tests/<name> verification (recompile + diff vs expected) on save.
+watch-test name:
+    @python tools/watch.py tests/{{name}} -- just verify {{name}}
 
 # ─── Tracy profiler client lib (one-time, per machine) ────────────────────
 tracy-build:
@@ -112,6 +107,10 @@ lab:
 
 lab-build:
     @cd lab && python build.py hot
+
+# headless input/sim test for lab (no window) — agent-runnable
+lab-test:
+    @cd lab && python build.py test
 
 lab-clean:
     @cd lab && python build.py clean

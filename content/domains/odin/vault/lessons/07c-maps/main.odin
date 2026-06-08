@@ -9,8 +9,9 @@ main :: proc() {
 	//    Declare `name_to_score` as a `map[string]int` and initialize it
 	//    with `make`. On the very next line write `defer delete(name_to_score)`.
 	//    Pair them visually -- same discipline as `[dynamic]T` in lesson 07.
-	//    Forgetting `make` is the #1 newcomer bug on maps; the declaration
-	//    alone gives you a nil map and the first write crashes.
+	//    (In current Odin a nil map auto-allocates on first write, so the
+	//    write itself won't crash -- but `make` + `defer delete` keeps
+	//    ownership and the allocator explicit, which is the habit to build.)
 	//
 	//    Then insert four entries:
 	//        name_to_score["Liberty Bell"] = 88

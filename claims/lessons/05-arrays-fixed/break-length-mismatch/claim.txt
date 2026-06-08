@@ -1,0 +1,1 @@
+fails main.odin '[3]f32' vs '[4]f32'

@@ -1,0 +1,14 @@
+--- task 1: created ---
+Crim score (present): 42
+George Washington score (absent): 0
+Crim -> 42 found? true
+George Washington -> 0 found? false
+Crim in map? true
+  name_to_score["Crim"] = 42
+  name_to_score["Hollis"] = 67
+  name_to_score["Liberty Bell"] = 88
+  name_to_score["Vandal"] = 99
+  name_to_score["Hollis"] = 67
+  name_to_score["Liberty Bell"] = 88
+  name_to_score["Vandal"] = 99
+final len: 3

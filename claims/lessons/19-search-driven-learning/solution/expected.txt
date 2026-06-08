@@ -1,0 +1,1 @@
+research mode -- answers live in your notes, not in stdout

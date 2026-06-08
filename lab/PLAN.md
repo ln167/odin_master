@@ -32,7 +32,7 @@ Test 1 (objective gates):
 ## Phase 2: CPU framebuffer + first pixel
 
 Steps:
-- 2.0 — Add `api_version` field to `Game_Memory`. Increment at every shape change from here on. Host checks it in `game_hot_reloaded`; if mismatch, log and skip the reload.
+- 2.0 — Shape-change guard: the host compares `game_memory_size()` (= `size_of(Game_Memory)`) across reloads; a size change skips the swap and asks for a manual restart rather than reinterpret the old allocation. No `api_version` constant — `size_of` auto-detects, so there's nothing to forget to bump.
 - 2.1 — `sdl.CreateTexture(renderer, .RGBA8888, .STREAMING, 800, 600)` in `game_init_window`. Store in `Game_Memory.texture`.
 - 2.2 — Allocate `Game_Memory.pixels: []u32` length `800 * 600` on init.
 - 2.3 — Per-frame: `LockTexture` → memcpy `pixels` → `UnlockTexture` → `RenderTexture(renderer, texture, nil, nil)` → `RenderPresent`.

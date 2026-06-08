@@ -2,9 +2,9 @@
 
 Front door for Odin learning. Lessons live at `content/domains/odin/vault/lessons/` (frozen — promoted into vault as the canonical curriculum).
 
-> **Curriculum gate:** finish lessons 00-19 before opening `lab/` for graphics work. The lab assumes comfort with slices, dynamic arrays, tagged unions, allocators, and the `context` system; lessons 18-19 specifically cover hot reload (which the lab implements) and search-driven learning (which everything after the lab depends on). Skipping ahead produces the same "I know the API but cannot debug my output" failure mode that `../projects/ultimate-flat/PIVOT.md` calls out for graphics. There is no shortcut.
+> **Curriculum gate:** finish lessons 00-19 before opening `lab/` for graphics work. The lab assumes comfort with slices, dynamic arrays, tagged unions, allocators, and the `context` system; lessons 18-19 specifically cover hot reload (which the lab implements) and search-driven learning (which everything after the lab depends on). Skipping ahead produces the same "I know the API but cannot debug my output" failure mode that `from_old_repo_references/PIVOT.md` calls out for graphics. There is no shortcut.
 >
-> **After lesson 19:** move to the graphics curriculum at `content/domains/graphics/vault/lessons/00+`. That sequence (22 lessons, framebuffer through GPU bindless and destruction) is where the engine work proper begins. Design doc: `docs/superpowers/specs/2026-05-09-graphics-curriculum-research.md`. Forward-looking vision: `ENGINE.md`.
+> **After lesson 19:** move to the graphics curriculum at `content/domains/graphics/vault/lessons/00+`. That sequence (22 lessons, framebuffer through GPU bindless and destruction) is where the game work proper begins. Design doc: `docs/superpowers/specs/2026-05-09-graphics-curriculum-research.md`. Forward-looking vision: `GAME.md`.
 
 ## Daily loop
 
@@ -46,7 +46,7 @@ Front door for Odin learning. Lessons live at `content/domains/odin/vault/lesson
 
 - Configs (formatter + LSP): `odinfmt.json` and `ols.json` at repo root
 - Project scaffolds: `content/domains/odin/templates/{cli,game,lib}/`
-- Domain-specific tooling: `tools/domains/odin/{odin_lib,lessons-check}/`
+- Domain-specific tooling: `tools/domains/odin/odin_lib/`
 
 ## What changed from v0
 

@@ -1,4 +1,11 @@
+#+feature using-stmt
 package main
+
+// NOTE: current Odin disallows `using` as a *statement* (`using Color`) and as a
+// *procedure parameter* (`proc(using e: Entity)`) by default -- it considers them
+// bad practice outside refactoring. This lesson teaches both, so it opts back in
+// with the `#+feature using-stmt` tag on line 1. Struct-field `using` (below,
+// inside Entity) needs no flag.
 
 import "core:fmt"
 

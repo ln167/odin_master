@@ -1,0 +1,1 @@
+fails . Different package name, expected 'mymath'

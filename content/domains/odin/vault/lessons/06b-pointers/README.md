@@ -331,12 +331,15 @@ is an address that will be different every run — the file uses
 
 After your file works, try these one at a time and read what happens:
 
-1. **Dereference nil.** Add `bad: ^int` (uninitialized, so nil) and
-   then `fmt.println(bad^)`. Build, run. On Windows / Linux / macOS
-   you'll get a segmentation fault or access violation — the OS
-   killed your program because you asked it to read from address 0.
-   This is the most common pointer bug in C and C++ codebases, and
-   Odin gives you no extra help avoiding it.
+1. **Dereference nil.** Add `bad: ^int` (uninitialized, so nil). Be careful
+   *how* you deref it: `fmt.println(bad^)` does **not** crash — fmt receives
+   `bad^` as an `any` whose data pointer is nil and prints `<nil>` instead of
+   ever loading from address 0. To actually trigger the crash, force a real
+   load — `y := bad^` and then use `y`, or write through it with `bad^ = 5`.
+   Build, run: on Windows / Linux / macOS you get a segmentation fault or
+   access violation — the OS killed your program for touching address 0. No
+   friendly Odin message. This is the most common pointer bug in C and C++
+   codebases, and Odin gives you no extra help avoiding it.
 2. **Return the address of a local.** Write a proc:
 
        dangling :: proc() -> ^int {
@@ -344,12 +347,16 @@ After your file works, try these one at a time and read what happens:
            return &local
        }
 
-   Call it, then call another proc that uses some stack space (a few
-   `fmt.println`s with intermediate variables), then dereference what
-   `dangling` returned. The compiler will not warn. You may see `7`,
-   you may see garbage, you may see whatever the next function call
-   wrote into that stack slot. This is the dangling-pointer failure
-   mode in a five-line proc.
+   Build it. The compiler **rejects** this: `Error: It is unsafe to
+   return the address of a local variable ('&local') from a procedure`.
+   Odin has a targeted escape check that catches the direct case
+   (returning a slice of a local, `local[:]`, is blocked the same way).
+   The dangling-pointer hazard itself is still real and unchecked in
+   *general*, though: an address that escapes **indirectly** - stored
+   through an out-pointer, kept in a struct that outlives the call, held
+   past an arena reset - compiles silently and still dangles. Odin guards
+   the obvious shape, not lifetimes in general (that's Rust's job, not
+   Odin's).
 3. **Pointer arithmetic on `^T`.** Try `q := p + 1`. Compile error.
    The single-value pointer does not support `+`. To do C-style
    pointer math you need a `[^]T`.
@@ -389,10 +396,12 @@ After your file works, try these one at a time and read what happens:
 
 ---
 
-## Next: `07-dynamic-arrays/`
+## Next: `06c-parameters-and-passing/`
 
-A `[dynamic]T` is a growable, owned buffer: a pointer plus a length
-plus a capacity plus an allocator. The pointer-and-length pair you
-saw in slices, the lifetime discipline you saw here, the
-`defer delete` idiom you saw in 07b, all combined into one type that
-runs the show for every real-world game container.
+You now know what `^T`, `[^]T`, and `[]T` each are. Lesson 06c is the
+synthesis: what happens when values, views, and pointers cross a
+procedure boundary. Why parameters are immutable, why `n += 1` on a
+parameter won't compile, the `n := n` shadow idiom, how Odin's calling
+convention passes big things by hidden pointer (and the one aliasing
+footgun that leaks), and the actual rule for when to pass by value vs.
+by `^T` in a game.

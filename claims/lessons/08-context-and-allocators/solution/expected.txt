@@ -1,0 +1,9 @@
+default allocator and temp_allocator are set
+temp string: hello, world
+wiped temp allocator
+inside block: allocator overridden
+  p^ = 11
+  q^ (from helper) = 22
+  wiped temp inside block
+after block: r^ = 33 (allocated from restored context.allocator)
+freed r through the restored allocator

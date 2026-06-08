@@ -1,0 +1,1 @@
+fails main.odin 'return' cannot be used within a defer statement

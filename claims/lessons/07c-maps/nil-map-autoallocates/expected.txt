@@ -1,0 +1,2 @@
+before write, len: 0
+after write, len: 1 m[x]: 1
