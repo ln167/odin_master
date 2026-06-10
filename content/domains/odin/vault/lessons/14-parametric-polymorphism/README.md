@@ -279,9 +279,12 @@ Compare your output to `expected-output.txt`.
 After the file works, try each of these in turn, observe the message,
 then revert.
 
-1. **Mixed types.** Call `max(3, 2.5)` (an `int` and an `f64`). Read
-   the error. The compiler can't infer a single `T` that matches both
-   arguments; both occurrences of `$T` must resolve to the same type.
+1. **Mixed types.** Call `max(3, 2.5)` (an untyped int and an untyped
+   float). Read the error: `'2.5' truncated to 'int'`. Both arguments
+   feed the same `$T`, and `T` is fixed to `int` by the first one; the
+   compiler then refuses to silently truncate `2.5` to match. It is not
+   a vague "can't infer T" -- `T` *is* inferred, as `int`, and the
+   second argument simply doesn't fit it.
 2. **Operator not defined.** Define a tiny struct
    `Pair :: struct { a, b: int }` and try `max(Pair{1, 2}, Pair{3, 4})`.
    With the `where intrinsics.type_is_ordered(T)` clause, the error

@@ -121,10 +121,13 @@ Override at build time:
 
     odin run main.odin -file -define:MY_FEATURE=true -define:GREETING="hi"
 
-The default value's type fixes the constant's type. A `bool` default
-means `-define:MY_FEATURE=hello` is a compile error. A `string`
-default takes a bare token or a quoted string. An `int` default
-takes bare digits.
+The default value's type fixes the constant's type *until a `-define`
+overrides it*. The override then supplies its own value and its own
+type: `-define:MY_FEATURE=hello` against a `bool` default makes
+MY_FEATURE the string `"hello"`, which is a compile error -- but one
+that surfaces wherever you use it as a bool, not at the `#config` line.
+A `string` default takes a bare token or a quoted string. An `int`
+default takes bare digits.
 
 `when` at file scope, gating an entire proc:
 
@@ -205,22 +208,36 @@ feel where the compile-time wall is.
    a `when` guard.** Add `import "core:sys/windows"` and call
    `windows.GetLastError()` at the top of `main`, outside any
    `when`. On Windows it compiles. Build for Linux with
-   `odin build main.odin -file -target:linux_amd64` and the linker
-   refuses. Now wrap the call in `when ODIN_OS == .Windows { ... }`
-   and try the cross-compile again - it builds, because the Linux
-   target never sees the windows-only branch.
+   `odin build main.odin -file -target:linux_amd64` and it fails with
+   `'GetLastError' is not declared by 'windows'`. Note *who* refuses:
+   the compiler, not the linker. `core:sys/windows` gates that symbol
+   behind `when ODIN_OS == .Windows` inside the package itself, so on a
+   Linux target the name isn't declared at all and the type-checker
+   stops you before linking is ever reached. Now wrap the call in
+   `when ODIN_OS == .Windows { ... }` and try the cross-compile again -
+   it builds, because the Linux target never sees the windows-only branch.
 2. **Put a runtime value in a `when` condition.** Try
    `when some_local_bool { ... }` inside `main`. The compiler
    rejects it: `when` conditions must be constant expressions known
    at compile time. Replace with `if` and it works (but compiles
    both arms).
 3. **Misspell a `#config` key on the command line.** Run with
-   `-define:MY_FEATUR=true`. The compiler does *not* warn. `#config`
-   is a key/value lookup; an unknown key just falls through to the
-   default. This is the main footgun of `-define`: typos are silent.
+   `-define:MY_FEATUR=true`. The value still falls through to the
+   default -- an unknown key changes nothing about the output -- but
+   the compiler *does* warn:
+   `Warning: given -define:MY_FEATUR is unused in the project`. Older
+   Odin was silent here (this lesson once called typos the main `-define`
+   footgun); the current toolchain catches an unused `-define` for you.
+   The warning goes to stderr, so the program's stdout is unchanged.
 4. **Override a bool flag with the wrong type.** Run with
-   `-define:MY_FEATURE=hello`. Now the compiler does complain - the
-   default fixes the type, and `"hello"` is not a `bool`.
+   `-define:MY_FEATURE=hello`. The compiler complains, but read the
+   error closely: `Non-boolean condition in 'when' statement`, pointing
+   at `when MY_FEATURE`. The `-define` was *not* rejected at the
+   `#config` site for being the wrong type; it actually replaced
+   MY_FEATURE with the string `"hello"`, and the error only surfaced
+   where you used it as a bool. The default fixes the type only until an
+   override is supplied -- the override's value then decides the type,
+   and a wrong one breaks at the use site, not the declaration.
 5. **Swap a `when` for an `if`.** Change one of your `when
    ODIN_DEBUG` blocks to `if ODIN_DEBUG`. In a debug build it still
    prints. Build with `-o:speed` and the dead arm is *also* in the
@@ -247,8 +264,10 @@ Revert your changes after each step so the file still matches
   kicks in again. For values you want pinned, set them in your
   project's build script or a wrapper.
 - `ODIN_DEBUG` is `true` when you pass `-debug` and `false`
-  otherwise. `odin run` defaults to debug; `odin build` defaults to
-  release.
+  otherwise -- for both `odin run` and `odin build`. Neither subcommand
+  flips it on its own, so a plain `odin run main.odin -file` prints
+  `Build: RELEASE` here; add `-debug` and the same program prints
+  `Build: DEBUG`.
 - `ODIN_OPTIMIZATION_MODE` is an enum with values `.None .Minimal
   .Size .Speed .Aggressive`. You rarely need to switch on it
   directly; usually `ODIN_DEBUG` is the axis you care about.

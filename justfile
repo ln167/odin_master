@@ -23,10 +23,12 @@ profile-run binary:
 
 # ─── Claims (compile / output / behavior verification) ────────────────────
 # A claim is a dir under tests/ or claims/. Its claim.txt picks the assertion
-# (compiles / fails / panics / output / equiv / faster / test); a tests/<name>/ with
-# main.odin + expected.txt is an implicit output claim. <file> may be "." to build the
-# whole dir as a package. panics: build ok then run crashes nonzero. test: odin test .
-# must pass. equiv fuses variant_A/variant_B and diffs their output; faster times them
+# (compiles / fails / panics / output / equiv / faster / test / test-fails); a tests/<name>/
+# with main.odin + expected.txt is an implicit output claim. <file> may be "." to build the
+# whole dir as a package. panics: build ok then run crashes nonzero. test / test-fails: odin
+# test . must pass / must FAIL. A flags.txt in a claim dir splices extra flags (-define:...,
+# -target:...) into the build/run command. equiv fuses variant_A/variant_B and diffs their
+# output; faster times them
 # (-o:speed) and certifies B >= kx faster, else FAIL / INCONCLUSIVE (exit 0/1/2).
 # claim.py runs one (just claim <name>) or all.
 claim name:

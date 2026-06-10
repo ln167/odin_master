@@ -318,9 +318,11 @@ revert:
 
 1. **Methods are not a thing.** Inside the struct body, try to add a
    procedure: `Particle :: struct { pos: [3]f32, update :: proc() {} }`.
-   The compiler refuses - a struct body is a list of fields, not a
-   class body. The fix is to write a free procedure that takes a
-   `^Particle`.
+   The compiler refuses, but the message is a cryptic parser error --
+   `Expected 1 expressions on the right hand side, got 2` -- not a
+   friendly "structs have no methods". A struct body is a list of
+   fields, and `update :: proc() {}` doesn't parse as one. The fix is
+   to write a free procedure that takes a `^Particle`.
 2. **Partial positional literal.** A positional literal must supply
    *every* field. Try `Particle{1, 2}` (two values for three fields):
    the error is `Too few values in structure literal, expected 3, got 2`.

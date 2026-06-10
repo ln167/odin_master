@@ -3,13 +3,19 @@
 
 A claim is a directory. Its claim.txt (one line) picks the assertion:
   compiles <file>            build must succeed
-  fails <file> [substr...]   build must fail (and substr must appear in stderr)
-  panics <file> [substr...]  build must succeed, then the run must crash nonzero (substr in stderr)
+  fails <file> [substr...]   build must fail (and substr must appear in the build output)
+  panics <file> [substr...]  build must succeed, then the run must crash nonzero (substr in output)
   test [substr...]           `odin test .` must pass (exit 0, and substr in its output)
+  test-fails [substr...]     build ok, then `odin test .` must FAIL (exit nonzero, substr in output)
   output [<file>]            run; stdout must equal expected.txt
   equiv                      build fused variant_A/variant_B; both must print equal output
   faster [k]                 time fused variant_A/variant_B; B must be >= k x faster (k=DEFAULT_K)
 No claim.txt + main.odin + expected.txt  ==  output  (every existing tests/ dir).
+
+A claim dir may hold a flags.txt: its whitespace-split tokens are spliced into the odin
+build/run/test command (e.g. `-define:MY_FEATURE=true`, `-target:linux_amd64`). This lets a
+claim pin a build-flag-dependent outcome -- a #config override, a cross-compile -- without
+hardcoding it in the harness.
 
 <file> is a single .odin file (built with -file), or "." to build the whole directory
 as a package -- for multi-file/multi-package lessons (e.g. `output .`, `fails . <substr>`).
@@ -129,11 +135,11 @@ def check_toolchain():
     if PIN not in have:
         sys.exit(f"toolchain drift: .odin-version wants '{PIN}', got '{have}'")
 
-def build(d, src):
+def build(d, src, extra=()):
     # src == "." builds the whole directory as a package (multi-file/package lessons);
-    # any other value is a single file via the -file shortcut.
+    # any other value is a single file via the -file shortcut. `extra` are per-claim flags.
     flags = [] if src == "." else ["-file"]
-    return run(["odin", "build", src, *flags, "-o:none", "-out:.bin"], cwd=d)
+    return run(["odin", "build", src, *flags, *extra, "-o:none", "-out:.bin"], cwd=d)
 
 def build_dir(d, opt="none"):
     return run(["odin", "build", ".", f"-o:{opt}", "-out:.bin"], cwd=d)
@@ -192,15 +198,19 @@ def run_one(d: Path):
         kind, args = parts[0], parts[1:]
     else:
         kind, args = "output", []
+    # Optional per-claim build/run flags (e.g. -define:..., -target:...).
+    fl = d / "flags.txt"
+    extra = fl.read_text(encoding="utf-8").split() if fl.exists() else []
+    clean_artifacts(d)  # every claim starts from a clean dir — one place, all kinds
 
     if kind == "compiles":
-        r = build(d, args[0])
+        r = build(d, args[0], extra)
         if r.returncode == 0:
             return "PASS", [f"PASS  {name}  (compiles)"]
         return "FAIL", [f"FAIL  {name}  (compiles)", f"  {normalize(r.stderr)}"]
 
     if kind == "fails":
-        r = build(d, args[0])
+        r = build(d, args[0], extra)
         substr = " ".join(args[1:])
         out = normalize(r.stderr + "\n" + r.stdout)  # Odin errs on stderr; the MSVC linker errs on stdout
         if r.returncode != 0 and substr in out:
@@ -209,8 +219,7 @@ def run_one(d: Path):
         return "FAIL", [f"FAIL  {name}  (fails)", f"  {why}"]
 
     if kind == "panics":
-        clean_artifacts(d)
-        b = build(d, args[0])
+        b = build(d, args[0], extra)
         if b.returncode != 0:
             return "FAIL", [f"FAIL  {name}  (panics)", f"  expected a runtime panic, but the build failed: {normalize(b.stderr)}"]
         substr = " ".join(args[1:])
@@ -222,19 +231,27 @@ def run_one(d: Path):
         return "FAIL", [f"FAIL  {name}  (panics)", f"  {why}"]
 
     if kind == "test":
-        clean_artifacts(d)
         substr = " ".join(args)
-        r = run(["odin", "test", ".", "-out:.bin"], cwd=d)
+        r = run(["odin", "test", ".", *extra, "-out:.bin"], cwd=d)
         out = normalize(r.stderr + "\n" + r.stdout)  # the test runner reports on stderr
         if r.returncode == 0 and substr in out:
             return "PASS", [f"PASS  {name}  (tests pass)"]
         why = f"odin test exited {r.returncode}" if r.returncode != 0 else f"substr {substr!r} not in output"
         return "FAIL", [f"FAIL  {name}  (test)", f"  {why}"]
 
+    if kind == "test-fails":
+        substr = " ".join(args)
+        r = run(["odin", "test", ".", *extra, "-out:.bin"], cwd=d)
+        out = normalize(r.stderr + "\n" + r.stdout)  # the test runner reports on stderr
+        if r.returncode != 0 and substr in out:
+            return "PASS", [f"PASS  {name}  (tests fail as expected)"]
+        why = "odin test exited 0 (no failure)" if r.returncode == 0 else f"substr {substr!r} not in output"
+        return "FAIL", [f"FAIL  {name}  (test-fails)", f"  {why}"]
+
     if kind == "output":
         src = args[0] if args else "main.odin"
         flags = [] if src == "." else ["-file"]
-        r = run(["odin", "run", src, *flags, "-out:.bin"], cwd=d)
+        r = run(["odin", "run", src, *flags, *extra, "-out:.bin"], cwd=d)
         if r.returncode != 0:
             # build failed or the program crashed -- never a vacuous empty==empty pass.
             return "FAIL", [f"FAIL  {name}  (output)", f"  run exited {r.returncode}: {normalize(r.stderr)}"]
@@ -248,7 +265,6 @@ def run_one(d: Path):
         return "FAIL", lines
 
     if kind == "equiv":
-        clean_artifacts(d)
         (d / DISPATCH_NAME).write_text(DISPATCH_EQUIV, encoding="utf-8")
         b = build_dir(d)
         if b.returncode != 0:
@@ -275,7 +291,6 @@ def run_one(d: Path):
             k = float(args[0]) if args else DEFAULT_K
         except ValueError:
             return "FAIL", [f"FAIL  {name}  (faster)", f"  bad k {args[0]!r} (want a number)"]
-        clean_artifacts(d)
         (d / DISPATCH_NAME).write_text(DISPATCH_FASTER, encoding="utf-8")
         b = build_dir(d, "speed")
         if b.returncode != 0:

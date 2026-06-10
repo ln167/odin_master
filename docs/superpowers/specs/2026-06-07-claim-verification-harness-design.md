@@ -1,6 +1,6 @@
 # Claim-verification harness — design
 
-**Status:** Phases 0–4 built. Kinds: `compiles`/`fails`/`panics`/`output`/`equiv`/`faster`/`test`. Phase 4 (lessons-as-claims) swept all 29 Odin lessons (2026-06-08); added `panics` (build-ok-then-crash), `test` (`odin test .`), whole-dir (`.`) builds, a `<...>` output wildcard, UTF-8 capture, and guards against vacuous/linker-on-stdout false passes. · **Date:** 2026-06-07 (rev 2026-06-08)
+**Status:** Phases 0–4 built. Kinds: `compiles`/`fails`/`panics`/`output`/`equiv`/`faster`/`test`/`test-fails`. Phase 4 (lessons-as-claims) swept all 29 Odin lessons (2026-06-08); added `panics` (build-ok-then-crash), `test` (`odin test .`), whole-dir (`.`) builds, a `<...>` output wildcard, UTF-8 capture, and guards against vacuous/linker-on-stdout false passes. Post-sweep (2026-06-08): per-claim `flags.txt` (splices `-define:`/`-target:` into the build), the `test-fails` kind (suite must fail), and a `doctor` lesson↔claim drift check (orphan + `solution` expected-output byte-match) — which immediately caught a real lesson-15 buffering-order drift. · **Date:** 2026-06-07 (rev 2026-06-08)
 
 ## Thesis
 

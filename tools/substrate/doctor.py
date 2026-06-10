@@ -2,8 +2,8 @@
 """doctor — mechanical health check for the substrate (run via `just doctor`).
 
 Validates: frontmatter completeness, citation resolution, provenance/folder
-parity, log.md parseability. Optional --provenance-check re-hashes sources to
-flag drift. No LLM. Pass/fail report.
+parity, log.md parseability, and lesson<->claim coupling. Optional
+--provenance-check re-hashes sources to flag drift. No LLM. Pass/fail report.
 
 Note: INDEX.md regeneration/freshness is an LLM Compile-step responsibility and
 is NOT validated here — doctor never reads or stats INDEX.md.
@@ -24,6 +24,7 @@ import yaml
 REPO = Path(__file__).resolve().parents[2]
 DOMAINS_DIR = REPO / "content" / "domains"
 TEMPLATES_DIR = REPO / "templates" / "page-types"
+CLAIMS_LESSONS = REPO / "claims" / "lessons"
 
 PAGE_TYPES = {"article", "paper", "code-symbol", "blog-post", "concept", "summary"}
 PROVENANCES = {"from-ingest", "from-query"}
@@ -240,6 +241,63 @@ def provenance_check(domain_dir: Path, report: Report) -> None:
     report.add(f"provenance: {domain_dir.name}", True)
 
 
+def normalize_output(s: str) -> str:
+    # Match claim.py's notion of output equality: rstrip each line, strip leading/
+    # trailing blank lines. So a lone trailing-newline difference isn't flagged as drift.
+    return "\n".join(line.rstrip() for line in s.splitlines()).strip("\n")
+
+
+def lesson_dirs() -> dict[str, Path]:
+    # slug -> lesson directory, across every domain's vault/lessons (domain-agnostic).
+    out: dict[str, Path] = {}
+    if not DOMAINS_DIR.is_dir():
+        return out
+    for d in sorted(DOMAINS_DIR.iterdir()):
+        ld = d / "vault" / "lessons"
+        if ld.is_dir():
+            for sub in ld.iterdir():
+                if sub.is_dir():
+                    out.setdefault(sub.name, sub)
+    return out
+
+
+def check_lesson_claims(report: Report) -> None:
+    """Couple lesson claims to the live lesson files, to catch silent drift.
+
+    Two rules, both zero-noise on the current corpus:
+      orphan — every claims/lessons/<slug>/ must map to a real vault lesson dir
+               in some domain (catches a lesson rename/delete stranding its claims).
+      output — a `solution` claim's expected.txt must equal the lesson's
+               expected-output.txt (catches the lesson's taught output drifting
+               away from what the claim still silently verifies). Scoped to the
+               `solution` claim only: break-it/variant claims carry their own,
+               intentionally different, expected.txt.
+
+    Re-bless after an INTENTIONAL lesson edit: make the one disagreeing file match
+    and re-run `just doctor`. There is no lock file and no separate bless command.
+    """
+    if not CLAIMS_LESSONS.is_dir():
+        return
+    lessons = lesson_dirs()
+    for slug_dir in sorted(p for p in CLAIMS_LESSONS.iterdir() if p.is_dir()):
+        slug = slug_dir.name
+        rel = slug_dir.relative_to(REPO).as_posix()
+        lesson = lessons.get(slug)
+        if lesson is None:
+            report.add(f"lesson-claim orphan: {rel}", False,
+                       f"no lesson named {slug!r} in any domain (renamed/deleted?)")
+            continue
+        sol = slug_dir / "solution" / "expected.txt"
+        ref = lesson / "expected-output.txt"
+        if sol.exists() and ref.exists():
+            if normalize_output(sol.read_text(encoding="utf-8")) != \
+                    normalize_output(ref.read_text(encoding="utf-8")):
+                report.add(f"lesson-claim output: {rel}/solution", False,
+                           "solution expected.txt != lesson expected-output.txt")
+                continue
+        report.add(f"lesson-claim: {rel}", True)
+
+
 def doctor_domain(domain: str, do_provenance: bool, report: Report) -> None:
     domain_dir = DOMAINS_DIR / domain
     if not domain_dir.exists():
@@ -272,6 +330,7 @@ def main() -> int:
     report = Report()
     for d in domains:
         doctor_domain(d, args.provenance_check, report)
+    check_lesson_claims(report)
 
     if args.json:
         print(json.dumps(report.to_json(), indent=2))

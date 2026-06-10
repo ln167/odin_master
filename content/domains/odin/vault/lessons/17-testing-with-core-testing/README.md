@@ -240,11 +240,16 @@ After the four tests pass, try each of these in turn, read the
 output, then revert. The failure messages teach more than the green
 ones do.
 
-1. **Off-by-one in `clamp_to_range`.** Change `if value > hi` to `if
-   value >= hi`. Run `odin test .`. The boundary test fails on the
-   `value == hi` row. Read which row, note the `expectf` message
-   prints the exact `(value, lo, hi)` triple that failed, then revert
-   the change.
+1. **Forget to clamp the top.** In `clamp_to_range`, change the upper
+   branch `if value > hi { return hi }` to `{ return value }`, so the
+   proc stops clamping the high end. Run `odin test .`. Two tests fail:
+   `clamp_above_range_returns_hi` reports `expected clamp_to_range(99,
+   0, 10) to be 10, got 99`, and the boundary table fails its `(7, 3,
+   3)` row (the `expectf` message prints the exact triple). Read both,
+   then revert. (Tempting but *wrong*: changing `>` to `>=` here does
+   nothing -- at `value == hi` both branches return `hi`, so every test
+   still passes. An off-by-one only shows up when it actually changes a
+   result.)
 
 2. **Swap got and want in `expect_value`.** In task 1, change the
    assertion to `testing.expect_value(t, 5, clamp_to_range(5, 0, 10))`.

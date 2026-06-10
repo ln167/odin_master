@@ -326,6 +326,17 @@ Type the bodies yourself. When you finish:
 
 Compare against `expected-output.txt`.
 
+**Why the output looks out of order.** Your `fmt.println` lines (the four
+`--- step N ---` headers and the `strlen` result) do *not* interleave with
+the C `puts` lines (`from the bundled binding`, `hello, Ada`, `from my own
+foreign import`). All the `fmt` lines print first, then all the `puts` lines.
+That is a buffering artifact, not a bug: Odin's `fmt` writes to its own stdout
+buffer and libc's `puts` writes to C's separate stdio buffer, and the two
+flush independently — neither runtime controls the other's flush timing. The
+moment you mix two runtimes writing to the same terminal you give up ordering
+between them. If you needed strict interleaving you'd flush explicitly
+(`libc.fflush(nil)` after each C call) or route every line through one side.
+
 ---
 
 ## Now break it on purpose
@@ -357,10 +368,12 @@ happens, then revert.
 
 4. **Misspell the symbol name.** Change `puts` to `putz` in your
    foreign block, leaving the call site as `putz(...)`. Build. Read
-   the *linker* error -- it'll say something like
-   `undefined reference to 'putz'`. This is the error you'll hit
-   most often when binding a new library and getting the C symbol
-   name slightly wrong.
+   the *linker* error -- on this Windows/MSVC toolchain it reads
+   `unresolved external symbol putz` (Unix linkers phrase the same
+   thing as `undefined reference to 'putz'`). Either way it surfaces at
+   the very end of the build, from the linker, not from the Odin
+   compiler. This is the error you'll hit most often when binding a new
+   library and getting the C symbol name slightly wrong.
 
 ---
 
