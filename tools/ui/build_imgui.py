@@ -21,7 +21,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 VENDOR = REPO / "tools" / "domains" / "odin" / "odin_lib" / "vendor" / "odin-imgui"
 PREMAKE_VERSION = "5.0.0-beta8"
-BACKENDS = "sdl3,sdlgpu3"
+BACKENDS = "sdl3,sdlgpu3,sdlrenderer3"
 
 
 def premake_url() -> tuple[str, str]:

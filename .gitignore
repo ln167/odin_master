@@ -74,6 +74,12 @@ claims/**/gen_dispatch.odin
 # Downloaded debuggers (install via `just raddbg-install`)
 tools/debug/raddbg/
 
+# Lab tooling outputs (arena votes, headless PNG dumps, imgui layout) — session data, never commit
+lab/arena/
+lab/out/
+lab/**/*.png
+lab/imgui.ini
+
 # Dear ImGui build artifacts (just imgui-build)
 tools/domains/odin/odin_lib/vendor/odin-imgui/premake5
 tools/domains/odin/odin_lib/vendor/odin-imgui/premake5.exe

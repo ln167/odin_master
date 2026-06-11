@@ -13,6 +13,7 @@
 5. **Comments only when removing them would confuse a future reader.** Carmack rule.
 6. **Cross-platform by construction, Windows-verified.** Use `vendor:sdl3` API only (no OS-specific calls) so the code *can* port — but actual build+run verification is Windows-only for now. Don't claim Linux/macOS works until it has been gated there.
 7. **Nothing not on the phase list.** No FPS counter, no input tracking, no audio, no PNGs, no text, no menu, no resize.
+   > **Amendment (2026-06-10, owner-approved):** the tooling experiment is exempt from the text/PNG bans only: bitmap-font text rendering and debug overlays are allowed in `package game`; PNG/image output is allowed but confined to the headless tooling package (`src/headless`), never the live loop. Input *tracking* (record/replay tapes) stays deferred. Audio/menu/resize bans unchanged.
 
 ## Phase 1: SDL3 window survives reloads
 
@@ -88,7 +89,7 @@ Test 4:
 
 - Keyboard/mouse beyond Quit detection.
 - Window resize, multi-window, fullscreen.
-- Sound, text rendering, PNGs, fonts, FPS HUD.
+- Sound, text rendering, PNGs, fonts, FPS HUD. *(text/fonts/PNGs re-scoped by the 2026-06-10 amendment under rule 7 — tooling only.)*
 - Threading.
 - Shaders, GPU.
 - `force_reload` / `force_restart` exports.
