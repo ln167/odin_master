@@ -1,0 +1,3 @@
+fresh slot is nil: true
+op == nil -> skipped (no procedure in the slot)
+op != nil -> op(6, 2) = 8

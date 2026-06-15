@@ -1,0 +1,4 @@
+OS: Windows
+Arch: amd64
+Build: DEBUG
+Greeting: hello, world

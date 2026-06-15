@@ -1,0 +1,2 @@
+by pointer: Player{name = "Ada", hp = 50}
+by value:   Player{name = "Ben", hp = 20}

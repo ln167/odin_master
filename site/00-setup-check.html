@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Odin setup check — what "you're good" looks like</title>
+<style>
+  :root{
+    --paper:#15130f; --card:#1d1a14; --ink:#ece6d8; --muted:#9a9182;
+    --rule:#332e24; --accent:#5ec8b8; --accent-soft:#1f342f;
+    --tag:#e0875a; --pad:#5a544a; --bad:#e0675a; --bad-soft:#2a1815;
+    --mono:"Cascadia Mono","Cascadia Code",Consolas,ui-monospace,"SF Mono",monospace;
+    --serif:-apple-system,"Segoe UI Variable Text","Segoe UI",system-ui,Roboto,"Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper);color:var(--ink)}
+  body{font-family:var(--serif);line-height:1.6;padding:0 20px;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-feature-settings:"kern" 1,"liga" 1}
+  .page{max-width:780px;margin:0 auto;padding:46px 0 90px}
+  .kicker{font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+  h1{font-size:30px;line-height:1.15;margin:0 0 14px;font-weight:600;letter-spacing:-.01em}
+  .lede{color:var(--muted);font-size:17px;margin:0 0 26px;line-height:1.5;max-width:46em}
+  .lede b{color:var(--ink)}
+  .rule{height:1px;background:var(--rule);margin:24px 0 28px}
+
+  h2{font-size:21px;margin:0 0 8px;font-weight:600;display:flex;align-items:baseline;gap:10px}
+  h2 .n{font-family:var(--mono);font-size:12px;color:var(--accent);letter-spacing:.1em}
+  p.teach{font-size:16px;line-height:1.62;max-width:46em;color:var(--ink)}
+  p.teach.dim{color:var(--muted)}
+  p.teach code,.il{font-family:var(--mono);font-size:.86em;background:#2a2519;padding:1px 5px;border-radius:4px}
+  .teach b{color:var(--tag)}
+
+  /* terminal block: prompt + command + output */
+  .term{font-family:var(--mono);font-size:13px;line-height:1.7;background:#1a1710;border:1px solid var(--rule);border-radius:10px;padding:16px 18px;margin:14px 0 6px;overflow:auto;white-space:pre-wrap}
+  .term .prompt{color:var(--muted)}
+  .term .cmd{color:var(--ink)}
+  .term .out{color:var(--accent)}
+  .term .ex{color:var(--tag)}
+  .term .er{color:var(--bad)}
+  .caption{font-family:var(--mono);font-size:11px;color:var(--muted);margin:0 0 22px}
+  .caption .ok{color:var(--accent)}
+  .caption .warn{color:var(--tag)}
+
+  /* the three checks, each its own card */
+  .check{background:var(--card);border:1px solid var(--rule);border-radius:12px;padding:18px 20px 16px;margin:14px 0}
+  .check.good{border-left:3px solid var(--accent)}
+  .check h3{font-family:var(--mono);font-size:13px;margin:0 0 4px;color:var(--ink);font-weight:600}
+  .check .means{font-size:14px;color:var(--muted);margin:0 0 8px}
+
+  .badge{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;padding:2px 7px;border-radius:5px;vertical-align:middle}
+  .badge.real{background:var(--accent-soft);color:#cdeee7;border:1px solid var(--accent)}
+  .badge.varies{background:#3a2417;color:#f0b48a;border:1px solid var(--tag)}
+
+  .note{background:#1a1710;border:1px solid var(--rule);border-left:3px solid var(--tag);
+    border-radius:10px;padding:15px 18px;margin-top:24px;font-size:15px;line-height:1.6;color:var(--muted)}
+  .note b{color:var(--ink)}
+  .note .h{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--tag);display:block;margin-bottom:8px}
+  .note code,.note .il{font-family:var(--mono);font-size:.86em;background:#2a2519;padding:1px 5px;border-radius:4px}
+
+  .foot{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;margin-top:34px;line-height:1.7}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="kicker">Odin · setup check</div>
+  <h1>Is Odin actually installed?</h1>
+  <p class="lede">Before any lesson teaches you a single idea, one thing has to be true: the <b>compiler is on your PATH and it runs</b>. This page is just that check — two commands that prove it, the output that means "you're good," and how to read it when one of them doesn't.</p>
+
+  <div class="rule"></div>
+
+  <!-- ============ SECTION 1 — A HEALTHY SETUP ============ -->
+  <h2><span class="n">1</span> What "you're good" looks like</h2>
+  <p class="teach">Two commands, run from a terminal anywhere inside the repo. The first proves the compiler exists and answers; the second proves it can take a real program from source all the way to a running result.</p>
+
+  <div class="check good">
+    <h3>odin version <span class="badge varies">example — yours will differ</span></h3>
+    <p class="means">Proves the <code>odin</code> binary is found on your PATH and can run. It prints where it lives and which build it is.</p>
+    <div class="term"><span class="prompt">$ </span><span class="cmd">odin version</span>
+<span class="ex">C:\Users\you\odin\dist\odin.exe version dev-2026-04-nightly:a896fb2</span></div>
+    <p class="caption"><span class="warn">The exact string is yours alone</span> — the path, the date, and the hash all depend on your machine and which nightly you pulled. Don't match it character for character. The signal that matters: <b style="color:var(--ink)">a line came back at all</b>, naming a path to <code>odin.exe</code> and a <code>version …</code> tag. That means it's installed and on PATH.</p>
+  </div>
+
+  <div class="check good">
+    <h3>odin run . <span class="badge real">real compiler output</span></h3>
+    <p class="means">Proves the toolchain works end to end: it compiles a tiny program and runs the result. A package is just the directory of <code>.odin</code> files; <code>.</code> is "this directory."</p>
+    <div class="term"><span class="prompt">$ </span><span class="cmd">cat main.odin</span>
+<span class="out">package main</span>
+
+<span class="out">import "core:fmt"</span>
+
+<span class="out">main :: proc() {</span>
+<span class="out">	fmt.println("Odin is installed and running.")</span>
+<span class="out">}</span>
+
+<span class="prompt">$ </span><span class="cmd">odin run .</span>
+<span class="out">Odin is installed and running.</span></div>
+    <p class="caption"><span class="ok">This output is real</span> — that exact line is produced by compiling and running this exact program, pinned by a passing claim (<code>claims/lessons/00-setup-check/solution</code>). If that line prints, the compiler took source → built a binary → ran it, and every later lesson will build the same way.</p>
+  </div>
+
+  <p class="teach dim">Single-file variant: if you ever have one loose file rather than a package directory, <code>odin run main.odin -file</code> compiles just that file. Same result — the <code>-file</code> flag just says "treat this one file as the whole program" instead of the directory.</p>
+
+  <div class="note">
+    <span class="h">why a tag, not a clean version number</span>
+    The build string above reads <code>dev-…-nightly:&lt;hash&gt;</code> rather than something like <code>1.0</code>. Odin ships as dated nightly builds; the date and commit hash <i>are</i> the version. So "yours will differ" isn't a hedge — it's the expected state. As long as a path-to-<code>odin.exe</code> and a <code>version</code> line print, the check passes regardless of the date.
+  </div>
+
+  <!-- ============ SECTION 2 — READING A FAILURE ============ -->
+  <h2 style="margin-top:42px"><span class="n">2</span> When it doesn't print that</h2>
+  <p class="teach">Only one thing really goes wrong at this stage, and it has a recognizable shape. The point isn't to memorize an error string — those are produced by your shell and operating system, not by Odin, so they read differently on every machine. The point is to recognize <b>which of two situations</b> you're in.</p>
+
+  <div class="check">
+    <h3 style="color:var(--bad)">"odin" isn't recognized / command not found</h3>
+    <p class="means">You typed <code>odin version</code> and the shell complained that it has never heard of <code>odin</code> — no compiler output at all, because the compiler never ran.</p>
+    <p class="teach dim">This is a <b>PATH</b> problem, not an Odin problem. The binary may well be on disk — the shell just doesn't know where to look. Two ways to tell them apart: run the compiler by its <i>full path</i> (e.g. point directly at <code>odin.exe</code> in your install folder). If that works, the file is fine and only PATH is unset. If even the full path fails, the binary isn't installed where you think it is. Fix PATH (or the install), open a fresh terminal so it re-reads PATH, and re-run <code>odin version</code>.</p>
+  </div>
+
+  <div class="check">
+    <h3 style="color:var(--bad)">It found odin, but <code>odin run .</code> errors</h3>
+    <p class="means">A different situation entirely: <code>odin version</code> printed fine, so the compiler is installed and on PATH — but <code>odin run .</code> reported an error and produced no program output.</p>
+    <p class="teach dim">Now the toolchain is healthy; the message is the compiler talking, and it's pointing at <i>the code or the directory</i>, not the install. The usual cause at this step is running from the wrong place (no <code>.odin</code> files in the current directory) or a typo in the program. That's no longer a setup problem — it's the compiler doing its job, and reading what it says is exactly the skill the next lessons build.</p>
+  </div>
+
+  <p class="teach" style="margin-top:26px"><b>The one distinction to keep:</b> if <code>odin version</code> won't print, the compiler isn't reachable — that's PATH/install. If <code>odin version</code> prints but <code>odin run .</code> fails, the compiler is fine and is telling you about your code. The whole setup check is just confirming you're past the first case, so that from here on every error you see is the real, useful kind.</p>
+
+  <div class="foot">
+    the <span style="color:var(--ink)">odin run .</span> output line is real compiler output, pinned by a passing claim · claims/lessons/00-setup-check<br>
+    the <span style="color:var(--tag)">odin version</span> string is one machine's example, marked "varies" and not asserted
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,3 @@
+present (Crim): 42
+absent  (Vandal): 0
+absent string is empty: ""

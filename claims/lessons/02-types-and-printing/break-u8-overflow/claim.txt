@@ -1,0 +1,1 @@
+fails main.odin The maximum value that can be represented by 'u8' is '255'

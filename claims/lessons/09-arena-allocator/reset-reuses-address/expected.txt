@@ -1,0 +1,4 @@
+offset after first alloc=40
+offset after free_all=0
+offset after re-alloc=40
+second addr == first addr: true

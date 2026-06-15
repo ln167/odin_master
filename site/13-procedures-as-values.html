@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Odin procedures as values — the slot, four levels deep</title>
+<style>
+  :root{
+    --paper:#15130f; --card:#1d1a14; --ink:#ece6d8; --muted:#9a9182;
+    --rule:#332e24; --accent:#5ec8b8; --accent-soft:#1f342f;
+    --tag:#e0875a; --pad:#5a544a; --bad:#e0675a; --bad-soft:#2a1815;
+    --mono:"Cascadia Mono","Cascadia Code",Consolas,ui-monospace,"SF Mono",monospace;
+    --serif:-apple-system,"Segoe UI Variable Text","Segoe UI",system-ui,Roboto,"Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper);color:var(--ink)}
+  body{font-family:var(--serif);line-height:1.6;padding:0 20px;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-feature-settings:"kern" 1,"liga" 1}
+  .page{max-width:860px;margin:0 auto;padding:46px 0 90px}
+  .kicker{font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+  h1{font-size:30px;line-height:1.15;margin:0 0 18px;font-weight:600;letter-spacing:-.01em}
+
+  /* level tabs */
+  .levels{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+  .levels button{flex:1;min-width:150px;text-align:left;background:var(--card);border:1px solid var(--rule);
+    color:var(--muted);border-radius:10px;padding:11px 14px;cursor:pointer;transition:.12s;font-family:var(--serif)}
+  .levels button:hover{border-color:var(--accent)}
+  .levels button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--ink)}
+  .levels .lv{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);display:block;margin-bottom:3px}
+  .levels .tt{font-size:14px}
+  .rule{height:1px;background:var(--rule);margin:22px 0 26px}
+
+  .deck{color:var(--muted);font-size:17px;margin:0 0 24px;line-height:1.5}
+  .deck b{color:var(--ink)}
+  h2{font-size:21px;margin:0 0 14px;font-weight:600}
+  p.teach{font-size:16px;line-height:1.62;max-width:46em}
+  p.teach code,.il{font-family:var(--mono);font-size:.86em;background:#2a2519;padding:1px 5px;border-radius:4px}
+  .teach b{color:var(--tag)}
+  .section{display:none}
+  .section.on{display:block}
+
+  nav.sub{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;font-family:var(--mono);font-size:13px}
+  nav.sub button{background:var(--card);border:1px solid var(--rule);color:var(--muted);border-radius:8px;padding:8px 14px;cursor:pointer;transition:.12s}
+  nav.sub button:hover{color:var(--ink);border-color:var(--accent)}
+  nav.sub button.on{color:var(--ink);border-color:var(--accent);background:var(--accent-soft)}
+  .hint{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin:0 0 20px}
+
+  .canvas{background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:30px 28px}
+  .slotlabel{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
+
+  /* the slot view (Level 1): a variable holding a code address */
+  .slotrow{display:flex;align-items:stretch;gap:18px;flex-wrap:wrap}
+  .slotbox{flex:none;min-width:210px;background:#1a1710;border:1px solid var(--accent);border-radius:12px;padding:16px 16px 14px}
+  .slotbox .nm{font-family:var(--mono);font-size:13px;color:var(--ink);margin-bottom:2px}
+  .slotbox .ty{font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:12px}
+  .strip8{display:grid;grid-template-columns:repeat(8,1fr);gap:5px}
+  .byte{aspect-ratio:1/1.2;border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:var(--mono);position:relative;border:1px solid transparent}
+  .byte .hx{font-size:13px;font-weight:600}
+  .byte .ix{position:absolute;top:2px;left:4px;font-size:8px;color:var(--muted);opacity:.7}
+  .b-addr{background:#3a2417;border-color:var(--tag);color:#f0b48a}
+  .slottag{font-family:var(--mono);font-size:12px;margin-top:12px;color:var(--muted)}
+  .slottag b{color:var(--tag)}
+  .arrowto{align-self:center;font-family:var(--mono);color:var(--tag);font-size:22px;flex:none}
+  @media(max-width:640px){.arrowto{transform:rotate(90deg);margin:4px auto}}
+  .codeseg{flex:1;min-width:240px;background:#1a1710;border:1px solid var(--rule);border-radius:12px;padding:14px 16px;font-family:var(--mono);font-size:12px}
+  .codeseg .seglbl{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+  .procrow{display:flex;align-items:center;gap:10px;padding:7px 9px;border-radius:7px;margin:4px 0;border:1px solid transparent;color:#6f6655;transition:.18s}
+  .procrow .a{color:#6f6655;white-space:nowrap}
+  .procrow .nm{color:#8a7a66}
+  .procrow.live{border-color:var(--accent);background:var(--accent-soft);color:#cdeee7}
+  .procrow.live .a{color:var(--tag)}
+  .procrow.live .nm{color:#cdeee7}
+  .callout{font-family:var(--mono);font-size:14px;margin-top:18px;text-align:center;color:var(--ink)}
+  .callout .res{color:var(--accent);font-weight:600}
+  .callout .var{color:var(--tag)}
+
+  .legend{display:flex;gap:18px;flex-wrap:wrap;margin-top:18px;font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+  .legend span{display:flex;align-items:center;gap:7px}
+  .chip{width:13px;height:13px;border-radius:3px;border:1px solid}
+  .c-addr{background:#3a2417;border-color:var(--tag)}
+
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:26px}
+  @media(max-width:680px){.cols{grid-template-columns:1fr}}
+  .panel h3{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 12px;font-weight:600}
+  .sizes{font-family:var(--mono);font-size:13px;line-height:2}
+  .sizes .n{color:var(--accent);font-weight:600}
+  .sizes .big{color:var(--tag);font-weight:600}
+
+  pre{font-family:var(--mono);font-size:12.5px;line-height:1.7;background:#1a1710;border:1px solid var(--rule);border-radius:10px;padding:16px 18px;overflow:auto;margin:22px 0 0;white-space:pre-wrap}
+  pre .cm{color:#6f6655}
+  pre .kw{color:var(--accent)}
+  pre .er{color:var(--bad)}
+  pre .ok{color:var(--accent)}
+
+  /* dispatch table (Level 2) */
+  .table{display:flex;flex-direction:column;gap:6px;margin-top:6px}
+  .trow{display:flex;align-items:center;gap:0;font-family:var(--mono);font-size:12px;border:1px solid var(--rule);border-radius:8px;overflow:hidden;background:#1a1710}
+  .trow .key{flex:none;width:130px;padding:11px 12px;background:#241f17;color:var(--tag);border-right:1px solid var(--rule)}
+  .trow .proc{flex:1;padding:11px 12px;color:#cdeee7}
+  .trow .arrow{flex:none;color:var(--muted);padding:0 4px}
+  .lookup{font-family:var(--mono);font-size:14px;text-align:center;margin:18px 0 2px;color:var(--ink)}
+  .lookup .k{color:var(--tag)}
+  .lookup .res{color:var(--accent);font-weight:600}
+
+  /* the wrong way (Level 2) */
+  .ladder{font-family:var(--mono);font-size:12px;background:#1a1710;border:1px solid #4a342a;border-radius:10px;padding:14px 16px;line-height:1.8;color:#8a7a66}
+  .ladder .er{color:var(--bad)}
+  .ladder .kw{color:#a07268}
+
+  /* nil slot / strict type (Level 3) */
+  .twoup{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:6px}
+  @media(max-width:640px){.twoup{grid-template-columns:1fr}}
+  .lane{background:#1a1710;border:1px solid var(--rule);border-radius:12px;padding:16px}
+  .lane.good{border-color:var(--accent)}
+  .lane.bad{border-color:#4a342a}
+  .lane h4{font-family:var(--mono);font-size:12px;margin:0 0 10px;font-weight:600}
+  .lane.good h4{color:var(--accent)}
+  .lane.bad h4{color:var(--tag)}
+  .verdict{font-family:var(--mono);font-size:12px;margin-top:10px;padding:8px 10px;border-radius:7px}
+  .verdict.good{background:var(--accent-soft);color:#cdeee7;border:1px solid var(--accent)}
+  .verdict.bad{background:var(--bad-soft);color:#f0a892;border:1px solid #5a3a30}
+  .nilslot{font-family:var(--mono);font-size:12px;border:1px dashed #5a4530;border-radius:8px;padding:9px 11px;margin:6px 0;color:#8a7a66;text-align:center}
+
+  /* runtime swap (Level 4) */
+  .modebar{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 0}
+  .world{font-family:var(--mono);font-size:12px;background:#1a1710;border:1px solid var(--rule);border-radius:10px;padding:14px 16px;margin-top:14px;line-height:1.9}
+  .world .field{color:var(--muted)}
+  .world .field b{color:var(--tag)}
+  .world .out{color:var(--accent)}
+
+  .note{background:#1a1710;border:1px solid var(--rule);border-left:3px solid var(--tag);
+    border-radius:10px;padding:15px 18px;margin-top:24px;font-size:15px;line-height:1.6;color:var(--muted)}
+  .note b{color:var(--ink)}
+  .note .h{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--tag);display:block;margin-bottom:8px}
+  .foot{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;margin-top:34px}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="kicker">Odin · procedures as values</div>
+  <h1>A procedure is a value, four levels deep</h1>
+
+  <div class="levels" id="levelnav"></div>
+  <div class="rule"></div>
+
+  <!-- ===================== LEVEL 1 — WHAT IT IS ===================== -->
+  <section class="section" id="s1">
+    <p class="deck">A procedure in Odin is a <b>value</b>, just like an integer. It has a type — written as its signature, <span class="il">proc(int, int) -&gt; int</span> — and a variable of that type holds <b>the address of one compiled procedure</b>. Below, <span class="il">op</span> is one such variable: a single slot. Reassign the slot and the <i>exact same</i> call expression <span class="il">op(6, 2)</span> runs a different procedure.</p>
+    <div class="hint">Sizes &amp; results below are real output from a compiled Odin program. The address shown is one representative run (a code address differs per build).</div>
+
+    <nav class="sub" id="nav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="slotlabel"></div>
+      <div class="slotrow">
+        <div class="slotbox">
+          <div class="nm">op : Binop</div>
+          <div class="ty">a proc value — 8 bytes that hold a code address</div>
+          <div class="strip8" id="pstrip"></div>
+          <div class="slottag" id="ptag"></div>
+        </div>
+        <div class="arrowto">&rsaquo;</div>
+        <div class="codeseg">
+          <div class="seglbl">the executable's code segment</div>
+          <div id="codeseg"></div>
+        </div>
+      </div>
+      <div class="callout" id="callout"></div>
+      <div class="legend">
+        <span><i class="chip c-addr"></i> the 8 address bytes in the slot</span>
+      </div>
+    </div>
+
+    <div class="cols">
+      <div class="panel"><h3>Widths (size_of)</h3>
+        <div class="sizes">
+          proc(int) -&gt; int&nbsp;&nbsp;&nbsp;&nbsp; = <span class="n">8</span><br>
+          proc(int, int) -&gt; int = <span class="n">8</span><br>
+          proc(string)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; = <span class="n">8</span><br>
+          proc()&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; = <span class="n">8</span><br>
+          <b style="color:var(--ink)">rawptr</b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; = <span class="n">8</span><br><br>
+          <span style="color:var(--muted)">Every proc type is the <b style="color:var(--ink)">same 8 bytes</b>, whatever its signature — the value is just an address, the same width as a bare <b style="color:var(--ink)">rawptr</b>. No second word for an object, an environment, or a dispatch table.</span>
+        </div>
+      </div>
+      <div class="panel"><h3>What you're seeing</h3><p class="teach" id="teach"></p></div>
+    </div>
+  </section>
+
+  <!-- ============= LEVEL 2 — WHY YOU'D REACH FOR IT ============= -->
+  <section class="section" id="s2">
+    <p class="deck">Level 1 was <i>what it is</i>. Now: the case where a proc value isn't a curiosity but the right tool — when <b>the behavior to run is data, picked at runtime by a key</b>. That's a <b>dispatch table</b>: an array (or map) whose element type is a proc type.</p>
+    <p class="teach">Map each key to a procedure once, in a literal. Then <span class="il">table[kind]</span> looks up the proc value for that key and the <span class="il">(8, 3)</span> after it calls whatever it found. The <i>same</i> two-character lookup-and-call serves every key — adding a new behavior is adding a row to the table, not editing the call site.</p>
+
+    <nav class="sub" id="tablenav"></nav>
+    <div class="canvas">
+      <div class="slotlabel">table : [Op]Binop&nbsp;&nbsp;—&nbsp;&nbsp;one proc value per key</div>
+      <div class="table" id="dtable"></div>
+      <div class="lookup" id="lookup"></div>
+    </div>
+
+    <p class="teach"><b>The counterfactual:</b> if you only ever ran <i>one</i> fixed operation, you'd just write that operation — no table, no proc values, nothing. The table earns its keep precisely when the operation isn't known until the program is running: it arrives as an <span class="il">Op</span> read from input, a config file, a packet, a script. The key is the data; the table turns the data into the procedure to run.</p>
+
+    <h2 style="margin-top:30px">Why the alternative is worse</h2>
+    <p class="teach">The other way to turn a key into a behavior is a branch ladder that re-lists every case at every call site:</p>
+    <div class="ladder" id="ladder"></div>
+    <p class="teach" style="margin-top:14px">
+      <b>The branch ladder costs you at every site.</b> Every place that needs to dispatch re-writes the same <span class="il">switch</span>. Add a fourth operation and you must hunt down and edit <i>each</i> of those sites — miss one and that site silently keeps doing the old set. The dispatch table collapses all of it to one <span class="il">table[kind](…)</span>: the cases live in <b>one</b> literal, and every site that indexes the table gets the new behavior for free. Same key-to-behavior idea, one copy instead of many, and the call site never grows.
+    </p>
+  </section>
+
+  <!-- ===================== LEVEL 3 — THE BILL ===================== -->
+  <section class="section" id="s3">
+    <p class="deck">Level 2 sold you on the slot. Level 3 is the bill — two edges that come with storing behavior in a variable: <b>the slot can be empty</b>, and <b>the type is strict</b>. Both are checkable; one is checked for you at compile time, the other you guard at runtime.</p>
+
+    <p class="teach"><b>The bill, part one — the slot can be empty.</b> The zero value of a proc type is <span class="il">nil</span>: a declared-but-unassigned slot holds <i>no</i> procedure. Calling through it has no address to branch to, so the program crashes on the indirect call (it exits with a nonzero, failing status). The safe path guards the slot first:</p>
+
+    <div class="twoup">
+      <div class="lane bad">
+        <h4>op : Binop  // never assigned</h4>
+        <div class="nilslot">op == nil &nbsp;— the slot is empty</div>
+        <div class="verdict bad">op(1, 2) &nbsp;→ crash on the indirect call (nonzero exit)</div>
+      </div>
+      <div class="lane good">
+        <h4>guard before you call</h4>
+        <div class="nilslot" style="border-style:solid;border-color:var(--accent);color:#cdeee7">if op != nil { op(1, 2) }</div>
+        <div class="verdict good">empty slot → skipped; a set slot → called</div>
+      </div>
+    </div>
+    <p class="teach" style="margin-top:16px">This is why an optional callback — a proc value stored in a struct field, set only sometimes — is almost always invoked as <span class="il">if cb != nil { cb(…) }</span>. The default state of a callback field <i>is</i> the empty slot; the guard is one compare-to-zero, the cheapest branch there is.</p>
+
+    <p class="teach" style="margin-top:26px"><b>The bill, part two — the type is strict.</b> A proc type is its <i>whole</i> signature. Two proc types match only if parameter count, parameter types, and return type all line up. A three-argument proc is a different type from a two-argument one, and the compiler refuses the assignment by name — at build time, before the program ever runs:</p>
+    <pre><span class="kw">Binop</span> :: proc(a, b: int) -&gt; int
+<span class="kw">div3</span>  :: proc(a, b, c: int) -&gt; int { <span class="kw">return</span> a / b / c }
+
+op: Binop = add
+<span class="er">op = div3</span>   <span class="cm">// a 3-arg proc into a 2-arg slot</span>
+
+<span class="er">Error: Cannot assign value 'div3' of type 'proc(int, int, int) -&gt; int' to 'Binop'</span>
+<span class="er">    Expected: int, int</span>
+<span class="er">    Got:      int, int, int</span></pre>
+
+    <div class="note">
+      <span class="h">a proc literal is not a capturing thing</span>
+      A proc value written inline — <span class="il">square := proc(x: int) -&gt; int { return x * x }</span> — is the same procedure it would be at package scope; it just isn't given a name. It <b>captures nothing</b> from the surrounding scope. Reach for an outer local from inside the literal and the build stops you cold: writing <span class="il">count += 1</span> in a literal that has no <span class="il">count</span> parameter gives <span class="il">Error: Undeclared name: count</span> — the literal's body simply can't see <span class="il">main</span>'s locals. When the procedure needs state, you <b>pass it in</b> (a parameter, or a pointer to a struct that holds the state). The slot carries an address and nothing else, which is exactly why there's nowhere for captured variables to live.
+    </div>
+  </section>
+
+  <!-- ============= LEVEL 4 — THE EMERGENT PAYOFF ============= -->
+  <section class="section" id="s4">
+    <p class="deck">The last level is the property that <b>emerges</b> once behavior lives in a slot: you can <b>swap what a system does at runtime by writing one variable</b>. The call sites don't change; the slot does.</p>
+    <p class="teach">Put a proc value in a struct field — a plug-in point. The rest of the program calls through that field every frame, never touching it. Change the mode and you reassign <i>just the field</i>; every call site downstream now runs the new behavior. Flip the mode below and watch the same <span class="il">step()</span> call produce a different result:</p>
+
+    <nav class="sub modebar" id="modenav"></nav>
+    <div class="canvas">
+      <div class="slotlabel">world.step : proc(int, int) -&gt; int&nbsp;&nbsp;—&nbsp;&nbsp;one field, swapped live</div>
+      <div class="world" id="world"></div>
+    </div>
+    <p class="teach" style="margin-top:14px"><b>The emergent payoff:</b> the behavior became a <i>value you can move</i>. Reassigning one 8-byte field re-routes every <span class="il">world.step(a, b)</span> in the program at once — no branch threaded through every call site, no re-compile, no class to subclass. The same move scales out: a per-state tick function for an actor's behavior, an <span class="il">on_click</span> handler set when a widget is built, a comparator handed to a sort, a parser's per-token rule. Each is one slot you can read, fill, guard, and reassign — the whole vocabulary from the first three levels, applied.</p>
+
+    <p class="teach" style="margin-top:24px;color:var(--muted)">That's the arc: <b style="color:var(--ink)">L1</b> a proc is a value — one 8-byte slot holding a code address, reassign it and the same call runs a different proc → <b style="color:var(--ink)">L2</b> a table of those slots turns a runtime key into the behavior to run → <b style="color:var(--ink)">L3</b> the bill is an empty slot (guard <span class="il">!= nil</span>) and a strict signature (the compiler checks it) → <b style="color:var(--ink)">L4</b> because behavior is now a movable value, one assignment re-routes the whole program.</p>
+  </section>
+
+  <div class="foot">probes reproduce with <span style="color:var(--ink)">odin run</span> · sizes, outputs &amp; the L3 errors are real compiler output (claims/lessons/13-procedures-as-values)</div>
+</div>
+
+<script>
+/* ============================================================
+   Each interactive component = one data object + one render fn.
+   Vanilla JS, inline, no libraries.
+   All embedded numbers/outputs/errors come from passing claims
+   under claims/lessons/13-procedures-as-values/.
+   ============================================================ */
+
+/* ---------- LEVEL 1: the reassignable slot ----------
+   Measured:
+     claim size-of-proc  : every proc type, and rawptr, size_of == 8
+     claim slot-reassign : op(6,2) is 8 (add), 4 (sub), 12 (mul)
+   The code address is nondeterministic; we show ONE representative run. */
+const PROCS = {
+  add: { addr:0x4017a0, sym:'add', res:8,  sign:'+' },
+  sub: { addr:0x4017c8, sym:'sub', res:4,  sign:'-' },
+  mul: { addr:0x4017f0, sym:'mul', res:12, sign:'*' },
+};
+const ORDER = ['add','sub','mul'];
+function addrBytesLE(addr){
+  const out=[]; let a=BigInt(addr);
+  for(let i=0;i<8;i++){ out.push(Number(a & 0xFFn)); a >>= 8n; }
+  return out;
+}
+let cur='add';
+function renderL1(){
+  document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('on',b.dataset.k===cur));
+  const p=PROCS[cur];
+  document.getElementById('slotlabel').textContent=`op = ${p.sym}   —   the slot now holds ${p.sym}'s address`;
+  // slot strip: the 8 address bytes (orange)
+  const pb=addrBytesLE(p.addr);
+  document.getElementById('pstrip').innerHTML =
+    pb.map((b,i)=>`<div class="byte b-addr"><span class="ix">${i}</span><span class="hx">${b.toString(16).padStart(2,'0')}</span></div>`).join('');
+  document.getElementById('ptag').innerHTML =
+    `holds <b>0x${p.addr.toString(16).toUpperCase()}</b> — the address of <b>${p.sym}</b> <span style="color:var(--muted)">(one run)</span>`;
+  // code segment: three procs, the live one highlighted
+  document.getElementById('codeseg').innerHTML = ORDER.map(k=>{
+    const q=PROCS[k];
+    return `<div class="procrow ${k===cur?'live':''}"><span class="a">0x${q.addr.toString(16).toUpperCase()}</span> <span class="nm">${q.sym} :: proc(a, b: int) -&gt; int { return a ${q.sign} b }</span></div>`;
+  }).join('');
+  document.getElementById('callout').innerHTML =
+    `<span class="var">op</span>(6, 2)  →  <span class="res">${p.res}</span>  <span style="color:var(--muted)">(an indirect branch to the address in the slot)</span>`;
+  document.getElementById('teach').innerHTML = ({
+    add:`The slot holds <code>add</code>'s address. <code>op(6, 2)</code> branches there and runs <code>6 + 2</code> → <b>8</b>. The variable doesn't <i>contain</i> a procedure; it points at one in the code segment.`,
+    sub:`Same slot, same call expression <code>op(6, 2)</code> — but the slot now holds <code>sub</code>'s address, so the branch lands on <code>6 - 2</code> → <b>4</b>. Reassigning the variable is the <i>only</i> thing that changed.`,
+    mul:`Now the slot points at <code>mul</code>: <code>op(6, 2)</code> runs <code>6 * 2</code> → <b>12</b>. One 8-byte variable, three behaviors, one unchanging call site.`,
+  })[cur];
+}
+const nav=document.getElementById('nav');
+ORDER.forEach(k=>{
+  const b=document.createElement('button'); b.dataset.k=k; b.textContent=`op = ${k}`;
+  b.onclick=()=>{cur=k;renderL1();}; nav.appendChild(b);
+});
+
+/* ---------- LEVEL 2: dispatch table ----------
+   Measured (claim dispatch-table):
+     table[.Add](8,3)=11, table[.Sub](8,3)=5, table[.Mul](8,3)=24   */
+const DTABLE = [
+  { key:'.Add', proc:'add :: proc(a, b: int) -&gt; int { return a + b }', res:11, expr:'8 + 3' },
+  { key:'.Sub', proc:'sub :: proc(a, b: int) -&gt; int { return a - b }', res:5,  expr:'8 - 3' },
+  { key:'.Mul', proc:'mul :: proc(a, b: int) -&gt; int { return a * b }', res:24, expr:'8 * 3' },
+];
+let dcur=0;
+function renderL2(){
+  document.querySelectorAll('#tablenav button').forEach((b,i)=>b.classList.toggle('on',i===dcur));
+  document.getElementById('dtable').innerHTML = DTABLE.map((r,i)=>
+    `<div class="trow" style="${i===dcur?'border-color:var(--accent)':''}">
+       <span class="key">${r.key}</span><span class="arrow">→</span><span class="proc">${r.proc}</span>
+     </div>`).join('');
+  const r=DTABLE[dcur];
+  document.getElementById('lookup').innerHTML =
+    `<span class="k">table[${r.key}]</span>(8, 3)  →  ${r.expr}  →  <span class="res">${r.res}</span>`;
+}
+const tablenav=document.getElementById('tablenav');
+DTABLE.forEach((r,i)=>{
+  const b=document.createElement('button'); b.dataset.i=i; b.textContent=`kind = ${r.key}`;
+  b.onclick=()=>{dcur=i;renderL2();}; tablenav.appendChild(b);
+});
+/* the wrong way: a branch ladder re-listed at every site */
+document.getElementById('ladder').innerHTML =
+`<span class="kw">switch</span> kind {
+<span class="kw">case</span> .Add: result = a + b
+<span class="kw">case</span> .Sub: result = a - b
+<span class="kw">case</span> .Mul: result = a * b
+}   <span class="er">// ...and again, verbatim, at every other site that dispatches</span>`;
+
+/* ---------- LEVEL 4: live behavior swap through one field ----------
+   Reuses the verified add/sub/mul results from slot-reassign (op(6,2)).   */
+const MODES = {
+  add: { sym:'add', sign:'+', res:8 },
+  sub: { sym:'sub', sign:'-', res:4 },
+  mul: { sym:'mul', sign:'*', res:12 },
+};
+let mode='add';
+function renderL4(){
+  document.querySelectorAll('#modenav button').forEach(b=>b.classList.toggle('on',b.dataset.m===mode));
+  const m=MODES[mode];
+  document.getElementById('world').innerHTML =
+    `<span class="field">world.step  = <b>${m.sym}</b></span>   <span style="color:var(--muted)">// reassigned this field only</span><br>` +
+    `<span class="field">world.step(6, 2)</span>   <span style="color:var(--muted)">// every call site, unchanged</span><br>` +
+    `<span class="out">→ ${m.res}</span>   <span style="color:var(--muted)">(6 ${m.sign} 2 — the new behavior, no recompile)</span>`;
+}
+const modenav=document.getElementById('modenav');
+['add','sub','mul'].forEach(k=>{
+  const b=document.createElement('button'); b.dataset.m=k; b.textContent=`world.step = ${k}`;
+  b.onclick=()=>{mode=k;renderL4();}; modenav.appendChild(b);
+});
+
+/* ---------- level navigation ---------- */
+const LEVELS=[
+  ['1','What it is','a reassignable slot'],
+  ['2','Why use it','the dispatch table'],
+  ['3','The bill','empty slot, strict type'],
+  ['4','The payoff','swap behavior at runtime'],
+];
+let level='1';
+function setLevel(n){
+  level=n;
+  document.querySelectorAll('.levels button').forEach(b=>b.classList.toggle('on',b.dataset.n===n));
+  for(const [k] of LEVELS){ const el=document.getElementById('s'+k); if(el) el.classList.toggle('on',k===n); }
+  if(n==='1') renderL1();
+  if(n==='2') renderL2();
+  if(n==='4') renderL4();
+}
+const lnav=document.getElementById('levelnav');
+for(const [n,tt,sub] of LEVELS){ const b=document.createElement('button'); b.dataset.n=n;
+  b.innerHTML=`<span class="lv">Level ${n} · ${sub}</span><span class="tt">${tt}</span>`;
+  b.onclick=()=>setLevel(n); lnav.appendChild(b); }
+setLevel('1');
+</script>
+</body>
+</html>

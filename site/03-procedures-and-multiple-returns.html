@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Odin procedures — one declaration, many values out</title>
+<style>
+  :root{
+    --paper:#15130f; --card:#1d1a14; --ink:#ece6d8; --muted:#9a9182;
+    --rule:#332e24; --accent:#5ec8b8; --accent-soft:#1f342f;
+    --tag:#e0875a; --pad:#5a544a; --bad:#e0675a; --bad-soft:#2a1815;
+    --mono:"Cascadia Mono","Cascadia Code",Consolas,ui-monospace,"SF Mono",monospace;
+    --serif:-apple-system,"Segoe UI Variable Text","Segoe UI",system-ui,Roboto,"Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper);color:var(--ink)}
+  body{font-family:var(--serif);line-height:1.6;padding:0 20px;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-feature-settings:"kern" 1,"liga" 1}
+  .page{max-width:860px;margin:0 auto;padding:46px 0 90px}
+  .kicker{font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+  h1{font-size:30px;line-height:1.15;margin:0 0 18px;font-weight:600;letter-spacing:-.01em}
+
+  /* level tabs */
+  .levels{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+  .levels button{flex:1;min-width:150px;text-align:left;background:var(--card);border:1px solid var(--rule);
+    color:var(--muted);border-radius:10px;padding:11px 14px;cursor:pointer;transition:.12s;font-family:var(--serif)}
+  .levels button:hover{border-color:var(--accent)}
+  .levels button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--ink)}
+  .levels .lv{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);display:block;margin-bottom:3px}
+  .levels .tt{font-size:14px}
+  .rule{height:1px;background:var(--rule);margin:22px 0 26px}
+
+  .deck{color:var(--muted);font-size:17px;margin:0 0 24px;line-height:1.5}
+  .deck b{color:var(--ink)}
+  h2{font-size:21px;margin:0 0 14px;font-weight:600}
+  p.teach{font-size:16px;line-height:1.62;max-width:46em}
+  p.teach code,.il{font-family:var(--mono);font-size:.86em;background:#2a2519;padding:1px 5px;border-radius:4px}
+  .teach b{color:var(--tag)}
+  .section{display:none}
+  .section.on{display:block}
+
+  nav.sub{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;font-family:var(--mono);font-size:13px}
+  nav.sub button{background:var(--card);border:1px solid var(--rule);color:var(--muted);border-radius:8px;padding:8px 14px;cursor:pointer;transition:.12s}
+  nav.sub button:hover{color:var(--ink);border-color:var(--accent)}
+  nav.sub button.on{color:var(--ink);border-color:var(--accent);background:var(--accent-soft)}
+  .hint{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin:0 0 20px}
+
+  .canvas{background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:30px 28px}
+  .slotlabel{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
+
+  /* ---- L1: signature anatomy ---- */
+  .anat{font-family:var(--mono);font-size:18px;line-height:1.5;text-align:center;margin:6px 0 8px;letter-spacing:.01em}
+  .anat .tok{position:relative;padding:2px 3px;border-radius:5px;cursor:default;transition:.12s}
+  .anat .tok.lit{background:#221f17}
+  .seg-name{color:var(--accent)}
+  .seg-kw{color:var(--muted)}
+  .seg-params{color:var(--tag)}
+  .seg-ret{color:#cdeee7}
+  .seg-body{color:var(--muted)}
+  .anat .tok.dim{opacity:.32}
+  .anat .tok.hot{outline:1px solid var(--accent);background:var(--accent-soft)}
+  .anatkey{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin:18px 0 4px;font-family:var(--mono);font-size:12px}
+  .anatkey button{background:#1a1710;border:1px solid var(--rule);color:var(--muted);border-radius:7px;padding:7px 12px;cursor:pointer;transition:.12s}
+  .anatkey button:hover{border-color:var(--accent);color:var(--ink)}
+  .anatkey button.on{background:var(--accent-soft);border-color:var(--accent);color:var(--ink)}
+  .anatkey button .sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;vertical-align:middle}
+  .anatnote{font-family:var(--mono);font-size:12.5px;color:var(--muted);text-align:center;margin-top:14px;min-height:2.6em;line-height:1.5}
+  .anatnote b{color:var(--ink)}
+
+  /* ---- L1: the unpack trace ---- */
+  .trace{display:grid;grid-template-columns:1fr;gap:14px;margin-top:6px}
+  .callbox{font-family:var(--mono);font-size:14px;text-align:center;color:var(--ink)}
+  .callbox .pin{color:var(--tag)}
+  .retrow{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+  .retslot{flex:1;min-width:120px;max-width:200px;background:#1a1710;border:1px solid var(--rule);border-radius:10px;padding:12px 10px;text-align:center;transition:.3s}
+  .retslot.land{border-color:var(--accent);background:var(--accent-soft)}
+  .retslot .nm{font-family:var(--mono);font-size:12px;color:var(--tag);margin-bottom:6px}
+  .retslot .vl{font-family:var(--mono);font-size:20px;font-weight:600;color:var(--muted)}
+  .retslot.land .vl{color:#cdeee7}
+  .retslot .pos{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-top:6px}
+  .arrowdown{text-align:center;color:var(--muted);font-family:var(--mono);font-size:13px;margin:2px 0}
+  .bindrow{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+  .bindslot{flex:1;min-width:120px;max-width:200px;background:#221f17;border:1px dashed #5a4530;border-radius:10px;padding:12px 10px;text-align:center}
+  .bindslot.land{border:1px solid var(--accent);border-style:solid;background:var(--accent-soft)}
+  .bindslot .nm{font-family:var(--mono);font-size:14px;color:var(--accent)}
+  .bindslot .vl{font-family:var(--mono);font-size:18px;font-weight:600;color:#cdeee7;margin-top:5px;min-height:1.2em}
+
+  pre{font-family:var(--mono);font-size:12.5px;line-height:1.7;background:#1a1710;border:1px solid var(--rule);border-radius:10px;padding:16px 18px;overflow:auto;margin:22px 0 0;white-space:pre-wrap}
+  pre.tight{margin:6px 0 0}
+  pre .cm{color:#6f6655}
+  pre .kw{color:var(--accent)}
+  pre .er{color:var(--bad)}
+  pre .ok{color:var(--accent)}
+  pre .tg{color:var(--tag)}
+
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:26px}
+  @media(max-width:680px){.cols{grid-template-columns:1fr}}
+  .panel h3{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 12px;font-weight:600}
+
+  /* ---- L2: (value, ok) lanes ---- */
+  .twoup{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:6px}
+  @media(max-width:640px){.twoup{grid-template-columns:1fr}}
+  .lane{background:#1a1710;border:1px solid var(--rule);border-radius:12px;padding:16px}
+  .lane.good{border-color:var(--accent)}
+  .lane.bad{border-color:#4a342a}
+  .lane h4{font-family:var(--mono);font-size:12px;margin:0 0 10px;font-weight:600}
+  .lane.good h4{color:var(--accent)}
+  .lane.bad h4{color:var(--tag)}
+  .pairbox{font-family:var(--mono);font-size:13px;border-radius:8px;padding:11px 11px;margin:6px 0;border:1px solid var(--rule);background:#221f17;color:#cdeee7;text-align:center}
+  .pairbox .ok-t{color:var(--accent);font-weight:600}
+  .pairbox .ok-f{color:var(--bad);font-weight:600}
+  .verdict{font-family:var(--mono);font-size:12px;margin-top:10px;padding:8px 10px;border-radius:7px;line-height:1.5}
+  .verdict.good{background:var(--accent-soft);color:#cdeee7;border:1px solid var(--accent)}
+  .verdict.bad{background:var(--bad-soft);color:#f0a892;border:1px solid #5a3a30}
+
+  /* "the wrong way, drawn" */
+  .oopstrip{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px}
+  .oopcell{flex:1;min-width:150px;background:#241f17;border:1px dashed #5a4530;border-radius:9px;padding:12px 12px;font-family:var(--mono);font-size:12px;color:#cab69e;line-height:1.5}
+  .oopcell .ttl{display:block;color:var(--tag);margin-bottom:6px;font-size:11px;letter-spacing:.06em;text-transform:uppercase}
+  .oopcell .fail{color:var(--bad);display:block;margin-top:6px}
+
+  /* misconception callout */
+  .note{background:#1a1710;border:1px solid var(--rule);border-left:3px solid var(--tag);
+    border-radius:10px;padding:15px 18px;margin-top:24px;font-size:15px;line-height:1.6;color:var(--muted)}
+  .note b{color:var(--ink)}
+  .note .h{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--tag);display:block;margin-bottom:8px}
+  .foot{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;margin-top:34px}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="kicker">Odin · procedures &amp; multiple returns</div>
+  <h1>A procedure, four levels deep</h1>
+
+  <div class="levels" id="levelnav"></div>
+  <div class="rule"></div>
+
+  <!-- ===================== LEVEL 1 — WHAT IT IS ===================== -->
+  <section class="section" id="s1">
+    <p class="deck">A procedure is <b>a value you declare with <span class="il">::</span></b>, exactly like a constant: <span class="il">name :: proc(params) -&gt; returns { body }</span>. The signature is the whole contract — what goes in, what comes out — and Odin lets the "what comes out" be <b>more than one value at once</b>. Hover the parts of the signature, then watch a call hand its values back into named slots.</p>
+
+    <div class="slotlabel">The five parts of a declaration</div>
+    <div class="canvas">
+      <div class="anat" id="anat"></div>
+      <div class="anatkey" id="anatkey"></div>
+      <div class="anatnote" id="anatnote"></div>
+    </div>
+
+    <p class="teach" style="margin-top:26px">The return clause is the part that grows. One value needs no parentheses; <b>two or more</b> are a parenthesized, named list — and the call site takes them apart in one binding. Pick a call and step the values out:</p>
+
+    <nav class="sub" id="tracenav"></nav>
+    <div class="hint">Outputs below are real stdout from compiled Odin programs (claims/lessons/03-procedures-and-multiple-returns).</div>
+    <div class="canvas">
+      <div class="slotlabel" id="tracelabel"></div>
+      <div class="trace">
+        <div class="callbox" id="tracecall"></div>
+        <div class="arrowdown">the proc finishes — its return values come back in order</div>
+        <div class="retrow" id="traceret"></div>
+        <div class="arrowdown">▾ &nbsp; positional binding: slot 1 → first name, slot 2 → second name, …</div>
+        <div class="bindrow" id="tracebind"></div>
+      </div>
+      <pre class="tight" id="traceout" style="margin-top:20px"></pre>
+    </div>
+
+    <div class="cols">
+      <div class="panel"><h3>The grammar</h3>
+        <p class="teach" style="font-size:14.5px">
+          <code>square :: proc(x: int) -&gt; int</code> — one in, one out, no parens on the return.<br><br>
+          <code>minmax :: proc(a, b, c: int) -&gt; (lo, hi, span: int)</code> — three in, <b style="color:var(--ink)">three out</b>. Adjacent params (and returns) of one type share it.
+        </p>
+      </div>
+      <div class="panel"><h3>What you're seeing</h3><p class="teach" id="l1teach"></p></div>
+    </div>
+  </section>
+
+  <!-- ============= LEVEL 2 — WHY YOU'D REACH FOR IT ============= -->
+  <section class="section" id="s2">
+    <p class="deck">Level 1 was <i>the shape</i>. Level 2 is <i>why the second value earns its place</i>: the everyday job of returning <b>a value <i>and</i> a fact about that value</b> in one call. The signature carries both, so the caller can't use the answer without also seeing whether the answer is real.</p>
+    <p class="teach">Take a lookup, <span class="il">score_at(i)</span>, over <span class="il">scores := [4]int{40, 0, 55, 90}</span>. It returns <span class="il">(value: int, ok: bool)</span>. The trap a single return walks into: index 1 legitimately holds <b>0</b>, and a missing index also wants to report... <b>0</b>. With one return value those two cases are <i>indistinguishable</i>. The <span class="il">ok</span> bool is the whole point — it tells a real zero apart from an absent one:</p>
+
+    <div class="twoup">
+      <div class="lane good">
+        <h4>score_at(1) — a real hit</h4>
+        <div class="pairbox">value = <b>0</b>&nbsp;·&nbsp;ok = <span class="ok-t">true</span></div>
+        <div class="verdict good">index 1 -&gt; 0 (a real score)<br><span style="color:#9fd9cf">the 0 is genuine — ok said so</span></div>
+      </div>
+      <div class="lane bad">
+        <h4>score_at(9) — out of range</h4>
+        <div class="pairbox">value = <b>0</b>&nbsp;·&nbsp;ok = <span class="ok-f">false</span></div>
+        <div class="verdict bad">index 9 -&gt; missing (value was 0, ok was false)<br><span style="color:#caa">same 0 — but ok flags it as absent</span></div>
+      </div>
+    </div>
+    <p class="teach" style="margin-top:16px;font-family:var(--mono);font-size:12.5px;color:var(--muted)">both lines above are real program output · the two cases print the <b style="color:var(--tag)">same value</b> and are told apart only by <b style="color:var(--accent)">ok</b></p>
+
+    <p class="teach" style="margin-top:22px"><b>The idiom this unlocks:</b> the <span class="il">(value, ok)</span> shape lets you fold the answer and its validity into one line: <code>if v, ok := score_at(1); ok { … }</code> — bind both, then branch on <span class="il">ok</span> in the same breath. The value and the verdict travel together and can never drift apart.</p>
+
+    <p class="teach"><b>The counterfactual:</b> if every index were always valid — a fixed table you fully control — you wouldn't need the second value at all; a plain <span class="il">-&gt; int</span> would do. You reach for the extra return precisely when the result can be <i>conditional</i>, and the caller must not be allowed to forget the condition.</p>
+
+    <h2 style="margin-top:32px">Why the alternatives are worse</h2>
+    <div class="oopstrip">
+      <div class="oopcell"><span class="ttl">a sentinel value</span>
+        return <b>-1</b> for "not found" and a real number otherwise.
+        <span class="fail">breaks the moment -1 is a legal answer — and nothing forces the caller to check for it.</span></div>
+      <div class="oopcell"><span class="ttl">an out-parameter</span>
+        take a <span class="il">^bool</span> and write the found-flag through it.
+        <span class="fail">two ways for one call to report itself; the caller must pre-declare the bool and pass its address. More wiring, same idea.</span></div>
+      <div class="oopcell"><span class="ttl">a one-field struct</span>
+        wrap both into a <span class="il">Result</span> struct and return that.
+        <span class="fail">a named type and a <span class="il">.value</span>/<span class="il">.ok</span> reach for every use — paperwork the multi-return makes vanish.</span></div>
+    </div>
+    <p class="teach" style="margin-top:18px">Each alternative either <b>can't represent "absent" safely</b> (the sentinel), <b>splits one answer across two channels</b> (the out-parameter), or <b>adds a type and a field-access tax</b> (the struct). The multi-return says the same thing with no sentinel to collide, no address to thread, and no wrapper to unwrap.</p>
+  </section>
+
+  <!-- ===================== LEVEL 3 — THE CONTRACT ===================== -->
+  <section class="section" id="s3">
+    <p class="deck">Level 2 sold you on the second value. Level 3 is the bill — and it's paid by the <b>compiler, on your behalf</b>: the return arity is a hard contract, checked on <i>both</i> sides. You cannot quietly drop a value, and you cannot quietly come up one short. Either slip stops the build.</p>
+    <p class="teach">A two-value proc demands a two-name landing on the caller side. Bind just one name with no <span class="il">_</span>, and the count mismatch is a compile error — pick a violation:</p>
+
+    <nav class="sub" id="errnav"></nav>
+    <pre id="errpre"></pre>
+    <p class="teach" id="errwhy" style="margin-top:16px"></p>
+
+    <p class="teach"><b>The release valve:</b> the contract isn't "use everything", it's "<i>account</i> for everything". When you genuinely don't want a value, you spend a single underscore on it — <code>only_q, _ := divmod(20, 6)</code> — and the build is happy. That one call prints:</p>
+    <pre class="tight"><span class="cm">// only_q, _ := divmod(20, 6)</span>
+20 / 6 -&gt; 3 (remainder discarded)</pre>
+    <p class="teach"><b>Why this is a feature, not a nuisance:</b> "0 means error" or a forgotten second value is how a real bug hides in plain sight. Odin moves that whole class of mistake to <i>build time</i> — the cost is one underscore when you mean to discard, and in exchange a dropped or missing return can never silently ship.</p>
+
+    <div class="note">
+      <span class="h">account for ≠ consume</span>
+      The check is on the <b>count</b>, not on use. <code>only_q, _ := divmod(20, 6)</code> still <i>computes</i> the remainder — the proc runs in full — you've just declined to name it. The <span class="il">_</span> is a real binding target that throws its value away; it is the one sanctioned way to drop a return. Leaving the name off entirely is the error you saw above.
+    </div>
+  </section>
+
+  <!-- ============= LEVEL 4 — NAMED RETURNS / THE PAYOFF ============= -->
+  <section class="section" id="s4">
+    <p class="deck">The last level is the property that <b>emerges from naming the returns</b>: the names in the signature aren't decoration — they are real, zero-initialized locals in the body. That single fact makes the proc self-documenting, simplifies its control flow, and lets a bare <span class="il">return</span> ship a well-defined answer from anywhere.</p>
+    <p class="teach">Name a return and you get a variable of that name, already set to its <b>zero value</b>, live for the whole body. You assign the ones you care about and let the rest stand at zero; a bare <span class="il">return</span> sends the current values out. Watch the early-exit path — <span class="il">b == 0</span> assigns nothing and bare-returns:</p>
+
+    <nav class="sub" id="namednav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="namedlabel"></div>
+      <pre class="tight" id="namedcode"></pre>
+      <div class="retrow" id="namedret" style="margin-top:18px"></div>
+      <pre class="tight" id="namedout" style="margin-top:18px"></pre>
+    </div>
+
+    <p class="teach"><b>The emergent payoff:</b> the signature <code>safe_div :: proc(a, b: int) -&gt; (q: int, ok: bool)</code> already <i>tells you</i> what the two outputs mean — <span class="il">q</span> is the quotient, <span class="il">ok</span> whether it's valid — before you read a line of the body. The names are the documentation, and because they're real zero-initialized locals, every exit path has a defined value with no extra wiring: an early <span class="il">return</span> on the <span class="il">b == 0</span> path ships <span class="il">0, false</span> for free. One declaration carries the call shape, the validity signal, the docs, and the zero-default — all checked by the compiler.</p>
+
+    <p class="teach" style="margin-top:24px;color:var(--muted)">That's the arc: <b style="color:var(--ink)">L1</b> a proc is a value, and its return clause can hand back several values that unpack by position → <b style="color:var(--ink)">L2</b> that lets one call return a value <i>and</i> a fact about it — the <span class="il">(value, ok)</span> idiom — with no sentinel, out-param, or wrapper → <b style="color:var(--ink)">L3</b> the arity is a contract the compiler enforces on both sides; <span class="il">_</span> is the sanctioned discard → <b style="color:var(--ink)">L4</b> naming the returns makes them zero-initialized locals, so the signature self-documents and a bare <span class="il">return</span> always ships a defined answer.</p>
+  </section>
+
+  <div class="foot">probes reproduce with <span style="color:var(--ink)">odin run … -file</span> · every output &amp; the L3 errors are real compiler output (claims/lessons/03-procedures-and-multiple-returns)</div>
+</div>
+
+<script>
+/* ============================================================
+   Each interactive component = one data object + one render fn.
+   Vanilla JS, inline, no libraries.
+   All embedded outputs/errors come from passing claims under
+   claims/lessons/03-procedures-and-multiple-returns/.
+   ============================================================ */
+
+/* ---------- LEVEL 1a: signature anatomy ----------
+   Highlight the five structural parts of a proc declaration. */
+const ANAT_TOKENS = [
+  {t:'square',     part:'name'},
+  {t:' :: ',       part:'kw', lit:true},
+  {t:'proc',       part:'kw'},
+  {t:'(x: int)',   part:'params'},
+  {t:' -> ',       part:'kw', lit:true},
+  {t:'int',        part:'ret'},
+  {t:' { ',        part:'body', lit:true},
+  {t:'return x * x',part:'body'},
+  {t:' }',         part:'body', lit:true},
+];
+const ANAT_PARTS = {
+  name:   {sw:'var(--accent)', label:'name',     note:'<b>square</b> — the proc is a value bound with <b>::</b>, exactly like a constant. The name on the left is all there is to "declaring" it.'},
+  kw:     {sw:'var(--muted)',  label:'keywords', note:'<b>:: proc … -></b> — fixed structural syntax. <b>::</b> binds the value, <b>proc</b> opens the signature, <b>-></b> introduces the return clause.'},
+  params: {sw:'var(--tag)',    label:'parameters',note:'<b>(x: int)</b> — the inputs, each <code>name: type</code>. Adjacent params of one type fold together: <code>(a, b, c: int)</code> is three ints.'},
+  ret:    {sw:'#cdeee7',       label:'returns',  note:'<b>int</b> — the output type. A single return needs no parentheses. Two or more become a parenthesized, optionally-named list: <code>(q: int, r: int)</code>.'},
+  body:   {sw:'var(--muted)',  label:'body',     note:'<b>{ return x * x }</b> — the work. <code>return</code> hands the result(s) back to the caller and ends the call.'},
+};
+let anatPart = null;
+function renderAnat(){
+  let html='';
+  for(const tk of ANAT_TOKENS){
+    const cls = ['tok','seg-'+tk.part];
+    if(tk.lit) cls.push('lit');
+    if(anatPart){ cls.push(tk.part===anatPart ? 'hot' : 'dim'); }
+    html += `<span class="${cls.join(' ')}">${tk.t.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span>`;
+  }
+  document.getElementById('anat').innerHTML = html;
+  document.querySelectorAll('#anatkey button').forEach(b=>b.classList.toggle('on',b.dataset.p===anatPart));
+  document.getElementById('anatnote').innerHTML = anatPart
+    ? ANAT_PARTS[anatPart].note
+    : 'Five parts, one line: <b>name</b> · <b>:: proc -></b> · <b>parameters</b> · <b>returns</b> · <b>body</b>. Tap a part to isolate it.';
+}
+const anatkey=document.getElementById('anatkey');
+for(const k of Object.keys(ANAT_PARTS)){
+  const p=ANAT_PARTS[k];
+  const b=document.createElement('button'); b.dataset.p=k;
+  b.innerHTML=`<span class="sw" style="background:${p.sw}"></span>${p.label}`;
+  b.onclick=()=>{ anatPart = (anatPart===k?null:k); renderAnat(); };
+  anatkey.appendChild(b);
+}
+
+/* ---------- LEVEL 1b: the unpack trace ----------
+   Measured (claims square-single, multi-return-three):
+     square(7)            -> 49
+     minmax(8,3,11)       -> lo=3 hi=11 span=8                                  */
+const TRACE = {
+  square: {
+    label:'square(7) — one value out',
+    call:'<span class="pin">square</span>(7)',
+    rets:[ {nm:'(return int)', vl:'49', pos:'slot 1'} ],
+    binds:[ {nm:'n', vl:'49'} ],
+    bindexpr:'n := square(7)',
+    out:'49',
+  },
+  minmax: {
+    label:'minmax(8, 3, 11) — three values out, unpacked by position',
+    call:'<span class="pin">minmax</span>(8, 3, 11)',
+    rets:[ {nm:'lo', vl:'3', pos:'slot 1'}, {nm:'hi', vl:'11', pos:'slot 2'}, {nm:'span', vl:'8', pos:'slot 3'} ],
+    binds:[ {nm:'lo', vl:'3'}, {nm:'hi', vl:'11'}, {nm:'span', vl:'8'} ],
+    bindexpr:'lo, hi, span := minmax(8, 3, 11)',
+    out:'lo=3 hi=11 span=8',
+  },
+};
+let traceKey='square';
+function renderTrace(){
+  document.querySelectorAll('#tracenav button').forEach(b=>b.classList.toggle('on',b.dataset.k===traceKey));
+  const t=TRACE[traceKey];
+  document.getElementById('tracelabel').textContent=t.label;
+  document.getElementById('tracecall').innerHTML=`<code style="font-size:15px">${t.bindexpr}</code>`;
+  document.getElementById('traceret').innerHTML = t.rets.map(r=>
+    `<div class="retslot land"><div class="nm">${r.nm}</div><div class="vl">${r.vl}</div><div class="pos">${r.pos}</div></div>`).join('');
+  document.getElementById('tracebind').innerHTML = t.binds.map(b=>
+    `<div class="bindslot land"><div class="nm">${b.nm}</div><div class="vl">${b.vl}</div></div>`).join('');
+  document.getElementById('traceout').innerHTML =
+    `<span class="cm">// ${t.bindexpr.replace(/</g,'&lt;')}</span>\n${t.out}`;
+  document.getElementById('l1teach').innerHTML = traceKey==='square'
+    ? `One return value, one landing slot. <code>n := square(7)</code> binds the single result — <b style="color:var(--accent)">49</b> — to one name. No parentheses on a single return.`
+    : `Three returns leave the proc in order and land left-to-right: <b style="color:var(--accent)">lo</b> takes slot 1, <b style="color:var(--accent)">hi</b> slot 2, <b style="color:var(--accent)">span</b> slot 3. The binding is positional and decided at compile time — the three values are placed straight into the three names; the result is not wrapped into a single composite value first.`;
+}
+const tracenav=document.getElementById('tracenav');
+[['square','square(7) → one value'],['minmax','minmax(8,3,11) → three values']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.k=k; b.textContent=t;
+  b.onclick=()=>{traceKey=k;renderTrace();}; tracenav.appendChild(b);
+});
+
+/* ---------- LEVEL 3: the two arity compile errors ----------
+   Verified error strings (claims break-discard-return, break-missing-return):
+     only_q := divmod(20,6)  -> Assignment count mismatch '1' = '2'
+     return q   (2-val proc) -> Expected 2 return values, got 1 (int)            */
+const ERR = {
+  discard: {
+    label:'caller drops a value with no underscore',
+    code:"divmod :: proc(a, b: int) -> (q: int, r: int) { … }\n\n[[er]]only_q[[/er]] := divmod(20, 6)   [[cm]]// names 1, the proc returns 2[[/cm]]",
+    err:"Error: Assignment count mismatch '1' = '2'\n\tonly_q := divmod(20, 6)\n\t^",
+    why:"The proc returns <b>two</b> values; the binding offers <b>one</b> name and no <code>_</code> for the other. Odin will not silently swallow the unbound value — the counts must match. The fix is to name both, or spend a <code>_</code> on the one you don't want." },
+  missing: {
+    label:'proc returns fewer values than its signature',
+    code:"divmod :: proc(a, b: int) -> (q: int, r: int) {\n    q = a / b\n    r = a %% b\n    [[er]]return q[[/er]]   [[cm]]// supplies q, but not r[[/cm]]\n}",
+    err:"Error: Expected 2 return values, got 1 (int)\n\treturn q\n\t^~~~~~~^",
+    why:"The signature promises <b>two</b> values but this <code>return</code> hands back only one. The contract is checked at the <i>return site</i> too — you can't come up short. (A bare <code>return</code>, by contrast, ships both named values; that's Level 4.)" },
+};
+let errKey='discard';
+function escHtml(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function renderErr(){
+  document.querySelectorAll('#errnav button').forEach(b=>b.classList.toggle('on',b.dataset.k===errKey));
+  const e=ERR[errKey];
+  let html = escHtml(e.code)
+    .replace(/\[\[er\]\]/g,'<span class="er">').replace(/\[\[\/er\]\]/g,'</span>')
+    .replace(/\[\[cm\]\]/g,'<span class="cm">').replace(/\[\[\/cm\]\]/g,'</span>');
+  document.getElementById('errpre').innerHTML =
+    html + '\n\n<span class="er">' + escHtml(e.err) + '</span>';
+  document.getElementById('errwhy').innerHTML = e.why;
+}
+const errnav=document.getElementById('errnav');
+[['discard','drop a value (no _)'],['missing','return too few']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.k=k; b.textContent=t;
+  b.onclick=()=>{errKey=k;renderErr();}; errnav.appendChild(b);
+});
+
+/* ---------- LEVEL 4: named returns + bare return ----------
+   Measured (claim named-return-bare):
+     safe_div(20,4) -> q=5 ok=true
+     safe_div(20,0) -> q=0 ok=false   (b==0 path: bare return ships zero values)  */
+const NAMED = {
+  ok: {
+    label:'safe_div(20, 4) — the normal path assigns then bare-returns',
+    code:"safe_div :: proc(a, b: int) -> (<span class=\"tg\">q: int</span>, <span class=\"tg\">ok: bool</span>) {\n    <span class=\"cm\">// q, ok start at their zero values: 0, false</span>\n    if b == 0 { <span class=\"kw\">return</span> }\n    q = a / b      <span class=\"cm\">// 20 / 4 = 5</span>\n    ok = true\n    <span class=\"kw\">return</span>          <span class=\"cm\">// ships current q, ok</span>\n}",
+    rets:[ {nm:'q', vl:'5'}, {nm:'ok', vl:'true'} ],
+    out:'20 / 4 -> q=5 ok=true',
+  },
+  zero: {
+    label:'safe_div(20, 0) — the early path assigns NOTHING, bare-returns the zero values',
+    code:"safe_div :: proc(a, b: int) -> (<span class=\"tg\">q: int</span>, <span class=\"tg\">ok: bool</span>) {\n    <span class=\"cm\">// q, ok start at their zero values: 0, false</span>\n    if b == 0 { <span class=\"kw\">return</span> }  <span class=\"cm\">// <-- taken: nothing assigned</span>\n    q = a / b\n    ok = true\n    <span class=\"kw\">return</span>\n}",
+    rets:[ {nm:'q', vl:'0'}, {nm:'ok', vl:'false'} ],
+    out:'20 / 0 -> q=0 ok=false',
+  },
+};
+let namedKey='ok';
+function renderNamed(){
+  document.querySelectorAll('#namednav button').forEach(b=>b.classList.toggle('on',b.dataset.k===namedKey));
+  const n=NAMED[namedKey];
+  document.getElementById('namedlabel').textContent=n.label;
+  document.getElementById('namedcode').innerHTML=n.code;
+  document.getElementById('namedret').innerHTML = n.rets.map(r=>
+    `<div class="retslot land"><div class="nm">${r.nm}</div><div class="vl">${r.vl}</div><div class="pos">named return</div></div>`).join('');
+  document.getElementById('namedout').innerHTML =
+    `<span class="cm">// fmt.printf result</span>\n${n.out}`;
+}
+const namednav=document.getElementById('namednav');
+[['ok','b = 4 → assigned'],['zero','b = 0 → bare return of zero values']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.k=k; b.textContent=t;
+  b.onclick=()=>{namedKey=k;renderNamed();}; namednav.appendChild(b);
+});
+
+/* ---------- level navigation ---------- */
+const LEVELS=[
+  ['1','What it is','a value, returns by position'],
+  ['2','Why use it','a value AND a fact about it'],
+  ['3','The contract','arity, both sides, enforced'],
+  ['4','Why it stays clear','named returns self-document'],
+];
+let level='1';
+function setLevel(n){
+  level=n;
+  document.querySelectorAll('.levels button').forEach(b=>b.classList.toggle('on',b.dataset.n===n));
+  for(const [k] of LEVELS){ const el=document.getElementById('s'+k); if(el) el.classList.toggle('on',k===n); }
+  if(n==='1'){ renderAnat(); renderTrace(); }
+  if(n==='3') renderErr();
+  if(n==='4') renderNamed();
+}
+const lnav=document.getElementById('levelnav');
+for(const [n,tt,sub] of LEVELS){ const b=document.createElement('button'); b.dataset.n=n;
+  b.innerHTML=`<span class="lv">Level ${n} · ${sub}</span><span class="tt">${tt}</span>`;
+  b.onclick=()=>setLevel(n); lnav.appendChild(b); }
+setLevel('1');
+</script>
+</body>
+</html>

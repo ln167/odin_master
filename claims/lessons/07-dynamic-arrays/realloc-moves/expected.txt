@@ -1,0 +1,3 @@
+cap before grow = 8
+cap after  grow = 24
+buffer moved    = true

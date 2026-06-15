@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Odin types &amp; printing — widths and verbs, four levels deep</title>
+<style>
+  :root{
+    --paper:#15130f; --card:#1d1a14; --ink:#ece6d8; --muted:#9a9182;
+    --rule:#332e24; --accent:#5ec8b8; --accent-soft:#1f342f;
+    --tag:#e0875a; --pad:#5a544a; --bad:#e0675a; --bad-soft:#2a1815;
+    --mono:"Cascadia Mono","Cascadia Code",Consolas,ui-monospace,"SF Mono",monospace;
+    --serif:-apple-system,"Segoe UI Variable Text","Segoe UI",system-ui,Roboto,"Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper);color:var(--ink)}
+  body{font-family:var(--serif);line-height:1.6;padding:0 20px;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-feature-settings:"kern" 1,"liga" 1}
+  .page{max-width:860px;margin:0 auto;padding:46px 0 90px}
+  .kicker{font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+  h1{font-size:30px;line-height:1.15;margin:0 0 18px;font-weight:600;letter-spacing:-.01em}
+
+  /* level tabs */
+  .levels{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+  .levels button{flex:1;min-width:150px;text-align:left;background:var(--card);border:1px solid var(--rule);
+    color:var(--muted);border-radius:10px;padding:11px 14px;cursor:pointer;transition:.12s;font-family:var(--serif)}
+  .levels button:hover{border-color:var(--accent)}
+  .levels button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--ink)}
+  .levels .lv{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);display:block;margin-bottom:3px}
+  .levels .tt{font-size:14px}
+  .rule{height:1px;background:var(--rule);margin:22px 0 26px}
+
+  .deck{color:var(--muted);font-size:17px;margin:0 0 24px;line-height:1.5}
+  .deck b{color:var(--ink)}
+  h2{font-size:21px;margin:0 0 14px;font-weight:600}
+  p.teach{font-size:16px;line-height:1.62;max-width:46em}
+  p.teach code,.il{font-family:var(--mono);font-size:.86em;background:#2a2519;padding:1px 5px;border-radius:4px}
+  .teach b{color:var(--tag)}
+  .section{display:none}
+  .section.on{display:block}
+
+  nav.sub{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;font-family:var(--mono);font-size:13px}
+  nav.sub button{background:var(--card);border:1px solid var(--rule);color:var(--muted);border-radius:8px;padding:7px 12px;cursor:pointer;transition:.12s}
+  nav.sub button:hover{color:var(--ink);border-color:var(--accent)}
+  nav.sub button.on{color:var(--ink);border-color:var(--accent);background:var(--accent-soft)}
+  .hint{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin:0 0 20px}
+
+  .canvas{background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:30px 28px}
+  .slotlabel{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
+
+  /* byte strip (Level 1) */
+  .stripwrap{margin-bottom:8px}
+  .strip{display:grid;grid-template-columns:repeat(16,1fr);gap:6px}
+  .byte{aspect-ratio:1/1.15;border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:var(--mono);position:relative;border:1px solid transparent}
+  .byte .hx{font-size:12px;font-weight:600}
+  .byte .ix{position:absolute;top:2px;left:4px;font-size:8px;color:var(--muted);opacity:.7}
+  .b-used{background:var(--accent-soft);border-color:var(--accent);color:#cdeee7}
+  .b-tag{background:#3a2417;border-color:var(--tag);color:#f0b48a}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;margin-top:18px;font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+  .legend span{display:flex;align-items:center;gap:7px}
+  .chip{width:13px;height:13px;border-radius:3px;border:1px solid}
+  .c-used{background:var(--accent-soft);border-color:var(--accent)}
+  .c-tag{background:#3a2417;border-color:var(--tag)}
+
+  .typereadout{font-family:var(--mono);font-size:13px;color:var(--muted);margin-top:16px;line-height:1.7}
+  .typereadout .n{color:var(--accent);font-weight:600}
+  .typereadout b{color:var(--ink)}
+
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:26px}
+  @media(max-width:680px){.cols{grid-template-columns:1fr}}
+  .panel h3{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 12px;font-weight:600}
+  .sizes{font-family:var(--mono);font-size:13px;line-height:1.9}
+  .sizes .n{color:var(--accent);font-weight:600}
+  .sizes .big{color:var(--tag);font-weight:600}
+
+  /* size ladder table (Level 1 reference) */
+  table.ladder{width:100%;border-collapse:collapse;font-size:13.5px;margin-top:6px;font-family:var(--mono)}
+  table.ladder th,table.ladder td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--rule);vertical-align:middle}
+  table.ladder th{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+  table.ladder td.t{color:var(--accent);white-space:nowrap}
+  table.ladder td.w{color:var(--tag);text-align:right;width:64px}
+  table.ladder td.note{color:var(--muted);font-family:var(--serif);font-size:14px}
+  table.ladder tr:hover td{background:#1a1710}
+
+  pre{font-family:var(--mono);font-size:12.5px;line-height:1.7;background:#1a1710;border:1px solid var(--rule);border-radius:10px;padding:16px 18px;overflow:auto;margin:22px 0 0;white-space:pre-wrap}
+  pre .cm{color:#6f6655}
+  pre .kw{color:var(--accent)}
+  pre .er{color:var(--bad)}
+  pre .ok{color:var(--accent)}
+  pre .tg{color:var(--tag)}
+
+  /* verb picker (Level 3) */
+  .verbout{font-family:var(--mono);font-size:15px;background:#1a1710;border:1px solid var(--rule);border-radius:10px;padding:18px 20px;margin-top:6px}
+  .verbout .label{color:var(--muted);font-size:12px;display:block;margin-bottom:10px}
+  .verbout .render{font-size:26px;color:var(--accent);font-weight:600;letter-spacing:.02em}
+  .verbout .src{color:var(--muted);font-size:12.5px;margin-top:12px;line-height:1.6}
+  .verbout .src b{color:var(--tag)}
+  .bits{display:flex;gap:3px;flex-wrap:wrap;margin-top:14px}
+  .bit{font-family:var(--mono);font-size:11px;width:22px;height:26px;display:flex;align-items:center;justify-content:center;border-radius:4px;border:1px solid var(--rule);background:#201d17;color:#5a544a}
+  .bit.on{background:var(--accent-soft);border-color:var(--accent);color:#cdeee7}
+
+  /* range bars (Level 2) */
+  .barrow{display:flex;align-items:center;gap:10px;margin:7px 0}
+  .barrow .lab{font-family:var(--mono);font-size:11.5px;color:var(--muted);width:96px;flex:none}
+  .bar{height:26px;border-radius:6px;display:flex;align-items:center;font-family:var(--mono);font-size:11.5px;padding:0 10px;color:#0e0c08;font-weight:600;transition:width .3s}
+  .bar.ok{background:var(--accent)}
+  .bar.over{background:repeating-linear-gradient(45deg,#e0675a,#e0675a 6px,#b8453b 6px,#b8453b 12px);color:#1a0f0d}
+
+  .note{background:#1a1710;border:1px solid var(--rule);border-left:3px solid var(--tag);
+    border-radius:10px;padding:15px 18px;margin-top:24px;font-size:15px;line-height:1.6;color:var(--muted)}
+  .note b{color:var(--ink)}
+  .note .h{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--tag);display:block;margin-bottom:8px}
+  .foot{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;margin-top:34px}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="kicker">Odin · types &amp; printing</div>
+  <h1>Types &amp; printing, four levels deep</h1>
+
+  <div class="levels" id="levelnav"></div>
+  <div class="rule"></div>
+
+  <!-- ===================== LEVEL 1 — WHAT IT IS ===================== -->
+  <section class="section" id="s1">
+    <p class="deck">A type is <b>a fixed number of bytes plus a meaning for them</b>. <span class="il">i32</span> is "4 bytes, read as a signed integer." <span class="il">f32</span> is "the same 4 bytes, read as a float." The name fixes the width once, at compile time. Pick a type and watch its slot — and read its measured <span class="il">size_of</span>.</p>
+    <div class="hint">Real widths, measured by size_of from a compiled Odin program. Cell count = the type's byte width.</div>
+
+    <nav class="sub" id="sznav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="szlabel"></div>
+      <div class="stripwrap"><div class="strip" id="szstrip"></div></div>
+      <div class="legend">
+        <span><i class="chip c-used"></i> bytes the value occupies</span>
+        <span><i class="chip c-tag"></i> the second word (pointer-sized)</span>
+      </div>
+      <div class="typereadout" id="szread"></div>
+    </div>
+
+    <div class="cols">
+      <div class="panel"><h3>The whole ladder</h3>
+        <table class="ladder">
+          <thead><tr><th>type</th><th style="text-align:right">size_of</th></tr></thead>
+          <tbody>
+            <tr><td class="t">bool</td><td class="w">1</td></tr>
+            <tr><td class="t">i8 · u8 · byte</td><td class="w">1</td></tr>
+            <tr><td class="t">i16 · u16 · f16</td><td class="w">2</td></tr>
+            <tr><td class="t">i32 · u32 · f32 · rune</td><td class="w">4</td></tr>
+            <tr><td class="t">i64 · u64 · f64</td><td class="w">8</td></tr>
+            <tr><td class="t">int · uint · uintptr</td><td class="w">8</td></tr>
+            <tr><td class="t">cstring</td><td class="w">8</td></tr>
+            <tr><td class="t">string</td><td class="w">16</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="panel"><h3>What you're seeing</h3><p class="teach" id="szteach"></p></div>
+    </div>
+
+    <div class="note">
+      <span class="h">int is not a separate width — it's pointer-sized</span>
+      <span class="il">int</span> and <span class="il">uint</span> aren't a mystery fourth integer size; on this 64-bit toolchain <span class="il">size_of(int) == 8</span>, the same as <span class="il">i64</span>. They're the "natural word" — pick them for loop counters and lengths, and reach for a fixed width (<span class="il">i32</span>, <span class="il">u8</span>, <span class="il">u16</span>…) when the byte count itself matters: a field on disk, a value in a tight array, a number with a hard range. <span class="il">byte</span> is just another name for <span class="il">u8</span>, and <span class="il">rune</span> is a 4-byte integer that means "one Unicode code point."
+    </div>
+  </section>
+
+  <!-- ============= LEVEL 2 — WHY THE TYPE IS PINNED ============= -->
+  <section class="section" id="s2">
+    <p class="deck">Level 1 was <i>what a type is</i>. Level 2 is <i>why it's worth pinning one down</i>: <b>the value carries its type, and nothing slips a number into a slot that can't hold it.</b> No silent widening, no silent truncation — a value of the wrong type, or a constant out of range, stops the build.</p>
+    <p class="teach">A <span class="il">u8</span> holds <b>0–255</b>: one byte, eight bits. Drag a value past that line and the byte physically can't represent it. Pick a number and see where it lands:</p>
+
+    <nav class="sub" id="rangenav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="rangelabel"></div>
+      <div class="barrow"><div class="lab">u8 capacity</div><div style="flex:1"><div class="bar ok" style="width:100%">0 … 255</div></div></div>
+      <div class="barrow"><div class="lab" id="rangeval-lab">the value</div><div style="flex:1"><div class="bar" id="rangebar"></div></div></div>
+      <div class="typereadout" id="rangeread" style="margin-top:18px"></div>
+    </div>
+
+    <p class="teach"><b>Caught at compile time, with the range named.</b> A constant that doesn't fit never reaches the running program — the build stops and tells you the exact limit:</p>
+    <pre><span class="kw">y</span>: u8 = <span class="er">300</span>
+
+<span class="er">Error: Cannot convert numeric value '300' from '300' to 'u8' from 'untyped integer'</span>
+<span class="cm">    The maximum value that can be represented by 'u8' is '255'</span></pre>
+
+    <p class="teach"><b>And no value quietly changes type, either.</b> An <span class="il">int</span> does not flow into a <span class="il">u8</span> on its own — even if today's value would fit. You write the conversion, so a narrowing is always something you asked for, never something that happened behind your back:</p>
+    <pre><span class="kw">x</span>: int = 300
+<span class="kw">y</span>: u8 = <span class="er">x</span>          <span class="cm">// no automatic narrowing</span>
+
+<span class="er">Error: Cannot assign value 'x' of type 'int' to 'u8' in a variable declaration</span></pre>
+
+    <p class="teach"><b>The fix is to say it out loud:</b> <span class="il">y := u8(x)</span> compiles — and now the narrowing is explicit. If <span class="il">x</span> is 300, the conversion wraps it into the byte (<span class="il">u8(300)</span> is <span class="il">44</span>), but that's a wrap <i>you wrote</i>, visible at the call site, not a surprise the machine handed you. The type stays honest because every step across a boundary is a step you typed.</p>
+
+    <p class="teach"><b>The counterfactual:</b> if every variable were the same untyped "number," none of these checks could exist — the compiler would have nothing to check the value <i>against</i>. Pinning a width is what gives the compiler a rule to enforce; the byte count <i>is</i> the contract. The few extra keystrokes of an explicit conversion buy you a class of bug that simply can't reach runtime.</p>
+
+    <div class="note">
+      <span class="h">declaring a type: := vs : T =</span>
+      <span class="il">a := 42</span> <b>infers</b> the type from the literal — an integer literal gives you <span class="il">int</span>, so <span class="il">a</span> is an <span class="il">int</span>. <span class="il">b: f32 = 3.14</span> is the explicit form, for when you want a specific width rather than the default (a bare float literal would default to <span class="il">f64</span>). Both forms still produce a <i>fully typed</i> variable — inference picks the type for you, it doesn't leave the value loose.
+    </div>
+  </section>
+
+  <!-- ===================== LEVEL 3 — PRINTING ===================== -->
+  <section class="section" id="s3">
+    <p class="deck">Levels 1–2 were about the bytes. Level 3 is how you <i>look</i> at them: <b>the verb decides the rendering, not the value.</b> One number, eight ways to show it — and the bits never move.</p>
+    <p class="teach">Here is a single <span class="il">int</span> holding <b>255</b>. Each button is a <span class="il">fmt.printf</span> verb. The stored value is identical every time; only the way <span class="il">printf</span> reads it out changes:</p>
+
+    <nav class="sub" id="verbnav"></nav>
+    <div class="verbout">
+      <span class="label" id="verblabel"></span>
+      <span class="render" id="verbrender"></span>
+      <div class="bits" id="verbbits"></div>
+      <div class="src" id="verbsrc"></div>
+    </div>
+
+    <p class="teach" style="margin-top:24px"><b>The workhorse is <span class="il" style="background:#241f17">%v</span></b> — "any value, default formatting." It reads the argument's type and picks a sensible rendering on its own, so it's the verb you reach for when you don't need a specific base or width. <span class="il">%d</span> says "as a decimal integer," <span class="il">%x</span> "as lowercase hex," <span class="il">%b</span> "as binary," <span class="il">%c</span> "as the character at that code point," and <span class="il">%q</span> "as a quoted string." The value <span class="il">255</span> is unchanged through all of them.</p>
+
+    <p class="teach"><b>The same value, the same type, read differently:</b> a <span class="il">rune</span> holds the integer <span class="il">65</span> for <span class="il">'A'</span>. Print it with <span class="il">%d</span> and you get <span class="il">65</span>; with <span class="il">%c</span> (or <span class="il">%v</span>) you get <span class="il">A</span>. The rune is <i>one</i> value; the verb chooses whether you see the number or the glyph.</p>
+
+    <h2 style="margin-top:30px">A verb can ask for the impossible — and it's caught</h2>
+    <p class="teach">Hand a verb an argument it can't render — <span class="il">%d</span> (a decimal integer) on a <span class="il">string</span> — and nothing goes undefined. <span class="il">fmt</span> is type-aware: at run time it notices the mismatch and prints a loud marker naming exactly what went wrong, instead of misreading the bytes:</p>
+    <pre><span class="kw">fmt</span>.printf(<span class="tg">"%d\n"</span>, <span class="tg">"hello"</span>)
+
+<span class="er">%!d(string=hello)</span>   <span class="cm">// the verb wanted an int; it got a string, and says so</span></pre>
+    <p class="teach">That marker reads as "the <b>%d</b> verb was misapplied to a <span class="il">string</span> whose value is <span class="il">hello</span>." The program keeps running; you get a flag you can't miss in the output rather than a silently wrong number.</p>
+  </section>
+
+  <!-- ============= LEVEL 4 — THE TYPE TRAVELS WITH THE VALUE ============= -->
+  <section class="section" id="s4">
+    <p class="deck">The last level is the property that <b>emerges</b> from all of it: because every value is fully typed (L1–L2) and <span class="il">fmt</span> reads that type (L3), <b>the type travels with the value into the print</b>. You can always print anything, and you can ask any value what it is.</p>
+    <p class="teach"><span class="il">fmt.println</span> needs no verbs at all — it asks each argument's type how it wants to be shown and uses that default formatting, separating args with a space and ending the line. Five different types, one call:</p>
+    <pre><span class="kw">a</span> := 42       <span class="cm">// int</span>
+<span class="kw">b</span>: f32 = 3.14  <span class="cm">// f32</span>
+<span class="kw">c</span> := <span class="tg">"ok"</span>     <span class="cm">// string</span>
+<span class="kw">d</span> := true     <span class="cm">// bool</span>
+<span class="kw">r</span> := <span class="tg">'A'</span>      <span class="cm">// rune</span>
+
+<span class="kw">fmt</span>.println(a, b, c, d, r)
+<span class="ok">42 3.14 ok true A</span></pre>
+
+    <p class="teach"><b>And the type is readable back out.</b> <span class="il">%T</span> prints a value's static type — the answer the compiler settled on, recovered at the print. So you can confirm what inference gave you without guessing:</p>
+    <pre><span class="kw">fmt</span>.printf(<span class="tg">"%T %T %T %T %T\n"</span>, a, b, c, d, r)
+<span class="ok">int f32 string bool rune</span></pre>
+    <p class="teach">That's the confirmation of every claim from Level 1: <span class="il">42</span> really is an <span class="il">int</span>, <span class="il">'A'</span> really is a <span class="il">rune</span>, and inference never left anything loose.</p>
+
+    <div class="note">
+      <span class="h">a fresh value is its zero value, never garbage</span>
+      Declare a variable with no initializer and it isn't undefined — Odin <b>zero-initializes</b> by default. An <span class="il">int</span> starts at <span class="il">0</span>, an <span class="il">f32</span> at <span class="il">0</span>, a <span class="il">bool</span> at <span class="il">false</span>, a <span class="il">string</span> as the empty string <span class="il">""</span>. So printing a just-declared value is always meaningful:
+      <pre style="margin-top:12px"><span class="kw">zi</span>: int; <span class="kw">zf</span>: f32; <span class="kw">zb</span>: bool; <span class="kw">zs</span>: string
+<span class="kw">fmt</span>.println(<span class="tg">"zero:"</span>, zi, zf, zb, zs == <span class="tg">""</span>)
+<span class="ok">zero: 0 0 false true</span></pre>
+    </div>
+
+    <p class="teach" style="margin-top:24px"><b>The emergent payoff:</b> printing in Odin can't go undefined and can't lie about a type, because the type isn't a comment you keep in your head — it's attached to the value and the formatter reads it. <span class="il">%v</span> prints whatever you hand it, <span class="il">%T</span> reports what that was, and a mismatched verb gets flagged instead of misreading bytes. Debugging is "print it and look," with no ritual and no way for the print itself to mislead you.</p>
+
+    <p class="teach" style="margin-top:24px;color:var(--muted)">That's the arc: <b style="color:var(--ink)">L1</b> a type is a fixed byte width with a meaning → <b style="color:var(--ink)">L2</b> that width is pinned and enforced — no silent narrowing, out-of-range constants rejected at compile time → <b style="color:var(--ink)">L3</b> printing chooses a rendering of those bytes by verb, the value never moves → <b style="color:var(--ink)">L4</b> the type rides along into the print, so you can show anything and ask anything what it is.</p>
+  </section>
+
+  <div class="foot">probes reproduce with <span style="color:var(--ink)">odin run</span> · sizes, verb outputs &amp; the L2/L3 errors are real compiler output (claims/lessons/02-types-and-printing)</div>
+</div>
+
+<script>
+/* ============================================================
+   Each interactive component = one data object + one render fn.
+   Vanilla JS, inline, no libraries.
+   All embedded sizes / outputs / errors come from passing claims
+   under claims/lessons/02-types-and-printing/.
+   ============================================================ */
+
+/* ---------- LEVEL 1: the size strip, keyed by type ----------
+   Measured (claim: type-sizes):
+     bool=1 i8=1 i16=2 i32=4 i64=8 u8=1 u16=2 u32=4 u64=8
+     int=8 uint=8 uintptr=8 byte=1 rune=4 f16=2 f32=4 f64=8
+     string=16 cstring=8                                            */
+const SZ = {
+  bool:    { size:1,  word:1, teach:`<code>bool</code> is one byte holding <code>true</code> or <code>false</code>. One byte is the smallest a value gets — there's no half-byte type.` },
+  i8:      { size:1,  word:1, teach:`<code>i8</code> is one signed byte: −128…127. <code>u8</code> is the same byte unsigned: 0…255. <code>byte</code> is just another spelling of <code>u8</code>.` },
+  i32:     { size:4,  word:4, teach:`<code>i32</code> is four bytes read as a signed integer. <code>f32</code> is the <i>same four bytes</i> read as a float, and <code>rune</code> is four bytes read as a Unicode code point — same width, different meaning.` },
+  i64:     { size:8,  word:8, teach:`<code>i64</code> is eight bytes — the full signed-integer width. <code>f64</code> (the default float) is also eight bytes.` },
+  int:     { size:8,  word:8, teach:`<code>int</code> is the pointer-sized natural word: <b>8 bytes</b> on this 64-bit toolchain, identical to <code>i64</code>. It's the default for an integer literal and the right pick for counters and lengths.` },
+  rune:    { size:4,  word:4, teach:`<code>rune</code> is a 4-byte integer that means "one Unicode code point." <code>'A'</code> is the rune holding 65. Same width as <code>i32</code>, but the type tells <code>fmt</code> to offer the glyph.` },
+  f32:     { size:4,  word:4, teach:`<code>f32</code> is a 4-byte float; <code>f16</code> is 2 bytes, <code>f64</code> is 8. The default for a bare float literal is <code>f64</code> — pick <code>f32</code> explicitly when you want the narrower one.` },
+  string:  { size:16, word:8, teach:`<code>string</code> is the one that's <b>two words</b> (16 bytes): a pointer to the bytes plus a length. It's a length-tagged <i>view</i> — it doesn't own the bytes, and it isn't terminated by a marker byte; the length says where it ends.`, second:true },
+};
+const SZ_ORDER = ['bool','i8','i32','i64','int','rune','f32','string'];
+let szCur = 'i32';
+function renderL1(){
+  document.querySelectorAll('#sznav button').forEach(b=>b.classList.toggle('on',b.dataset.t===szCur));
+  const t=SZ[szCur];
+  document.getElementById('szlabel').textContent=`${szCur}   —   size_of = ${t.size} byte${t.size===1?'':'s'}`;
+  let s='';
+  for(let i=0;i<t.size;i++){
+    // for string (16B): first 8 bytes = pointer word (accent), last 8 = length word (tag)
+    const cls = t.second ? (i<8?'b-used':'b-tag') : 'b-used';
+    s+=`<div class="byte ${cls}"><span class="ix">${i}</span><span class="hx">··</span></div>`;
+  }
+  document.getElementById('szstrip').innerHTML=s;
+  document.getElementById('szread').innerHTML =
+    `<b>${szCur}</b> occupies <span class="n">${t.size}</span> byte${t.size===1?'':'s'}` +
+    (t.second?` — <span class="n">8</span> for the data pointer + <span class="n">8</span> for the length.`:`.`);
+  document.getElementById('szteach').innerHTML=t.teach;
+}
+const sznav=document.getElementById('sznav');
+for(const k of SZ_ORDER){ const b=document.createElement('button'); b.dataset.t=k; b.textContent=k;
+  b.onclick=()=>{szCur=k;renderL1();}; sznav.appendChild(b); }
+
+/* ---------- LEVEL 2: the u8-range bar ---------- */
+const RANGE = {
+  v200: { val:200, fits:true },
+  v255: { val:255, fits:true },
+  v256: { val:256, fits:false },
+  v300: { val:300, fits:false },
+};
+let rangeCur='v300';
+function renderL2(){
+  document.querySelectorAll('#rangenav button').forEach(b=>b.classList.toggle('on',b.dataset.r===rangeCur));
+  const r=RANGE[rangeCur];
+  document.getElementById('rangelabel').textContent = `u8 y = ${r.val}`;
+  const bar=document.getElementById('rangebar');
+  const pct=Math.min(100, Math.round(r.val/300*100));
+  bar.style.width=pct+'%';
+  bar.className='bar '+(r.fits?'ok':'over');
+  bar.textContent=r.val;
+  document.getElementById('rangeread').innerHTML = r.fits
+    ? `<b>${r.val}</b> fits in a <span class="n">u8</span> (0…255) — the assignment is fine.`
+    : `<b>${r.val}</b> is past 255 — it does not fit in one byte. As a constant, the compiler <b style="color:var(--bad)">rejects the build</b> and names the limit.`;
+}
+const rangenav=document.getElementById('rangenav');
+[['v200','y = 200'],['v255','y = 255'],['v256','y = 256'],['v300','y = 300']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.r=k; b.textContent=t;
+  b.onclick=()=>{rangeCur=k;renderL2();}; rangenav.appendChild(b);
+});
+
+/* ---------- LEVEL 3: the verb picker ----------
+   Measured (claim: printf-verbs), value = int 255:
+     %d 255  %v 255  %x ff  %X FF  %o 377  %b 11111111  %c ÿ  %T int    */
+const VAL = 255;
+const bits = VAL.toString(2).padStart(8,'0'); // "11111111"
+const VERB = {
+  d: { out:'255',      desc:`<b>%d</b> — as a base-10 integer. The plain decimal reading of the value.` },
+  v: { out:'255',      desc:`<b>%v</b> — the default formatting. For an int that's decimal, so it matches %d here; %v is the verb you use when you don't need a specific base.` },
+  x: { out:'ff',       desc:`<b>%x</b> — as lowercase hexadecimal. 255 is two full nibbles: <code>ff</code>.` },
+  X: { out:'FF',       desc:`<b>%X</b> — uppercase hex. Same bytes, capital digits.` },
+  o: { out:'377',      desc:`<b>%o</b> — octal. 255 in base 8 is <code>377</code>.` },
+  b: { out:'11111111', desc:`<b>%b</b> — binary. All eight bits set; this is literally the byte pattern below.` },
+  c: { out:'ÿ',   desc:`<b>%c</b> — the character at code point 255. That's <code>ÿ</code>. The verb reads the same number as a Unicode code point instead of a quantity.` },
+  T: { out:'int',      desc:`<b>%T</b> — not the value at all, but its <i>type</i>. The static type the compiler gave it: <code>int</code>.` },
+};
+let verbCur='b';
+function renderL3(){
+  document.querySelectorAll('#verbnav button').forEach(b=>b.classList.toggle('on',b.dataset.v===verbCur));
+  const v=VERB[verbCur];
+  document.getElementById('verblabel').textContent = `fmt.printf("%${verbCur}\\n", n)   where n: int = 255`;
+  document.getElementById('verbrender').textContent = v.out;
+  document.getElementById('verbsrc').innerHTML = v.desc;
+  // bit strip always shows the same stored byte pattern (the value never changes)
+  let bs='';
+  for(const ch of bits) bs+=`<div class="bit ${ch==='1'?'on':''}">${ch}</div>`;
+  document.getElementById('verbbits').innerHTML =
+    bs + `<span style="font-family:var(--mono);font-size:11px;color:#5a544a;align-self:center;margin-left:8px">← the stored byte, unchanged for every verb</span>`;
+}
+const verbnav=document.getElementById('verbnav');
+['d','v','x','X','o','b','c','T'].forEach(k=>{
+  const b=document.createElement('button'); b.dataset.v=k; b.textContent='%'+k;
+  b.onclick=()=>{verbCur=k;renderL3();}; verbnav.appendChild(b);
+});
+
+/* ---------- level navigation ---------- */
+const LEVELS=[
+  ['1','What it is','a width + a meaning'],
+  ['2','Why it is pinned','no silent conversion'],
+  ['3','Printing','the verb picks the view'],
+  ['4','The payoff','the type rides along'],
+];
+let level='1';
+function setLevel(n){
+  level=n;
+  document.querySelectorAll('.levels button').forEach(b=>b.classList.toggle('on',b.dataset.n===n));
+  for(const [k] of LEVELS){ const el=document.getElementById('s'+k); if(el) el.classList.toggle('on',k===n); }
+  if(n==='1') renderL1();
+  if(n==='2') renderL2();
+  if(n==='3') renderL3();
+}
+const lnav=document.getElementById('levelnav');
+for(const [n,tt,sub] of LEVELS){ const b=document.createElement('button'); b.dataset.n=n;
+  b.innerHTML=`<span class="lv">Level ${n} · ${sub}</span><span class="tt">${tt}</span>`;
+  b.onclick=()=>setLevel(n); lnav.appendChild(b); }
+setLevel('1');
+</script>
+</body>
+</html>

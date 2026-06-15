@@ -1,0 +1,3 @@
+size_of(context) = 112
+size_of(mem.Allocator) = 16
+allocator and temp_allocator differ: true

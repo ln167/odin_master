@@ -1,0 +1,3 @@
+before reload: counter=240
+after reload:  counter=240
+same bytes?    true

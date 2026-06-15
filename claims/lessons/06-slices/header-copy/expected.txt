@@ -1,0 +1,3 @@
+a[0]    = 777
+nums[0] = 777
+same data ptr: true

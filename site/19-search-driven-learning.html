@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Odin search-driven learning — the loop, three levels deep</title>
+<style>
+  :root{
+    --paper:#15130f; --card:#1d1a14; --ink:#ece6d8; --muted:#9a9182;
+    --rule:#332e24; --accent:#5ec8b8; --accent-soft:#1f342f;
+    --tag:#e0875a; --pad:#5a544a; --bad:#e0675a; --bad-soft:#2a1815;
+    --mono:"Cascadia Mono","Cascadia Code",Consolas,ui-monospace,"SF Mono",monospace;
+    --serif:-apple-system,"Segoe UI Variable Text","Segoe UI",system-ui,Roboto,"Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper);color:var(--ink)}
+  body{font-family:var(--serif);line-height:1.6;padding:0 20px;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-feature-settings:"kern" 1,"liga" 1}
+  .page{max-width:860px;margin:0 auto;padding:46px 0 90px}
+  .kicker{font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+  h1{font-size:30px;line-height:1.15;margin:0 0 18px;font-weight:600;letter-spacing:-.01em}
+
+  /* level tabs */
+  .levels{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+  .levels button{flex:1;min-width:150px;text-align:left;background:var(--card);border:1px solid var(--rule);
+    color:var(--muted);border-radius:10px;padding:11px 14px;cursor:pointer;transition:.12s;font-family:var(--serif)}
+  .levels button:hover{border-color:var(--accent)}
+  .levels button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--ink)}
+  .levels .lv{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);display:block;margin-bottom:3px}
+  .levels .tt{font-size:14px}
+  .rule{height:1px;background:var(--rule);margin:22px 0 26px}
+
+  .deck{color:var(--muted);font-size:17px;margin:0 0 24px;line-height:1.5}
+  .deck b{color:var(--ink)}
+  h2{font-size:21px;margin:0 0 14px;font-weight:600}
+  p.teach{font-size:16px;line-height:1.62;max-width:46em}
+  p.teach code,.il{font-family:var(--mono);font-size:.86em;background:#2a2519;padding:1px 5px;border-radius:4px}
+  .teach b{color:var(--tag)}
+  .section{display:none}
+  .section.on{display:block}
+
+  nav.sub{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;font-family:var(--mono);font-size:13px}
+  nav.sub button{background:var(--card);border:1px solid var(--rule);color:var(--muted);border-radius:8px;padding:8px 14px;cursor:pointer;transition:.12s}
+  nav.sub button:hover{color:var(--ink);border-color:var(--accent)}
+  nav.sub button.on{color:var(--ink);border-color:var(--accent);background:var(--accent-soft)}
+  .hint{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin:0 0 20px}
+
+  .canvas{background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:30px 28px}
+  .slotlabel{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
+
+  pre{font-family:var(--mono);font-size:12.5px;line-height:1.7;background:#1a1710;border:1px solid var(--rule);border-radius:10px;padding:16px 18px;overflow:auto;margin:22px 0 0;white-space:pre-wrap}
+  pre .cm{color:#6f6655}
+  pre .kw{color:var(--accent)}
+  pre .er{color:var(--bad)}
+  pre .ok{color:var(--accent)}
+  pre .str{color:#c9b072}
+
+  /* the five-rung ladder (Level 1) */
+  .ladder{display:flex;flex-direction:column;gap:8px}
+  .rung{display:flex;align-items:flex-start;gap:14px;background:#1a1710;border:1px solid var(--rule);border-radius:11px;padding:13px 16px;cursor:pointer;transition:.18s}
+  .rung:hover{border-color:var(--accent)}
+  .rung.on{border-color:var(--accent);background:var(--accent-soft)}
+  .rung.done{opacity:.55}
+  .rung .num{font-family:var(--mono);font-size:13px;font-weight:600;color:var(--accent);flex:none;width:22px;text-align:center;border:1px solid var(--rule);border-radius:6px;padding:3px 0;background:#15130f}
+  .rung.on .num{border-color:var(--accent)}
+  .rung .body{flex:1}
+  .rung .ttl{font-size:15px;color:var(--ink);margin-bottom:2px}
+  .rung .ttl .mono{font-family:var(--mono);font-size:13px;color:var(--tag)}
+  .rung .sub{font-size:13px;color:var(--muted)}
+  .rung.on .sub{color:var(--ink)}
+  .loopnote{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:16px;text-align:center}
+  .loopnote b{color:var(--accent)}
+
+  /* signature card + return legend (Level 2) */
+  .sig{font-family:var(--mono);font-size:13.5px;line-height:1.8;background:#1a1710;border:1px solid var(--accent);border-radius:11px;padding:16px 18px;color:var(--ink);overflow:auto;white-space:pre-wrap}
+  .sig .nm{color:var(--accent);font-weight:600}
+  .sig .ret{color:var(--tag);font-weight:600}
+  .sig .cn{color:#6f6655}
+  .retgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:18px}
+  @media(max-width:640px){.retgrid{grid-template-columns:1fr}}
+  .retcell{background:#1a1710;border:1px solid var(--rule);border-radius:10px;padding:13px 14px}
+  .retcell .rn{font-family:var(--mono);font-size:13px;color:var(--tag);font-weight:600;margin-bottom:5px}
+  .retcell .rd{font-size:13px;color:var(--muted);line-height:1.5}
+  .retcell .rv{font-family:var(--mono);font-size:18px;color:var(--accent);font-weight:600;margin-top:8px}
+
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:26px}
+  @media(max-width:680px){.cols{grid-template-columns:1fr}}
+  .panel h3{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 12px;font-weight:600}
+
+  /* the "guess" you'd otherwise write (Level 2 wrong-way) */
+  .guesscard{background:#1a1710;border:1px dashed #5a4530;border-radius:11px;padding:16px 18px;margin-top:4px}
+  .guesscard .tag{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--bad);margin-bottom:10px;display:block}
+  .guesscard pre{margin-top:0;border-color:#3a2a22}
+
+  /* neighbors-in-source list (Level 3) */
+  .neigh{display:flex;flex-direction:column;gap:6px;margin-top:6px}
+  .nrow{display:flex;align-items:baseline;gap:14px;font-family:var(--mono);font-size:13px;padding:9px 13px;border-radius:8px;background:#1a1710;border:1px solid var(--rule)}
+  .nrow.hot{border-color:var(--accent);background:var(--accent-soft)}
+  .nrow .nn{color:var(--tag);font-weight:600;flex:none;width:130px}
+  .nrow.hot .nn{color:var(--accent)}
+  .nrow .nd{color:var(--muted);font-size:12.5px;font-family:var(--serif)}
+  .nrow.hot .nd{color:var(--ink)}
+
+  .note{background:#1a1710;border:1px solid var(--rule);border-left:3px solid var(--tag);
+    border-radius:10px;padding:15px 18px;margin-top:24px;font-size:15px;line-height:1.6;color:var(--muted)}
+  .note b{color:var(--ink)}
+  .note .h{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--tag);display:block;margin-bottom:8px}
+  .foot{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;margin-top:34px}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="kicker">Odin · search-driven learning</div>
+  <h1>How to learn Odin without guessing</h1>
+
+  <div class="levels" id="levelnav"></div>
+  <div class="rule"></div>
+
+  <!-- ===================== LEVEL 1 — THE LOOP ===================== -->
+  <section class="section" id="s1">
+    <p class="deck">There is no syntax in this lesson — it's a <b>habit</b>. When you don't know a proc's name or shape, you have one reliable loop: <b>guess? → search the source of truth → read the real signature → call it → verify.</b> The source of truth is the <span class="il">core:</span> standard-library code itself, the overview, and the substrate's own index. Click each rung to walk it.</p>
+    <nav class="sub" id="loopnav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="looplabel"></div>
+      <div class="ladder" id="loopladder"></div>
+      <div class="loopnote" id="loopnote"></div>
+    </div>
+    <p class="teach" style="margin-top:24px"><b>The move that anchors the loop:</b> the moment you catch yourself about to <i>invent</i> a proc name — "surely there's a <span class="il">slice.minmax</span>?" — that uncertainty is the trigger. You don't type the guess and hope it compiles, and you don't ask another person yet. You open the source and <i>read</i>, because the answer is sitting in a file you already have on disk: the substrate mirrors <span class="il">core:</span> under <span class="il">~/odin/dist/core/</span>, and most of <span class="il">core:slice</span> is more readable than any summary of it.</p>
+    <p class="teach"><b>Why this beats asking first:</b> the round trip to a file open in your editor is milliseconds; the round trip to a person or a chat box is seconds-to-minutes, and it can hand you a plausible-looking proc name that <i>does not exist</i>. The source can't lie about its own contents. And you finish the lookup with a <i>citable path</i> — the exact file and line — instead of a paraphrase you have to take on faith.</p>
+  </section>
+
+  <!-- ============= LEVEL 2 — READ THE SIGNATURE, THEN USE IT ============= -->
+  <section class="section" id="s2">
+    <p class="deck">Level 1 was the loop. Level 2 runs it on a real question and shows the <b>payoff</b>: a proc you'd never have guessed the shape of, read straight from the source, then called. The question — <b>"I need both the smallest and largest value of a slice in one pass. Is there a built-in?"</b></p>
+    <p class="teach">Walking the loop lands you in <span class="il">~/odin/dist/core/slice/slice.odin</span>, where reading down the file turns up <span class="il">min</span>, then <span class="il">max</span>, then — the one you wanted — <span class="il">min_max</span>. Reading is the whole point here: you'd never have <i>guessed</i> it returns <b>three</b> values, or that the third one matters. Here is the exact signature, copied from the source:</p>
+
+    <div class="canvas">
+      <div class="slotlabel">core:slice — the real signature</div>
+      <div class="sig"><span class="nm">min_max</span> :: proc <span class="str">"contextless"</span> (s: $S/[]$T) -&gt; (<span class="ret">min</span>, <span class="ret">max</span>: T, <span class="ret">ok</span>: bool)
+        <span class="cn">where intrinsics.type_is_ordered(T)</span></div>
+
+      <div class="retgrid">
+        <div class="retcell"><div class="rn">min</div><div class="rd">the smallest element, in one pass</div><div class="rv" id="rv-min">—</div></div>
+        <div class="retcell"><div class="rn">max</div><div class="rd">the largest element, same pass</div><div class="rv" id="rv-max">—</div></div>
+        <div class="retcell"><div class="rn">ok</div><div class="rd">false when the slice is empty — the reason it's a third return, not an assumption</div><div class="rv" id="rv-ok">—</div></div>
+      </div>
+
+      <nav class="sub" id="callnav" style="margin-top:20px"></nav>
+      <pre id="callpre"></pre>
+    </div>
+
+    <p class="teach" style="margin-top:22px"><b>What reading the signature taught you that a name never would:</b> the <span class="il">where intrinsics.type_is_ordered(T)</span> clause says this works for <i>any</i> ordered element — <span class="il">int</span>, <span class="il">f32</span>, runes — not just numbers you had in mind. And the <span class="il">ok: bool</span> return is the source telling you, in code, that an empty slice has no min or max, so it hands back a flag instead of a garbage answer. Both facts are <i>in the signature</i>; neither is in the name.</p>
+
+    <h2 style="margin-top:30px">The guess you'd have written instead</h2>
+    <div class="guesscard">
+      <span class="tag">the hand-rolled version — more code, more places to slip</span>
+      <pre><span class="kw">lo</span>, <span class="kw">hi</span> := scores[0], scores[0]   <span class="cm">// assumes scores is non-empty…</span>
+<span class="kw">for</span> v <span class="kw">in</span> scores[1:] {
+    <span class="kw">if</span> v &lt; lo { lo = v }
+    <span class="kw">if</span> v &gt; hi { hi = v }
+}</pre>
+    </div>
+    <p class="teach">That loop is fine — until <span class="il">scores</span> is empty, where <span class="il">scores[0]</span> is a bounds violation you forgot to guard. The hand-roll is <i>more code that you own and must keep correct</i>, and it silently drops the empty-slice case the source already thought through for you. Reaching for <span class="il">slice.min_max</span> isn't laziness; it's inheriting a decision someone already made carefully. The only reason you know it's there is that you <b>read the file instead of guessing</b>.</p>
+    <p class="teach"><b>The counterfactual:</b> if you genuinely needed a custom comparison the standard proc doesn't offer — say "smallest by a field, largest by another" — then the hand-rolled loop is the right call, and reading the source still pays: you'd find <span class="il">min_index</span> / <span class="il">max_index</span> two lines down and lift their shape. Reading first never wastes the trip.</p>
+  </section>
+
+  <!-- ============= LEVEL 3 — THE CORPUS COMPOUNDS ============= -->
+  <section class="section" id="s3">
+    <p class="deck">Level 2 found one proc. Level 3 is the property that <b>emerges</b> from doing this for a week: each lookup leaves you with more than the one answer, and the well you're drawing from never runs dry.</p>
+    <p class="teach"><b>Peripheral context is the bonus.</b> You opened <span class="il">slice.odin</span> for <span class="il">min_max</span>, but reading the page around it, you passed its neighbors — and now you know they exist, which you never would have from a single handed-down answer. The cluster you walked through:</p>
+
+    <div class="canvas">
+      <div class="slotlabel">what sat next to min_max in core:slice/slice.odin</div>
+      <div class="neigh" id="neigh"></div>
+    </div>
+
+    <p class="teach" style="margin-top:22px"><b>The well doesn't drain.</b> A person's patience and a chat box's reliability both run out — and the chat box can confidently hand you Odin syntax that doesn't exist. The official overview, the package docs, and the <span class="il">core:</span> source do not. They're the same files every time, they're authoritative, and reading them is the skill that keeps paying off long after you'd have exhausted anyone's goodwill.</p>
+
+    <p class="teach"><b>The emergent payoff — the corpus grows by use.</b> When a lookup was hard enough that you'd hate to redo it, you write the distilled answer back into the substrate (<span class="il">content/domains/odin/compiled/from-query/</span>). Now the local search returns it for free next time, and so does future-you. Every answer you externalize is one you never re-derive — the habit doesn't just answer today's question, it compounds into a corpus that answers tomorrow's before you ask.</p>
+
+    <div class="note">
+      <span class="h">the trap this habit replaces</span>
+      The reflex worth unlearning is <b>asking before reading</b>. It feels faster and it isn't: for a syntax or signature question, a file already on disk beats a network round trip, and it can't hallucinate a proc that doesn't exist. Asking still has its place — <i>after</i> the cheap reading, when you can pose a sharp question ("the source says <span class="il">min_max</span> wants an ordered element; my element is a struct — how do I order it?") instead of a vague one. You earn the right to ask by having read first.
+    </div>
+
+    <p class="teach" style="margin-top:24px;color:var(--muted)">That's the arc: <b style="color:var(--ink)">L1</b> the loop — guess? then read the source, the real signature, call, verify → <b style="color:var(--ink)">L2</b> run it once and you find <span class="il">slice.min_max</span>, a three-return proc you'd never have guessed, that out-thinks your hand-rolled loop → <b style="color:var(--ink)">L3</b> repeat it and the neighbors you read and the answers you write back compound into a corpus that never runs dry.</p>
+  </section>
+
+  <div class="foot">the min_max signature &amp; outputs are real compiler output · probes in claims/lessons/19-search-driven-learning</div>
+</div>
+
+<script>
+/* ============================================================
+   Each interactive component = one data object + one render fn.
+   Vanilla JS, inline, no libraries.
+   The min_max signature, the printed values, and the empty-slice
+   result all come from PASSING claims under
+   claims/lessons/19-search-driven-learning/ :
+     - min-max-real      (output): min=4 max=99 ok=true / empty min=0 max=0 ok=false
+     - min-max-signature (compiles): the three-return ordered-T shape compiles
+   ============================================================ */
+
+/* ---------- LEVEL 1: the five-rung loop ---------- */
+const RUNGS = [
+  { ttl:'Guess? — and <span class="mono">stop</span>',
+    sub:'You almost type slice.minmax(scores) on faith. The itch to invent a name IS the trigger: don\'t guess, look.' },
+  { ttl:'Search the source of truth',
+    sub:'Open the file the proc would live in — ~/odin/dist/core/slice/slice.odin — or the substrate index / overview. The corpus is on disk; reading it is milliseconds.' },
+  { ttl:'Read the real signature',
+    sub:'Find min_max. Read what it actually takes and returns — three values and an ok flag — not what you assumed. The shape is in the code, not the name.' },
+  { ttl:'Call it',
+    sub:'lo, hi, ok := slice.min_max(scores). Use the real proc with its real return shape, exactly as the source spells it.' },
+  { ttl:'Verify',
+    sub:'Run it. Watch min=4 max=99 ok=true come out. "I read that X" is worthless until you\'ve run X and seen it happen.' },
+];
+let rung=0;
+function renderL1(){
+  const lad=document.getElementById('loopladder');
+  lad.innerHTML = RUNGS.map((r,i)=>
+    `<div class="rung ${i===rung?'on':''} ${i<rung?'done':''}" data-i="${i}">
+       <div class="num">${i+1}</div>
+       <div class="body"><div class="ttl">${r.ttl}</div><div class="sub">${r.sub}</div></div>
+     </div>`).join('');
+  lad.querySelectorAll('.rung').forEach(el=>el.onclick=()=>{rung=+el.dataset.i;renderL1();});
+  document.getElementById('looplabel').textContent = `step ${rung+1} of 5`;
+  const last = rung===RUNGS.length-1;
+  document.getElementById('loopnote').innerHTML = last
+    ? 'the loop closed — you have the answer <b>and</b> a citable path. press <b>1</b> to run it again.'
+    : 'click the next rung, or use the buttons above ▸';
+}
+const loopnav=document.getElementById('loopnav');
+[['<','back'],['>','next rung ▸'],['1','restart']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.textContent=t;
+  b.onclick=()=>{ if(k==='1') rung=0; else if(k==='>') rung=Math.min(rung+1,RUNGS.length-1); else rung=Math.max(rung-1,0); renderL1(); };
+  loopnav.appendChild(b);
+});
+
+/* ---------- LEVEL 2: call min_max on real data ----------
+   MEASURED (claim min-max-real, output):
+     slice.min_max([]int{42,7,99,13,99,4}) -> min=4  max=99 ok=true
+     slice.min_max([]int{})                -> min=0  max=0  ok=false             */
+const CALL = {
+  scores: {
+    label:'a populated slice',
+    code:`scores := []int{42, 7, 99, 13, 99, 4}
+lo, hi, ok := slice.min_max(scores)
+fmt.printf("min=%d max=%d ok=%t\\n", lo, hi, ok)`,
+    out:`min=4 max=99 ok=true`,
+    min:'4', max:'99', ok:'true' },
+  empty: {
+    label:'an empty slice',
+    code:`empty: []int
+lo, hi, ok := slice.min_max(empty)
+fmt.printf("min=%d max=%d ok=%t\\n", lo, hi, ok)`,
+    out:`min=0 max=0 ok=false`,
+    min:'0', max:'0', ok:'false' },
+};
+let callKey='scores';
+function escHtml(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function renderL2(){
+  document.querySelectorAll('#callnav button').forEach(b=>b.classList.toggle('on',b.dataset.k===callKey));
+  const c=CALL[callKey];
+  document.getElementById('rv-min').textContent=c.min;
+  document.getElementById('rv-max').textContent=c.max;
+  document.getElementById('rv-ok').textContent=c.ok;
+  const code = escHtml(c.code)
+    .replace(/\bslice\.min_max\b/g,'<span class="kw">slice.min_max</span>')
+    .replace(/\bfmt\.printf\b/g,'<span class="kw">fmt.printf</span>');
+  document.getElementById('callpre').innerHTML =
+    code + '\n\n<span class="cm">// real program output:</span>\n<span class="ok">' + escHtml(c.out) + '</span>';
+}
+const callnav=document.getElementById('callnav');
+[['scores','populated slice'],['empty','empty slice']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.k=k; b.textContent=t;
+  b.onclick=()=>{callKey=k;renderL2();}; callnav.appendChild(b);
+});
+
+/* ---------- LEVEL 3: the neighbors you read on the way ---------- */
+const NEIGH = [
+  { hot:false, nn:'min(s)',        nd:'smallest element + ok — the single-value cousin' },
+  { hot:false, nn:'max(s)',        nd:'largest element + ok' },
+  { hot:true,  nn:'min_max(s)',    nd:'BOTH in one pass — the one you came for' },
+  { hot:false, nn:'min_index(s)',  nd:'WHERE the smallest is, not just its value' },
+  { hot:false, nn:'max_index(s)',  nd:'index of the largest' },
+  { hot:false, nn:'contains(s, v)',nd:'is this value present? — read three lines up' },
+];
+function renderL3(){
+  document.getElementById('neigh').innerHTML = NEIGH.map(n=>
+    `<div class="nrow ${n.hot?'hot':''}"><span class="nn">${n.nn}</span><span class="nd">${n.nd}</span></div>`).join('');
+}
+
+/* ---------- level navigation ---------- */
+const LEVELS=[
+  ['1','The loop','guess? then read the source'],
+  ['2','Read &amp; use it','slice.min_max, found not guessed'],
+  ['3','It compounds','the corpus never runs dry'],
+];
+let level='1';
+function setLevel(n){
+  level=n;
+  document.querySelectorAll('.levels button').forEach(b=>b.classList.toggle('on',b.dataset.n===n));
+  for(const [k] of LEVELS){ const el=document.getElementById('s'+k); if(el) el.classList.toggle('on',k===n); }
+  if(n==='1') renderL1();
+  if(n==='2') renderL2();
+  if(n==='3') renderL3();
+}
+const lnav=document.getElementById('levelnav');
+for(const [n,tt,sub] of LEVELS){ const b=document.createElement('button'); b.dataset.n=n;
+  b.innerHTML=`<span class="lv">Level ${n} · ${sub}</span><span class="tt">${tt}</span>`;
+  b.onclick=()=>setLevel(n); lnav.appendChild(b); }
+setLevel('1');
+</script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+len(s) = 10
+rune_count = 4
+bytes: 41 c3 a9 e7 8c ab f0 9f 90 88
+i=0 r=A U+0041 width=1
+i=1 r=é U+00E9 width=2
+i=3 r=猫 U+732B width=3
+i=6 r=🐈 U+1F408 width=4

@@ -1,0 +1,1 @@
+test-fails Testing procedures must have a signature type of proc(^testing.T)

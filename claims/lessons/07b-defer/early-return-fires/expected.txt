@@ -1,0 +1,9 @@
+attempt(1) start
+  early return A
+attempt(1) end
+attempt(2) start
+  early return B
+attempt(2) end
+attempt(0) start
+  fell through to the bottom
+attempt(0) end

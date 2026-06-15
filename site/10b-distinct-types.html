@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Odin distinct types — same bytes, new label, four levels deep</title>
+<style>
+  :root{
+    --paper:#15130f; --card:#1d1a14; --ink:#ece6d8; --muted:#9a9182;
+    --rule:#332e24; --accent:#5ec8b8; --accent-soft:#1f342f;
+    --tag:#e0875a; --pad:#5a544a; --bad:#e0675a; --bad-soft:#2a1815;
+    --mono:"Cascadia Mono","Cascadia Code",Consolas,ui-monospace,"SF Mono",monospace;
+    --serif:-apple-system,"Segoe UI Variable Text","Segoe UI",system-ui,Roboto,"Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper);color:var(--ink)}
+  body{font-family:var(--serif);line-height:1.6;padding:0 20px;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-feature-settings:"kern" 1,"liga" 1}
+  .page{max-width:860px;margin:0 auto;padding:46px 0 90px}
+  .kicker{font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+  h1{font-size:30px;line-height:1.15;margin:0 0 18px;font-weight:600;letter-spacing:-.01em}
+
+  /* level tabs */
+  .levels{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+  .levels button{flex:1;min-width:150px;text-align:left;background:var(--card);border:1px solid var(--rule);
+    color:var(--muted);border-radius:10px;padding:11px 14px;cursor:pointer;transition:.12s;font-family:var(--serif)}
+  .levels button:hover{border-color:var(--accent)}
+  .levels button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--ink)}
+  .levels .lv{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);display:block;margin-bottom:3px}
+  .levels .tt{font-size:14px}
+  .rule{height:1px;background:var(--rule);margin:22px 0 26px}
+
+  .deck{color:var(--muted);font-size:17px;margin:0 0 24px;line-height:1.5}
+  .deck b{color:var(--ink)}
+  h2{font-size:21px;margin:0 0 14px;font-weight:600}
+  p.teach{font-size:16px;line-height:1.62;max-width:46em}
+  p.teach code,.il{font-family:var(--mono);font-size:.86em;background:#2a2519;padding:1px 5px;border-radius:4px}
+  .teach b{color:var(--tag)}
+  .section{display:none}
+  .section.on{display:block}
+
+  nav.sub{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;font-family:var(--mono);font-size:13px}
+  nav.sub button{background:var(--card);border:1px solid var(--rule);color:var(--muted);border-radius:8px;padding:8px 14px;cursor:pointer;transition:.12s}
+  nav.sub button:hover{color:var(--ink);border-color:var(--accent)}
+  nav.sub button.on{color:var(--ink);border-color:var(--accent);background:var(--accent-soft)}
+  .hint{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin:0 0 20px}
+
+  .canvas{background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:30px 28px}
+  .slotlabel{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
+
+  /* the two-label byte view (Level 1) */
+  .memrow{display:flex;align-items:stretch;gap:18px;flex-wrap:wrap}
+  .memcell{flex:1;min-width:240px;background:#1a1710;border:1px solid var(--rule);border-radius:12px;padding:16px 16px 14px;transition:.18s}
+  .memcell.live{border-color:var(--accent)}
+  .memcell .nm{font-family:var(--mono);font-size:13px;color:var(--ink);margin-bottom:2px}
+  .memcell .ty{font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:12px}
+  .labeltag{font-family:var(--mono);font-size:12px;margin-top:12px;color:var(--muted)}
+  .labeltag b{color:var(--tag)}
+  .eqcol{align-self:center;font-family:var(--mono);color:var(--accent);font-size:20px;flex:none}
+  @media(max-width:640px){.eqcol{transform:rotate(90deg);margin:4px auto}}
+
+  .strip{display:grid;grid-template-columns:repeat(8,1fr);gap:5px}
+  .strip.f32{grid-template-columns:repeat(4,1fr);max-width:50%}
+  @media(max-width:640px){.strip.f32{max-width:100%}}
+  .byte{aspect-ratio:1/1.2;border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:var(--mono);position:relative;border:1px solid transparent}
+  .byte .hx{font-size:13px;font-weight:600}
+  .byte .ix{position:absolute;top:2px;left:4px;font-size:8px;color:var(--muted);opacity:.7}
+  .b-val{background:var(--accent-soft);border-color:var(--accent);color:#cdeee7}
+  .b-zero{background:#201d17;border-color:#2a2519;color:#5a544a}
+
+  .legend{display:flex;gap:18px;flex-wrap:wrap;margin-top:18px;font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+  .legend span{display:flex;align-items:center;gap:7px}
+  .chip{width:13px;height:13px;border-radius:3px;border:1px solid}
+  .c-val{background:var(--accent-soft);border-color:var(--accent)}
+  .c-zero{background:#201d17;border-color:#2a2519}
+  .c-tagchip{background:#3a2417;border-color:var(--tag)}
+
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:26px}
+  @media(max-width:680px){.cols{grid-template-columns:1fr}}
+  .panel h3{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 12px;font-weight:600}
+  .sizes{font-family:var(--mono);font-size:13px;line-height:2}
+  .sizes .n{color:var(--accent);font-weight:600}
+  .sizes .big{color:var(--tag);font-weight:600}
+
+  pre{font-family:var(--mono);font-size:12.5px;line-height:1.7;background:#1a1710;border:1px solid var(--rule);border-radius:10px;padding:16px 18px;overflow:auto;margin:22px 0 0;white-space:pre-wrap}
+  pre .cm{color:#6f6655}
+  pre .kw{color:var(--accent)}
+  pre .er{color:var(--bad)}
+  pre .ok{color:var(--accent)}
+  pre .ty{color:var(--tag)}
+
+  /* Level 2: the table-of-ints scene + the catch */
+  .tables{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:6px}
+  @media(max-width:640px){.tables{grid-template-columns:1fr}}
+  .tbl{background:#1a1710;border:1px solid var(--rule);border-radius:10px;padding:13px 13px 11px}
+  .tbl h4{font-family:var(--mono);font-size:12px;margin:0 0 9px;font-weight:600;color:var(--ink)}
+  .tbl .row{font-family:var(--mono);font-size:11px;color:var(--muted);padding:3px 0;display:flex;justify-content:space-between}
+  .tbl .row .k{color:var(--accent)}
+  .tbl.raw h4{color:var(--bad)}
+  .tbl.raw .k{color:var(--bad)}
+  .verdict{font-family:var(--mono);font-size:12px;margin-top:14px;padding:10px 12px;border-radius:8px;transition:.18s}
+  .verdict.good{background:var(--accent-soft);color:#cdeee7;border:1px solid var(--accent)}
+  .verdict.bad{background:var(--bad-soft);color:#f0a892;border:1px solid #5a3a30}
+
+  /* Level 3: compiles vs needs-cast list */
+  .ledger{display:grid;grid-template-columns:1fr;gap:8px;margin-top:6px}
+  .lrow{display:flex;align-items:center;gap:12px;background:#1a1710;border:1px solid var(--rule);border-radius:9px;padding:11px 14px;font-family:var(--mono);font-size:13px}
+  .lrow .mark{flex:none;width:20px;text-align:center;font-weight:700}
+  .lrow.ok{border-color:#2f5249}
+  .lrow.ok .mark{color:var(--accent)}
+  .lrow.no{border-color:#4a342a}
+  .lrow.no .mark{color:var(--bad)}
+  .lrow .ex{color:var(--ink)}
+  .lrow .why{color:var(--muted);font-size:11.5px;margin-left:auto;text-align:right;max-width:46%}
+
+  .note{background:#1a1710;border:1px solid var(--rule);border-left:3px solid var(--tag);
+    border-radius:10px;padding:15px 18px;margin-top:24px;font-size:15px;line-height:1.6;color:var(--muted)}
+  .note b{color:var(--ink)}
+  .note .h{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--tag);display:block;margin-bottom:8px}
+  .foot{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;margin-top:34px}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="kicker">Odin · distinct types</div>
+  <h1>A distinct type, four levels deep</h1>
+
+  <div class="levels" id="levelnav"></div>
+  <div class="rule"></div>
+
+  <!-- ===================== LEVEL 1 — WHAT IT IS ===================== -->
+  <section class="section" id="s1">
+    <p class="deck"><span class="il">Name :: distinct T</span> declares <b>a brand-new type that is the exact same bytes as <span class="il">T</span></b>, with one difference the machine can't see: the type checker labels it <span class="il">Name</span>, not <span class="il">T</span>. Below, the same 8 bytes carry three different labels. Pick a label and watch the bytes <i>not move</i>.</p>
+    <div class="hint">Real bytes, measured from a compiled Odin program (little-endian). Byte index is top-left of each cell.</div>
+
+    <nav class="sub" id="nav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="memlabel"></div>
+      <div class="memrow">
+        <div class="memcell live">
+          <div class="nm" id="cell-nm">Player_Id(42)</div>
+          <div class="ty" id="cell-ty">a distinct int — same 8 bytes as int</div>
+          <div class="strip" id="lstrip"></div>
+          <div class="labeltag" id="ltag"></div>
+        </div>
+        <div class="eqcol">≡</div>
+        <div class="memcell">
+          <div class="nm">int(42)</div>
+          <div class="ty">the underlying type — 8 bytes</div>
+          <div class="strip" id="rstrip"></div>
+          <div class="labeltag">label: <b style="color:var(--accent)">int</b> — the bytes everyone agrees on</div>
+        </div>
+      </div>
+      <div class="legend">
+        <span><i class="chip c-val"></i> value bytes (identical across labels)</span>
+        <span><i class="chip c-zero"></i> zero</span>
+      </div>
+    </div>
+
+    <div class="cols">
+      <div class="panel"><h3>Sizes (size_of)</h3>
+        <div class="sizes">
+          int&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= <span class="n">8</span><br>
+          <b style="color:var(--ink)">Player_Id</b>&nbsp;= <span class="n">8</span><br>
+          Monster_Id = <span class="n">8</span><br><br>
+          f32&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= <span class="n">4</span><br>
+          <b style="color:var(--ink)">Meters</b>&nbsp;&nbsp;&nbsp;&nbsp;= <span class="n">4</span><br><br>
+          <span style="color:var(--muted)">align_of(int) = <span class="n">8</span> = align_of(Player_Id).<br>Same size, same alignment, same bytes.</span>
+        </div>
+      </div>
+      <div class="panel"><h3>What you're seeing</h3><p class="teach" id="teach"></p></div>
+    </div>
+
+    <div class="note">
+      <span class="h">where the difference lives</span>
+      The label is not a byte. There is no wrapper field, no tag, no extra word of storage — switching between <span class="il">Player_Id</span>, <span class="il">Monster_Id</span> and <span class="il">int</span> above never changed a single hex digit. The distinction exists only in the type checker's bookkeeping during compilation; by the time the program runs, <span class="il">Player_Id(42)</span> and <span class="il">42</span> are the same number in the same register. That is the whole trick: <b>a separate type at zero runtime cost.</b>
+    </div>
+  </section>
+
+  <!-- ============= LEVEL 2 — WHY YOU'D REACH FOR IT ============= -->
+  <section class="section" id="s2">
+    <p class="deck">Level 1 was <i>what it is</i>. Now: the situation where <b>not</b> reaching for it is the wrong call — a game with many lookup tables, every one of them keyed on a bare <span class="il">int</span>.</p>
+    <p class="teach">You have a players table, a monsters table, an items table — each keys on an integer id. Somewhere you write <span class="il">damage_player(some_id, 10)</span>, and <span class="il">some_id</span> came out of the <i>monster</i> table. Every id is an <span class="il">int</span>, so the type checker has nothing to object to: the bug compiles, ships, and surfaces as a wrong-target hit at runtime. Toggle the design and watch what the compiler can and can't see:</p>
+
+    <nav class="sub" id="scenenav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="scenelabel"></div>
+      <div class="tables" id="tables"></div>
+      <div class="verdict" id="sceneverdict"></div>
+    </div>
+
+    <p class="teach"><b>The mechanism:</b> when every table keys on <span class="il">int</span>, "is this the right kind of id?" is a fact the type system literally cannot represent — all ids are interchangeable to it. Give each table its own <span class="il">distinct int</span> and the question becomes a type question, which is exactly the question the compiler already answers on every line. The mix-up stops being a thing you hope code review catches and becomes a thing the build refuses to produce.</p>
+
+    <p class="teach"><b>The counterfactual:</b> if your program had a single id space — one table, one kind of id, never mixed with anything — you wouldn't need this. A bare <span class="il">int</span> would be honest. <span class="il">distinct</span> earns its keep precisely when you have <i>several</i> id kinds (or several units, or raw-vs-validated values) that share a representation and must never silently cross.</p>
+
+    <h2 style="margin-top:30px">Why the alternatives are worse</h2>
+    <p class="teach">
+      <b>Keep using bare <span class="il">int</span> and stay careful.</b> This is the default most reach for, and it's the one that loses: the discipline lives in human attention, which is exactly the resource that runs out at 2 a.m. on the tenth table. The compiler sees nothing wrong, so the bug class is permanent.<br><br>
+      <b>Wrap each id in a one-field <span class="il">struct{ value: int }</span>.</b> This gets you real distinctness, but now every read site spells out <span class="il">.value</span>, construction is a struct literal, you can't use the wrapper directly where an integer is wanted, and arithmetic between two of them no longer works without a helper. More code at every touch point, same protection <span class="il">distinct</span> gives you for one line — and the extra ceremony is what tempts people back to the bare <span class="il">int</span>.<br><br>
+      <b>Encode the kind in a name or a comment</b> (<span class="il">player_id_42</span>, <span class="il">// monster id!</span>): documentation the compiler can't read and won't enforce. The instant someone copies the value into another variable the hint is gone.
+    </p>
+  </section>
+
+  <!-- ===================== LEVEL 3 — THE BILL ===================== -->
+  <section class="section" id="s3">
+    <p class="deck">Level 2 sold you on it. Level 3 is the bill — and notice the bill is <b>not bytes</b>. The runtime cost is zero (Level 1). What you pay is an <b>explicit cast at every boundary where you genuinely want to cross types.</b></p>
+    <p class="teach">The same rule that catches the wrong-id bug also stops you from mixing a distinct value with its own underlying type — so when you legitimately need to, you say so out loud with a conversion. The line between "free" and "needs a cast" is sharp and worth knowing exactly:</p>
+
+    <nav class="sub" id="costnav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="costlabel"></div>
+      <div class="ledger" id="ledger"></div>
+    </div>
+
+    <p class="teach"><b>The fix is the feature:</b> the cast <span class="il">int(p1)</span> emits <b>zero instructions</b> — it's a type-checker no-op that peels the label off for the next operation. So the price isn't speed, it's three keystrokes that make crossing the boundary <b>visible and greppable</b>. Every <span class="il">int(id)</span> or <span class="il">f32(meters)</span> in the source is a place you told the compiler "I mean to leave the safe zone here," and you can find them all with a search. The bill is paid in honesty, not cycles.</p>
+
+    <div class="note">
+      <span class="h">not the same as a type alias</span>
+      A plain alias <span class="il">My_Int :: int</span> is <b>transparent</b>: <span class="il">My_Int</span> and <span class="il">int</span> are the same type, freely interchangeable, and you get none of this protection — the alias is purely a readability name. <span class="il">distinct</span> is the opposite choice: the new name is a <b>different</b> type the compiler holds apart from its underlying type. Reach for an alias when you only want a shorter or clearer spelling; reach for <span class="il">distinct</span> when you want the compiler to keep two same-shaped things from mixing. Same syntax shape, opposite intent.
+    </div>
+  </section>
+
+  <!-- ============= LEVEL 4 — THE EMERGENT PAYOFF ============= -->
+  <section class="section" id="s4">
+    <p class="deck">The last level isn't bytes or syntax — it's the correctness property that <b>emerges</b> once distinct types are threaded through a whole codebase: a class of silent bugs becomes a class of loud compile errors, each one naming the exact two types you crossed.</p>
+    <p class="teach">Every "you can't mix these" rule from Level 3 is a <i>real compile error</i>, not a lint or a convention. Here are four of them, verbatim from the compiler — pick one:</p>
+
+    <nav class="sub" id="errnav"></nav>
+    <pre id="errpre"></pre>
+    <p class="teach" id="errwhy" style="margin-top:16px"></p>
+
+    <p class="teach"><b>The emergent payoff:</b> read those messages — each one names <b>both</b> sides of the mix (<span class="il">'Monster_Id'</span> vs <span class="il">'Player_Id'</span>, <span class="il">'Meters'</span> vs <span class="il">'Seconds'</span>). At a glance you know whether you crossed two siblings or crossed a distinct type with its raw underlying type, and the message points at the exact line. Across a real codebase with dozens of id kinds and unit kinds, "did I ever mix these up anywhere?" stops being a runtime bug hunt and becomes something the compiler answers for you at every build. The famous version of this bug — a spacecraft lost because one team's numbers were one unit and the consuming team read them as another, same bytes, wrong meaning — is, in these terms, just a missing <span class="il">distinct</span> and the compile error that would have caught it.</p>
+
+    <p class="teach" style="margin-top:24px;color:var(--muted)">That's the arc: <b style="color:var(--ink)">L1</b> same bytes, new label — zero runtime cost → <b style="color:var(--ink)">L2</b> so several same-shaped kinds (ids, units) can be held apart instead of silently mixed → <b style="color:var(--ink)">L3</b> the bill is an explicit, greppable cast at every real crossing, not a single CPU cycle → <b style="color:var(--ink)">L4</b> every crossing the compiler rejects names both types, turning a silent bug class into a compile-time one.</p>
+  </section>
+
+  <div class="foot">probes reproduce with <span style="color:var(--ink)">odin run</span> · bytes, sizes, outputs &amp; the L4 errors are real compiler output (claims/lessons/10b-distinct-types)</div>
+</div>
+
+<script>
+/* ============================================================
+   Each interactive component = one data object + one render fn.
+   Vanilla JS, inline, no libraries.
+   All embedded numbers/bytes/errors come from passing claims
+   under claims/lessons/10b-distinct-types/.
+   ============================================================ */
+
+/* ---------- LEVEL 1: same bytes under three labels ----------
+   Measured (claim bytes-and-sizes):
+     int(42) = Player_Id(42) = Monster_Id(42) = 2a 00 00 00 00 00 00 00
+     f32(2)  = Meters(2)     = 00 00 00 40
+     size_of(int)=8  size_of(Player_Id)=8  size_of(Monster_Id)=8
+     size_of(f32)=4  size_of(Meters)=4  align_of(int)=align_of(Player_Id)=8        */
+const INT42 = [0x2a,0x00,0x00,0x00,0x00,0x00,0x00,0x00];
+const F32_2 = [0x00,0x00,0x00,0x40];
+const LABEL = {
+  Player_Id:  { nm:'Player_Id(42)',  ty:'a distinct int — same 8 bytes as int', kind:'int',
+                bytes:INT42, accent:'var(--accent)',
+                teach:`<code>Player_Id(42)</code> lays down the exact bytes <b>2a 00 00 00 00 00 00 00</b> — the little-endian int <b>42</b>. The byte strip on the right is a plain <code>int(42)</code>, and it is identical, cell for cell. The construction <code>Player_Id(42)</code> writes the number and the type checker notes "this slot is a Player_Id." No byte records that note.` },
+  Monster_Id: { nm:'Monster_Id(42)', ty:'a different distinct int — same 8 bytes', kind:'int',
+                bytes:INT42, accent:'var(--tag)',
+                teach:`<code>Monster_Id(42)</code> is a <i>third</i> label over the same bytes — and crucially, it is not the same type as <code>Player_Id</code> either. Two distinct ints are siblings, not equals: identical layout, separate identities. The bytes haven't moved from the <code>Player_Id</code> view; only the type checker's note changed.` },
+  int:        { nm:'int(42)',        ty:'the underlying type — 8 bytes', kind:'int',
+                bytes:INT42, accent:'var(--accent)',
+                teach:`This is the underlying type with no distinct label at all. It is what both distinct views are made of — same width, same bytes. Everything <code>distinct</code> adds sits above this, in the type checker, costing nothing here.` },
+  Meters:     { nm:'Meters(2)',      ty:'a distinct f32 — same 4 bytes as f32', kind:'f32',
+                bytes:F32_2, accent:'var(--accent)',
+                teach:`<code>distinct</code> works on any underlying type, not just <code>int</code>. <code>Meters(2)</code> is a distinct <code>f32</code>: its 4 bytes <b>00 00 00 40</b> are exactly the float <b>2.0</b>, byte-identical to a raw <code>f32(2)</code>. <code>size_of(Meters)</code> is <b>4</b>, same as <code>f32</code>. (Right strip shows the 8-byte int view; the Meters view is the narrower 4-byte one.)` },
+};
+let curLabel='Player_Id';
+function renderStrip(el, bytes){
+  el.classList.toggle('f32', bytes.length===4);
+  el.innerHTML = bytes.map((b,i)=>{
+    const cls = b===0 ? 'b-zero' : 'b-val';
+    return `<div class="byte ${cls}"><span class="ix">${i}</span><span class="hx">${b.toString(16).padStart(2,'0')}</span></div>`;
+  }).join('');
+}
+function renderL1(){
+  document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('on',b.dataset.v===curLabel));
+  const v=LABEL[curLabel];
+  document.getElementById('cell-nm').textContent=v.nm;
+  document.getElementById('cell-ty').textContent=v.ty;
+  document.getElementById('memlabel').textContent =
+    v.kind==='int' ? `${v.nm}  ≡  int(42)   —   same 8 bytes, different label`
+                   : `${v.nm}  ≡  f32(2)   —   same 4 bytes, different label`;
+  renderStrip(document.getElementById('lstrip'), v.bytes);
+  // right cell is always the raw underlying of THIS view (int or f32)
+  const rs=document.getElementById('rstrip');
+  renderStrip(rs, v.kind==='int'?INT42:F32_2);
+  document.querySelector('.memcell:last-child .nm').textContent = v.kind==='int'?'int(42)':'f32(2)';
+  document.querySelector('.memcell:last-child .ty').textContent =
+    v.kind==='int'?'the underlying type — 8 bytes':'the underlying type — 4 bytes';
+  document.getElementById('ltag').innerHTML =
+    `label: <b style="color:${v.accent}">${curLabel}</b> — ${v.bytes.length} bytes, no extra storage`;
+  document.getElementById('teach').innerHTML=v.teach;
+}
+const nav=document.getElementById('nav');
+[['Player_Id','Player_Id'],['Monster_Id','Monster_Id'],['int','int (underlying)'],['Meters','Meters (distinct f32)']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.v=k; b.textContent=t;
+  b.onclick=()=>{curLabel=k;renderL1();}; nav.appendChild(b);
+});
+
+/* ---------- LEVEL 2: bare-int tables vs distinct-typed tables ---------- */
+const SCENE = {
+  raw: {
+    label:'every table keyed on a bare int — the compiler sees one id space',
+    cls:'raw',
+    tables:[
+      ['players','int', [['1','Ada'],['2','Ben']]],
+      ['monsters','int', [['1','Slime'],['2','Bat']]],
+      ['items','int', [['1','Sword'],['2','Shield']]],
+    ],
+    verdictCls:'bad',
+    verdict:`damage_player(monster_id, 10) — every id is an int, so this COMPILES. The wrong-target hit shows up only at runtime.`,
+  },
+  distinct: {
+    label:'each table keyed on its own distinct int — the compiler sees three id kinds',
+    cls:'',
+    tables:[
+      ['players','Player_Id', [['Player_Id(1)','Ada'],['Player_Id(2)','Ben']]],
+      ['monsters','Monster_Id', [['Monster_Id(1)','Slime'],['Monster_Id(2)','Bat']]],
+      ['items','Item_Id', [['Item_Id(1)','Sword'],['Item_Id(2)','Shield']]],
+    ],
+    verdictCls:'good',
+    verdict:`damage_player(monster_id, 10) — Monster_Id is not Player_Id, so the BUILD FAILS at that exact line. The mistake never ships.`,
+  },
+};
+let sceneMode='raw';
+function renderL2(){
+  document.querySelectorAll('#scenenav button').forEach(b=>b.classList.toggle('on',b.dataset.m===sceneMode));
+  const s=SCENE[sceneMode];
+  document.getElementById('scenelabel').textContent=s.label;
+  document.getElementById('tables').innerHTML = s.tables.map(([name,ty,rows])=>{
+    const rowsHtml = rows.map(([k,v])=>`<div class="row"><span class="k">${k}</span><span>${v}</span></div>`).join('');
+    return `<div class="tbl ${s.cls}"><h4>${name} : ${ty}</h4>${rowsHtml}</div>`;
+  }).join('');
+  const ve=document.getElementById('sceneverdict');
+  ve.className='verdict '+s.verdictCls;
+  ve.innerHTML=s.verdict;
+}
+const scenenav=document.getElementById('scenenav');
+[['raw','bare int (no protection)'],['distinct','distinct int (protected)']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.m=k; b.textContent=t;
+  b.onclick=()=>{sceneMode=k;renderL2();}; scenenav.appendChild(b);
+});
+
+/* ---------- LEVEL 3: what compiles free vs what needs a cast ----------
+   Measured (claims same-type-and-convert, break-typed-int-add, break-meters-minus-seconds):
+     Player_Id+Player_Id, Player_Id<Player_Id, Player_Id+1, int(Player_Id) all OK
+     Player_Id + typed int -> compile error ; Meters - Seconds -> compile error      */
+const COST = {
+  free: {
+    label:'free — no cast needed (same distinct type, or an untyped literal)',
+    rows:[
+      ['ok','Player_Id(1) + Player_Id(2)','result is Player_Id (= 3)'],
+      ['ok','Player_Id(1) < Player_Id(2)','comparison gives a bool (= true)'],
+      ['ok','Player_Id(1) + 1','untyped literal 1 adapts to Player_Id (= 2)'],
+      ['ok','Meters(100) within its own math','same unit stays the same unit'],
+    ],
+  },
+  cast: {
+    label:'needs an explicit cast — the speed bump at the boundary',
+    rows:[
+      ['no','Player_Id(1) + some_int','typed int ≠ Player_Id → cast first: + Player_Id(some_int)'],
+      ['no','Meters(100) - Seconds(4)','two units don\'t mix → f32(d) and f32(t) first'],
+      ['ok','int(Player_Id(1))','unwrap to underlying int (= 1) — emits zero instructions'],
+      ['ok','f32(Meters(100)) / f32(Seconds(4))','convert both → a plain f32 (= 25), no unit attached'],
+    ],
+  },
+};
+let costMode='free';
+function renderL3(){
+  document.querySelectorAll('#costnav button').forEach(b=>b.classList.toggle('on',b.dataset.m===costMode));
+  const c=COST[costMode];
+  document.getElementById('costlabel').textContent=c.label;
+  document.getElementById('ledger').innerHTML = c.rows.map(([mark,ex,why])=>{
+    const cls = mark==='ok' ? 'ok' : 'no';
+    const sym = mark==='ok' ? '✓' : '✕';
+    return `<div class="lrow ${cls}"><span class="mark">${sym}</span><span class="ex">${ex}</span><span class="why">${why}</span></div>`;
+  }).join('');
+}
+const costnav=document.getElementById('costnav');
+[['free','compiles free'],['cast','needs a cast']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.m=k; b.textContent=t;
+  b.onclick=()=>{costMode=k;renderL3();}; costnav.appendChild(b);
+});
+
+/* ---------- LEVEL 4: the four verified compile errors ----------
+   Verbatim error substrings (passing fails claims):
+     break-wrong-id-callsite : Cannot assign value 'm1' of type 'Monster_Id' to 'Player_Id' in a procedure argument
+     break-compare-siblings  : Cannot compare expression. Mismatched types 'Player_Id' and 'Monster_Id'.
+     break-meters-minus-seconds : Mismatched types in binary expression 'distance - time' : 'Meters' vs 'Seconds'
+     break-typed-int-add     : Mismatched types in binary expression 'p1 + some_raw_int' : 'Player_Id' vs 'int'    */
+const ERR = {
+  callsite: {
+    code:"damage_player :: proc(target: [[ty]]Player_Id[[/ty]], amount: int) { ... }\nm1 := Monster_Id(1)\n[[er]]damage_player(m1, 10)[[/er]]   [[cm]]// a Monster_Id where a Player_Id is wanted[[/cm]]",
+    err:"Error: Cannot assign value 'm1' of type 'Monster_Id' to 'Player_Id' in a procedure argument",
+    why:"Both are <code>distinct int</code>, but the call site is the wrong-id bug the feature exists to catch. The message names <b>both</b> types, so you know instantly you handed a monster id to a player proc." },
+  siblings: {
+    code:"p1 := Player_Id(1)\nm1 := Monster_Id(1)\nsame := [[er]]p1 == m1[[/er]]   [[cm]]// compare two sibling distinct types[[/cm]]",
+    err:"Error: Cannot compare expression. Mismatched types 'Player_Id' and 'Monster_Id'.",
+    why:"Two distinct types backed by the same <code>int</code> are still different types, so you can't even compare them. Same bytes, separate identities — to compare deliberately you'd unwrap both with <code>int(...)</code> first." },
+  units: {
+    code:"distance := Meters(100)\ntime     := Seconds(4)\nbad := [[er]]distance - time[[/er]]   [[cm]]// subtract Seconds from Meters[[/cm]]",
+    err:"Error: Mismatched types in binary expression 'distance - time' : 'Meters' vs 'Seconds'",
+    why:"Subtracting one unit from another would yield a value that is neither — and the compiler won't invent a third type for you. This is the units check: mixing <code>Meters</code> and <code>Seconds</code> is a build error, not a silent wrong number." },
+  typedint: {
+    code:"p1 := Player_Id(1)\nsome_raw_int: int = 5\nr := [[er]]p1 + some_raw_int[[/er]]   [[cm]]// a TYPED int, not an untyped literal[[/cm]]",
+    err:"Error: Mismatched types in binary expression 'p1 + some_raw_int' : 'Player_Id' vs 'int'",
+    why:"<code>p1 + 1</code> compiles (the untyped literal adapts), but a <i>typed</i> <code>int</code> does not — that's the distinct-vs-underlying boundary. To mix on purpose: <code>p1 + Player_Id(some_raw_int)</code>." },
+};
+let errKey='callsite';
+function escHtml(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function renderL4(){
+  document.querySelectorAll('#errnav button').forEach(b=>b.classList.toggle('on',b.dataset.k===errKey));
+  const e=ERR[errKey];
+  let html = escHtml(e.code)
+    .replace(/\[\[er\]\]/g,'<span class="er">').replace(/\[\[\/er\]\]/g,'</span>')
+    .replace(/\[\[cm\]\]/g,'<span class="cm">').replace(/\[\[\/cm\]\]/g,'</span>')
+    .replace(/\[\[ty\]\]/g,'<span class="ty">').replace(/\[\[\/ty\]\]/g,'</span>');
+  document.getElementById('errpre').innerHTML =
+    html + '\n\n<span class="er">' + escHtml(e.err) + '</span>';
+  document.getElementById('errwhy').innerHTML = e.why;
+}
+const errnav=document.getElementById('errnav');
+[['callsite','wrong id at call site'],['siblings','compare two siblings'],['units','Meters − Seconds'],['typedint','distinct + typed int']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.k=k; b.textContent=t;
+  b.onclick=()=>{errKey=k;renderL4();}; errnav.appendChild(b);
+});
+
+/* ---------- level navigation ---------- */
+const LEVELS=[
+  ['1','What it is','same bytes, new label'],
+  ['2','Why use it','hold same-shaped kinds apart'],
+  ['3','The bill','an explicit cast, not a cycle'],
+  ['4','Why it stays safe','the compiler names the mix'],
+];
+let level='1';
+function setLevel(n){
+  level=n;
+  document.querySelectorAll('.levels button').forEach(b=>b.classList.toggle('on',b.dataset.n===n));
+  for(const [k] of LEVELS){ const el=document.getElementById('s'+k); if(el) el.classList.toggle('on',k===n); }
+  if(n==='1') renderL1();
+  if(n==='2') renderL2();
+  if(n==='3') renderL3();
+  if(n==='4') renderL4();
+}
+const lnav=document.getElementById('levelnav');
+for(const [n,tt,sub] of LEVELS){ const b=document.createElement('button'); b.dataset.n=n;
+  b.innerHTML=`<span class="lv">Level ${n} · ${sub}</span><span class="tt">${tt}</span>`;
+  b.onclick=()=>setLevel(n); lnav.appendChild(b); }
+setLevel('1');
+</script>
+</body>
+</html>

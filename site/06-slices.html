@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Odin slices — a window onto memory, four levels deep</title>
+<style>
+  :root{
+    --paper:#15130f; --card:#1d1a14; --ink:#ece6d8; --muted:#9a9182;
+    --rule:#332e24; --accent:#5ec8b8; --accent-soft:#1f342f;
+    --tag:#e0875a; --pad:#5a544a; --bad:#e0675a; --bad-soft:#2a1815;
+    --mono:"Cascadia Mono","Cascadia Code",Consolas,ui-monospace,"SF Mono",monospace;
+    --serif:-apple-system,"Segoe UI Variable Text","Segoe UI",system-ui,Roboto,"Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper);color:var(--ink)}
+  body{font-family:var(--serif);line-height:1.6;padding:0 20px;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-feature-settings:"kern" 1,"liga" 1}
+  .page{max-width:860px;margin:0 auto;padding:46px 0 90px}
+  .kicker{font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+  h1{font-size:30px;line-height:1.15;margin:0 0 18px;font-weight:600;letter-spacing:-.01em}
+
+  /* level tabs */
+  .levels{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+  .levels button{flex:1;min-width:150px;text-align:left;background:var(--card);border:1px solid var(--rule);
+    color:var(--muted);border-radius:10px;padding:11px 14px;cursor:pointer;transition:.12s;font-family:var(--serif)}
+  .levels button:hover{border-color:var(--accent)}
+  .levels button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--ink)}
+  .levels .lv{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);display:block;margin-bottom:3px}
+  .levels .tt{font-size:14px}
+  .rule{height:1px;background:var(--rule);margin:22px 0 26px}
+
+  .deck{color:var(--muted);font-size:17px;margin:0 0 24px;line-height:1.5}
+  .deck b{color:var(--ink)}
+  h2{font-size:21px;margin:0 0 14px;font-weight:600}
+  p.teach{font-size:16px;line-height:1.62;max-width:46em}
+  p.teach code,.il{font-family:var(--mono);font-size:.86em;background:#2a2519;padding:1px 5px;border-radius:4px}
+  .teach b{color:var(--tag)}
+  .section{display:none}
+  .section.on{display:block}
+
+  nav.sub{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;font-family:var(--mono);font-size:13px}
+  nav.sub button{background:var(--card);border:1px solid var(--rule);color:var(--muted);border-radius:8px;padding:8px 14px;cursor:pointer;transition:.12s}
+  nav.sub button:hover{color:var(--ink);border-color:var(--accent)}
+  nav.sub button.on{color:var(--ink);border-color:var(--accent);background:var(--accent-soft)}
+  .hint{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin:0 0 20px}
+
+  .canvas{background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:30px 28px}
+  .slotlabel{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
+
+  /* the 16-byte header strip (Level 1) */
+  .hdrwrap{margin-bottom:8px}
+  .fieldrow{display:grid;grid-template-columns:repeat(16,1fr);gap:6px;margin-bottom:6px;height:22px}
+  .fieldspan{grid-row:1;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:11px;border-bottom:2px solid;border-radius:2px}
+  .fieldspan.f-ptr{color:var(--tag);border-color:var(--tag)}
+  .fieldspan.f-len{color:var(--accent);border-color:var(--accent)}
+  .strip{display:grid;grid-template-columns:repeat(16,1fr);gap:6px}
+  .byte{aspect-ratio:1/1.15;border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:var(--mono);position:relative;border:1px solid transparent}
+  .byte .hx{font-size:13px;font-weight:600}
+  .byte .ix{position:absolute;top:2px;left:4px;font-size:8px;color:var(--muted);opacity:.7}
+  .b-ptr{background:#3a2417;border-color:var(--tag);color:#f0b48a}
+  .b-len{background:var(--accent-soft);border-color:var(--accent);color:#cdeee7}
+  .b-zero{background:#201d17;border-color:#2a2519;color:#5a544a}
+
+  /* the backing array, drawn under the header */
+  .backwrap{margin-top:26px}
+  .backgrid{display:grid;grid-template-columns:repeat(6,1fr);gap:6px}
+  .cell{border-radius:7px;border:1px solid var(--rule);background:#1a1710;padding:10px 6px 8px;text-align:center;font-family:var(--mono);position:relative;transition:.18s}
+  .cell .ci{position:absolute;top:3px;left:5px;font-size:9px;color:var(--muted);opacity:.7}
+  .cell .cv{font-size:15px;font-weight:600;color:var(--muted)}
+  .cell.inview{background:var(--accent-soft);border-color:var(--accent)}
+  .cell.inview .cv{color:#cdeee7}
+  .cell.start{border-color:var(--tag)}
+  .startcap{font-family:var(--mono);font-size:10px;color:var(--tag);text-align:center;margin-top:8px}
+
+  .legend{display:flex;gap:18px;flex-wrap:wrap;margin-top:18px;font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+  .legend span{display:flex;align-items:center;gap:7px}
+  .chip{width:13px;height:13px;border-radius:3px;border:1px solid}
+  .c-ptr{background:#3a2417;border-color:var(--tag)}
+  .c-len{background:var(--accent-soft);border-color:var(--accent)}
+  .c-view{background:var(--accent-soft);border-color:var(--accent)}
+  .c-zero{background:#201d17;border-color:#2a2519}
+
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:26px}
+  @media(max-width:680px){.cols{grid-template-columns:1fr}}
+  .panel h3{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 12px;font-weight:600}
+  .sizes{font-family:var(--mono);font-size:13px;line-height:2}
+  .sizes .n{color:var(--accent);font-weight:600}
+  .sizes .big{color:var(--tag);font-weight:600}
+
+  pre{font-family:var(--mono);font-size:12.5px;line-height:1.7;background:#1a1710;border:1px solid var(--rule);border-radius:10px;padding:16px 18px;overflow:auto;margin:22px 0 0;white-space:pre-wrap}
+  pre .cm{color:#6f6655}
+  pre .kw{color:var(--accent)}
+  pre .er{color:var(--bad)}
+  pre .ok{color:var(--accent)}
+
+  /* Level 2: two slices over one backing */
+  .aliaswrap{margin-top:6px}
+  .twoslice{display:flex;gap:18px;flex-wrap:wrap;margin-bottom:18px}
+  .slicechip{flex:1;min-width:200px;background:#1a1710;border:1px solid var(--rule);border-radius:11px;padding:13px 14px}
+  .slicechip.a{border-color:var(--accent)}
+  .slicechip.b{border-color:var(--tag)}
+  .slicechip .nm{font-family:var(--mono);font-size:13px;margin-bottom:3px}
+  .slicechip.a .nm{color:var(--accent)}
+  .slicechip.b .nm{color:var(--tag)}
+  .slicechip .vw{font-family:var(--mono);font-size:12px;color:var(--muted)}
+  .verdict{font-family:var(--mono);font-size:12px;margin-top:12px;padding:9px 11px;border-radius:7px;background:var(--accent-soft);color:#cdeee7;border:1px solid var(--accent)}
+
+  /* Level 3: the dangling frame */
+  .frame{background:#1a1710;border:1px solid var(--rule);border-radius:10px;padding:14px 16px;font-family:var(--mono);font-size:12px;margin:6px 0;transition:.3s}
+  .frame.dead{border-color:var(--bad);background:var(--bad-soft);color:#a07268}
+  .frame .lbl{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:6px}
+  .frame.dead .lbl{color:var(--bad)}
+  .sliceline{font-family:var(--mono);font-size:12px;color:var(--accent);margin:10px 0;text-align:center}
+  .sliceline .stale{color:var(--bad)}
+
+  /* Level 4: sub-slice composition ladder */
+  .composerow{display:flex;align-items:baseline;gap:12px;font-family:var(--mono);font-size:13px;margin:7px 0;padding:8px 12px;border-radius:8px;background:#1a1710;border:1px solid var(--rule)}
+  .composerow .ex{color:var(--accent);min-width:130px}
+  .composerow .ar{color:var(--muted)}
+  .composerow .rs{color:var(--ink)}
+  .composerow .ln{color:var(--tag);margin-left:auto;font-size:11px}
+
+  .note{background:#1a1710;border:1px solid var(--rule);border-left:3px solid var(--tag);
+    border-radius:10px;padding:15px 18px;margin-top:24px;font-size:15px;line-height:1.6;color:var(--muted)}
+  .note b{color:var(--ink)}
+  .note .h{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--tag);display:block;margin-bottom:8px}
+  .foot{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;margin-top:34px}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="kicker">Odin · slices</div>
+  <h1>A slice, four levels deep</h1>
+
+  <div class="levels" id="levelnav"></div>
+  <div class="rule"></div>
+
+  <!-- ===================== LEVEL 1 — WHAT IT IS ===================== -->
+  <section class="section" id="s1">
+    <p class="deck">A slice <span class="il">[]int</span> is <b>not the data</b>. It is a tiny <b>16-byte handle</b> — two fields, <span class="il">{data, len}</span> — that <i>views</i> into a run of ints living somewhere else. Below, six ints sit in a backing array <span class="il">nums</span>; each slice is just an address (where its view starts) plus a count (how many it covers). Pick a slice and watch which bytes of the handle change — and which ones don't.</p>
+    <div class="hint">Real header bytes, measured from a compiled Odin program (little-endian). The len field is stable; the data address differs every run, so it's shown as one representative run.</div>
+
+    <nav class="sub" id="nav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="hdrlabel"></div>
+      <div class="hdrwrap">
+        <div class="fieldrow">
+          <div class="fieldspan f-ptr" style="grid-column:1/9">data : rawptr (8 bytes)</div>
+          <div class="fieldspan f-len" style="grid-column:9/17">len : int (8 bytes)</div>
+        </div>
+        <div class="strip" id="hdrstrip"></div>
+      </div>
+
+      <div class="backwrap">
+        <div class="slotlabel">backing array &nbsp;<span class="il" style="color:var(--ink)">nums : [6]int</span>&nbsp; — 48 bytes, the slice's handle never touches it</div>
+        <div class="backgrid" id="backgrid"></div>
+        <div class="startcap" id="startcap"></div>
+      </div>
+
+      <div class="legend">
+        <span><i class="chip c-ptr"></i> data — address of first viewed element</span>
+        <span><i class="chip c-len"></i> len — how many elements</span>
+        <span><i class="chip c-zero"></i> zero (high bytes)</span>
+        <span><i class="chip c-view"></i> elements this slice sees</span>
+      </div>
+    </div>
+
+    <div class="cols">
+      <div class="panel"><h3>Widths (size_of)</h3>
+        <div class="sizes">
+          <b style="color:var(--ink)">[6]int</b>&nbsp;(the data) = <span class="big">48</span><br>
+          <b style="color:var(--ink)">[]int</b>&nbsp;(the handle) = <span class="n">16</span><br>
+          ^int&nbsp;(bare addr) = <span class="n">8</span><br><br>
+          <span style="color:var(--muted)">A <b style="color:var(--ink)">[]int</b> is <span class="n">16</span> bytes whether it views <span class="n">2</span> ints or <span class="n">2</span> million — it's the same address + count handle. Passing it copies those <span class="n">16</span> bytes, not the run.</span>
+        </div>
+      </div>
+      <div class="panel"><h3>What you're seeing</h3><p class="teach" id="teach"></p></div>
+    </div>
+  </section>
+
+  <!-- ============= LEVEL 2 — WHY YOU'D REACH FOR IT ============= -->
+  <section class="section" id="s2">
+    <p class="deck">Level 1 was <i>what it is</i>. Level 2 is <i>why you'd reach for one</i>: a slice is a <b>cheap, mutable window</b>. You hand a proc 16 bytes instead of copying the run — and because the handle points <i>at</i> the storage, a write through the slice lands on the backing array itself. This sharing-without-copying is called <b>aliasing</b>, and it's the whole reason slices exist.</p>
+    <p class="teach">Here are two slices over the <i>same</i> six-int backing array. <span class="il">mid = nums[1:4]</span> sees indices 1–3; <span class="il">overlap = nums[2:5]</span> sees 2–4. They share indices 2 and 3. Write <span class="il">999</span> through one and watch where it shows up:</p>
+
+    <nav class="sub" id="aliasnav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="aliaslabel"></div>
+      <div class="aliaswrap">
+        <div class="backgrid" id="aliasgrid"></div>
+        <div class="startcap" style="color:var(--muted)">one backing array — <span class="il">nums : [6]int</span></div>
+        <div class="twoslice" style="margin-top:18px">
+          <div class="slicechip a"><div class="nm">mid = nums[1:4]</div><div class="vw" id="midvw"></div></div>
+          <div class="slicechip b"><div class="nm">overlap = nums[2:5]</div><div class="vw" id="ovvw"></div></div>
+        </div>
+        <div class="verdict" id="aliasverdict"></div>
+      </div>
+    </div>
+
+    <p class="teach"><b>The mechanism:</b> <span class="il">mid[1]</span> is the same storage as <span class="il">nums[2]</span>, which is the same storage as <span class="il">overlap[0]</span> — one location, three names. The write doesn't copy or "propagate"; it lands once, and every view reading that address sees it. That's why passing a <span class="il">[]int</span> into a proc lets the proc mutate the caller's data: the handle carries the address, so callee and caller are working the same bytes.</p>
+
+    <p class="teach"><b>The counterfactual:</b> if a proc only needs to <i>read</i> the run — sum it, print it — the aliasing is invisible and you still get the cheap 16-byte pass. You feel aliasing only when something <i>writes</i>. Reach for a slice when you want a write to <b>stick</b> in the caller's storage, or when copying the whole run would be wasteful. If you genuinely need an independent copy, that's a deliberate, separate act (<span class="il">slice.clone</span> allocates fresh storage) — assignment alone never gives you one.</p>
+
+    <div class="note">
+      <span class="h">assigning a slice copies the handle, not the run</span>
+      <span class="il">b := a</span> duplicates the <b>16-byte header</b> — the same <span class="il">data</span> pointer and <span class="il">len</span> — so <span class="il">a</span> and <span class="il">b</span> are two handles onto <i>one</i> backing run. Measured: after <span class="il">a := nums[:]</span>, <span class="il">b := a</span>, then <span class="il">b[0] = 777</span>, you read <span class="il">a[0]</span> as <b>777</b> and <span class="il">nums[0]</span> as <b>777</b> too, and <span class="il">raw_data(a) == raw_data(b)</span> is <b>true</b>. Copying a slice is copying <i>where to look</i>, never <i>what's there</i>.
+    </div>
+  </section>
+
+  <!-- ===================== LEVEL 3 — THE BILL ===================== -->
+  <section class="section" id="s3">
+    <p class="deck">Level 2 sold you on the window. Level 3 is the bill: <b>the handle has no idea whether its backing storage is still alive.</b> A slice borrows a lifetime it doesn't own — and Odin has no garbage collector and no general lifetime tracking, so keeping the backing valid is <i>your</i> job.</p>
+    <p class="teach">The footgun is the <b>dangling slice</b>: a handle whose backing run has already been reclaimed. Watch a proc return a slice of its own local array:</p>
+
+    <nav class="sub" id="dangnav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="danglabel"></div>
+      <div id="dangstage"></div>
+    </div>
+
+    <p class="teach"><b>Where Odin helps — and where it doesn't.</b> Odin has a <i>targeted</i> escape check that rejects the most obvious shape at <b>compile time</b>: returning a slice of a local. That exact program does not build —</p>
+    <pre><span class="kw">leak</span> :: proc() -> []int {
+    local: [4]int = {1, 2, 3, 4}
+    <span class="kw">return</span> local[:]   <span class="cm">// a view into storage that's about to vanish</span>
+}
+
+<span class="er">Error: It is unsafe to return a slice of a local variable ('local[:]')</span>
+<span class="er">    from a procedure, as it uses the current stack frame's memory</span></pre>
+    <p class="teach">But that check guards <i>one shape</i>, not lifetimes in general. A slice that escapes <b>indirectly</b> — written through an out-parameter, tucked into a struct the caller keeps, taken into a growable buffer you then grow until it relocates, or into <span class="il">make</span>-d storage you then <span class="il">delete</span> — compiles silently and still dangles. The 16-byte handle doesn't flinch when its backing dies; the <span class="il">data</span> pointer keeps pointing at the same address, which now holds whatever moved in next. Reading through it gives you stale values or a crash.</p>
+
+    <div class="note">
+      <span class="h">the rule that falls out of this</span>
+      A slice is valid <b>exactly as long as its backing storage is valid</b> — and "valid" is a fact about the storage, not about the handle. A slice into a local fixed array dies when the function returns. A slice into a growable buffer can die the moment you append and force it to relocate (Lesson 07). A slice into <span class="il">make</span>-d memory dies when you <span class="il">delete</span>. The compiler catches the one blatant case above; the rest are a discipline you carry — name <i>who owns the backing</i> and <i>how long it lives</i> before you hand out a view of it.
+    </div>
+  </section>
+
+  <!-- ============= LEVEL 4 — THE EMERGENT PAYOFF ============= -->
+  <section class="section" id="s4">
+    <p class="deck">The last level is the payoff that <b>emerges from "it's just an address + a count"</b>: because a slice owns no storage, you can carve a backing run into as many windows as you like, for free, and they all compose — while the half-open bounds stay machine-checked so a bad window is caught, not silently wrong.</p>
+    <p class="teach">Slicing is <span class="il">a[lo:hi]</span>, <b>half-open</b>: it includes <span class="il">lo</span>, excludes <span class="il">hi</span>, so <span class="il">len == hi - lo</span>. And a slice of a slice is still a <span class="il">[]int</span> over the same backing — the bounds just compose by addition. From <span class="il">nums = {10,20,30,40,50,60}</span>:</p>
+
+    <div class="canvas">
+      <div class="slotlabel">one backing run, many composed windows — measured</div>
+      <div id="composestage"></div>
+      <p class="teach" style="margin:18px 0 0;color:var(--muted)"><span class="il">inner</span> is a window <i>of a window</i>: <span class="il">tail = nums[3:]</span> starts at index 3, then <span class="il">inner = tail[0:2]</span> takes the first two of <i>that</i> — landing on <span class="il">nums[3:5]</span>. Measured: <span class="il">raw_data(inner) == &nums[3]</span> is <b>true</b>. Iterate it by reference (<span class="il">for &v in inner do v *= 2</span>) and the doubling lands in the backing array: <span class="il">nums</span> becomes <span class="il">[10, 20, 30, 80, 100, 60]</span>.</p>
+    </div>
+
+    <p class="teach" style="margin-top:24px">Each window costs nothing to make — no allocation, no copy, just a fresh 16-byte handle pointing into storage that already exists. The discipline that keeps this safe: the bounds are <b>checked</b>, and a bad one is a real error, not a quiet read of someone else's memory. Pick a way to break it:</p>
+    <nav class="sub" id="boundnav"></nav>
+    <pre id="boundpre"></pre>
+    <p class="teach" id="boundwhy" style="margin-top:16px"></p>
+
+    <p class="teach"><b>The emergent payoff:</b> a slice is so cheap and composable <i>because</i> it carries no storage — and that same fact is the bill from Level 3. One idea, two faces: "owns nothing" is what lets you mint a hundred zero-cost views over one buffer and pass each as a flat 16-byte handle; it's also why each view's life is tied to a backing run you must keep alive. The half-open bounds and the bounds check are what make slicing-everywhere safe to lean on: a window you can prove is in range, and one the runtime stops if you can't.</p>
+
+    <p class="teach" style="margin-top:24px;color:var(--muted)">That's the arc: <b style="color:var(--ink)">L1</b> a slice is a 16-byte <span class="il">{data, len}</span> handle viewing storage elsewhere → <b style="color:var(--ink)">L2</b> that handle <i>aliases</i> the backing, so a write through it sticks and a pass is just 16 bytes → <b style="color:var(--ink)">L3</b> the bill is a borrowed lifetime the handle can't see (Odin guards the obvious dangle, nothing more) → <b style="color:var(--ink)">L4</b> owning nothing is what makes windows free and composable, kept honest by checked half-open bounds.</p>
+  </section>
+
+  <div class="foot">probes reproduce with <span style="color:var(--ink)">odin run … -file</span> · widths, header bytes, outputs &amp; the L3/L4 errors are real compiler output (claims/lessons/06-slices)</div>
+</div>
+
+<script>
+/* ============================================================
+   Each interactive component = one data object + one render fn.
+   Vanilla JS, inline, no libraries.
+   All embedded numbers/bytes/errors come from passing claims
+   under claims/lessons/06-slices/ (see references/verification.md).
+   ============================================================ */
+
+const NUMS = [10,20,30,40,50,60];
+
+/* ---------- LEVEL 1: the 16-byte header, keyed by which slice ----------
+   Measured (claims: sizes, header-anatomy). One representative run:
+     all  : data 0xCF475BF990  len 6   (starts at &nums[0])
+     mid  : data 0xCF475BF998  len 3   (starts at &nums[1]; ptr = all + 8)
+     tail : data 0xCF475BF9A8  len 3   (starts at &nums[3]; ptr = all + 24)
+     head : data 0xCF475BF990  len 2   (starts at &nums[0]; ptr = all)
+   The first 8 header bytes are that address (LE, differs every run); bytes
+   8..15 are the length (stable: 06 / 03 / 03 / 02 then zeros).               */
+const ADDR0 = 0xCF475BF990n;                       // a representative measured base address
+function addrBytesLE(addr){ const out=[]; let a=BigInt(addr); for(let i=0;i<8;i++){ out.push(Number(a & 0xFFn)); a >>= 8n; } return out; }
+function lenBytesLE(n){ const out=[]; let a=BigInt(n); for(let i=0;i<8;i++){ out.push(Number(a & 0xFFn)); a >>= 8n; } return out; }
+
+const SL = {
+  all:  { expr:'nums[:]',    lo:0, len:6 },
+  head: { expr:'nums[:2]',   lo:0, len:2 },
+  mid:  { expr:'nums[1:4]',  lo:1, len:3 },
+  tail: { expr:'nums[3:]',   lo:3, len:3 },
+};
+const SLTEACH = {
+  all:`<code>nums[:]</code> views the whole run: <code>data</code> = the address of <code>nums[0]</code>, <code>len</code> = <b>6</b>. The handle is 16 bytes; the 48 bytes of data are untouched, off to the side.`,
+  head:`<code>nums[:2]</code> starts at the same place as <code>all</code> (<code>data</code> = <code>&nums[0]</code>) but stops sooner — <code>len</code> = <b>2</b>. Only the length field changed; the data pointer is identical.`,
+  mid:`<code>nums[1:4]</code> starts <i>one element in</i>: <code>data</code> is <code>&nums[1]</code>, which is <code>all</code>'s pointer + 8 bytes (one int). <code>len</code> = <b>3</b> (= 4 − 1, the half-open count). The backing bytes never moved — only the handle points elsewhere.`,
+  tail:`<code>nums[3:]</code> starts three elements in: <code>data</code> = <code>&nums[3]</code> = <code>all</code>'s pointer + 24 bytes. <code>len</code> = <b>3</b>. Same data, a handle aimed deeper into it.`,
+};
+let slKey='mid';
+function renderL1(){
+  document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('on',b.dataset.k===slKey));
+  const s=SL[slKey];
+  const addr = ADDR0 + BigInt(s.lo*8);             // each int is 8 bytes; ptr = base + lo*8
+  document.getElementById('hdrlabel').textContent=`${s.expr}   —   16-byte handle {data, len}`;
+  const pb=addrBytesLE(addr), lb=lenBytesLE(s.len);
+  let html='';
+  for(let i=0;i<8;i++){ html+=`<div class="byte b-ptr"><span class="ix">${i}</span><span class="hx">${pb[i].toString(16).padStart(2,'0')}</span></div>`; }
+  for(let i=0;i<8;i++){ const v=lb[i]; html+=`<div class="byte ${v===0?'b-zero':'b-len'}"><span class="ix">${i+8}</span><span class="hx">${v.toString(16).padStart(2,'0')}</span></div>`; }
+  document.getElementById('hdrstrip').innerHTML=html;
+
+  // backing array: highlight the [lo, lo+len) window
+  let bg='';
+  for(let i=0;i<6;i++){ const inview=i>=s.lo && i<s.lo+s.len; const start=i===s.lo;
+    bg+=`<div class="cell ${inview?'inview':''} ${start&&inview?'start':''}"><span class="ci">${i}</span><span class="cv">${NUMS[i]}</span></div>`; }
+  document.getElementById('backgrid').innerHTML=bg;
+  document.getElementById('startcap').innerHTML=`<b>data</b> = 0x${addr.toString(16).toUpperCase()} → &nums[${s.lo}] &nbsp;<span style="color:var(--muted)">(address differs every run)</span>`;
+  document.getElementById('teach').innerHTML=SLTEACH[slKey];
+}
+const nav=document.getElementById('nav');
+[['all','nums[:]'],['head','nums[:2]'],['mid','nums[1:4]'],['tail','nums[3:]']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.k=k; b.textContent=t;
+  b.onclick=()=>{slKey=k;renderL1();}; nav.appendChild(b);
+});
+
+/* ---------- LEVEL 2: two aliasing slices over one backing ----------
+   Measured (claim: alias-write):
+     before:  nums={10,20,30,40,50,60}  mid={20,30,40}  overlap={30,40,50}
+     mid[1]=999  ->  nums={10,20,999,40,50,60}  mid={20,999,40}  overlap={999,40,50}
+   mid[1] == nums[2] == overlap[0]: one location, three names.                */
+const ALIAS = {
+  before: { nums:[10,20,30,40,50,60], hot:-1,
+    verdict:`mid[1], nums[2], and overlap[0] are the <b>same storage</b>. Nothing written yet.` },
+  after:  { nums:[10,20,999,40,50,60], hot:2,
+    verdict:`mid[1] = 999 → it lands once at index 2. nums shows 999, mid shows [20, <b>999</b>, 40], overlap shows [<b>999</b>, 40, 50]. One write, seen under all three names — no copy, no propagation.` },
+};
+let aliasPhase='before';
+function renderL2(){
+  document.querySelectorAll('#aliasnav button').forEach(b=>b.classList.toggle('on',b.dataset.p===aliasPhase));
+  const a=ALIAS[aliasPhase];
+  document.getElementById('aliaslabel').textContent = aliasPhase==='before'
+    ? 'set up: two overlapping views' : 'mid[1] = 999  — written through one view';
+  // backing grid, mid=[1,4), overlap=[2,5); shared = [2,4)
+  let bg='';
+  for(let i=0;i<6;i++){
+    const inMid=i>=1&&i<4, inOv=i>=2&&i<5; const cls=(inMid||inOv)?'inview':'';
+    const hot=i===a.hot?'start':'';
+    bg+=`<div class="cell ${cls} ${hot}"><span class="ci">${i}</span><span class="cv">${a.nums[i]}</span></div>`;
+  }
+  document.getElementById('aliasgrid').innerHTML=bg;
+  document.getElementById('midvw').innerHTML = `[${a.nums.slice(1,4).join(', ')}]  · len 3 · &nums[1]`;
+  document.getElementById('ovvw').innerHTML  = `[${a.nums.slice(2,5).join(', ')}]  · len 3 · &nums[2]`;
+  document.getElementById('aliasverdict').innerHTML = a.verdict;
+}
+const aliasnav=document.getElementById('aliasnav');
+[['before','set up the views'],['after','▸ run mid[1] = 999']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.p=k; b.textContent=t;
+  b.onclick=()=>{aliasPhase=k;renderL2();}; aliasnav.appendChild(b);
+});
+
+/* ---------- LEVEL 3: the dangling-slice animation ----------
+   Backed by claim break-dangling-slice (compile error). This stage illustrates
+   WHY the shape is rejected; the verified error text is in the <pre> above. */
+const DANG = {
+  alive:    { dead:false, label:"inside leak(): local : [4]int = {1,2,3,4} lives in this call frame",
+              slice:`returned slice &rarr; <b>{data → &local[0], len 4}</b> (points into the frame)` },
+  returned: { dead:true,  label:"leak() returned — its stack frame is reclaimed",
+              slice:`returned slice &rarr; <span class="stale">{data → &local[0], len 4} — now stale; data points at reused storage</span>` },
+};
+let dangPhase='alive';
+function renderL3(){
+  document.querySelectorAll('#dangnav button').forEach(b=>b.classList.toggle('on',b.dataset.p===dangPhase));
+  const d=DANG[dangPhase];
+  document.getElementById('danglabel').textContent=d.label;
+  document.getElementById('dangstage').innerHTML =
+    `<div class="frame ${d.dead?'dead':''}"><span class="lbl">leak()'s call frame</span>local : [4]int = {1, 2, 3, 4}${d.dead?' &nbsp;✕ reclaimed':''}</div>
+     <div class="sliceline">${d.slice}</div>
+     <div class="frame"><span class="lbl">caller still holding the slice</span>s : []int &nbsp; ${d.dead?'<span class="stale">→ dangles (len still says 4, data is garbage)</span>':'→ valid (for now)'}</div>`;
+}
+const dangnav=document.getElementById('dangnav');
+[['alive','1 · local is alive'],['returned','2 · proc returns →']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.p=k; b.textContent=t;
+  b.onclick=()=>{dangPhase=k;renderL3();}; dangnav.appendChild(b);
+});
+
+/* ---------- LEVEL 4a: sub-slice composition (measured) ----------
+   Measured (claims: sizes for len; subslice-compose for inner/doubling):
+     nums = {10,20,30,40,50,60}
+     all=nums[:]→len6  head=nums[:2]→len2  mid=nums[1:4]→{20,30,40}len3
+     tail=nums[3:]→{40,50,60}len3  inner=tail[0:2]→{40,50}len2 (== nums[3:5])  */
+const COMPOSE = [
+  ['nums[:]',   '[10, 20, 30, 40, 50, 60]', 6, 'the whole run'],
+  ['nums[:2]',  '[10, 20]',                 2, 'half-open: includes 0, excludes 2'],
+  ['nums[1:4]', '[20, 30, 40]',             3, 'len = 4 − 1'],
+  ['nums[3:]',  '[40, 50, 60]',             3, 'tail'],
+  ['tail[0:2]', '[40, 50]',                 2, 'a window of tail = nums[3:5]'],
+];
+document.getElementById('composestage').innerHTML = COMPOSE.map(([ex,rs,ln,note])=>
+  `<div class="composerow"><span class="ex">${ex}</span><span class="ar">→</span><span class="rs">${rs}</span><span class="ln">len ${ln} · ${note}</span></div>`
+).join('');
+
+/* ---------- LEVEL 4b: the two real bounds errors ----------
+   Verified strings (claims):
+     constant bound  -> break-oob-constant : Index '99' is out of bounds range 0..<6, got 99   (COMPILE error)
+     runtime bound   -> break-oob-runtime  : Invalid slice indices 2:99 is out of range 0..<6  (RUNTIME panic) */
+const BOUND = {
+  constant: {
+    code:"prices: [6]int = {100,200,300,400,500,600}\nbad := [[er]]prices[2:99][[/er]]   [[cm]]// 99 is a compile-time constant[[/cm]]",
+    err:"Error: Index '99' is out of bounds range 0..<6, got 99",
+    kind:'compile error',
+    why:"When the bound is a <b>constant</b>, the compiler can prove <code>99 &gt; 6</code> and the build <b>stops before it ever runs</b>. A whole class of out-of-range windows can't even be compiled." },
+  runtime: {
+    code:"hi := len(os.args) + 98   [[cm]]// ≥ 99, but unknowable at compile time[[/cm]]\nbad := [[er]]prices[2:hi][[/er]]",
+    err:"Invalid slice indices 2:99 is out of range 0..<6",
+    kind:'runtime panic',
+    why:"When the bound <b>can't be proven</b> at compile time, the slice expression carries a runtime check. The build succeeds, then the bad window <b>panics</b> instead of quietly reading past the backing run. (The check can be turned off with <code>-no-bounds-check</code>.)" },
+};
+let boundKey='constant';
+function escHtml(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function renderL4(){
+  document.querySelectorAll('#boundnav button').forEach(b=>b.classList.toggle('on',b.dataset.k===boundKey));
+  const e=BOUND[boundKey];
+  let html = escHtml(e.code)
+    .replace(/\[\[er\]\]/g,'<span class="er">').replace(/\[\[\/er\]\]/g,'</span>')
+    .replace(/\[\[cm\]\]/g,'<span class="cm">').replace(/\[\[\/cm\]\]/g,'</span>');
+  document.getElementById('boundpre').innerHTML =
+    html + `\n\n<span class="cm">// ${e.kind}</span>\n<span class="er">` + escHtml(e.err) + '</span>';
+  document.getElementById('boundwhy').innerHTML = e.why;
+}
+const boundnav=document.getElementById('boundnav');
+[['constant','constant bound (compile)'],['runtime','runtime bound (panic)']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.k=k; b.textContent=t;
+  b.onclick=()=>{boundKey=k;renderL4();}; boundnav.appendChild(b);
+});
+
+/* ---------- level navigation ---------- */
+const LEVELS=[
+  ['1','What it is','a 16-byte {data, len} handle'],
+  ['2','Why use it','aliasing, no copy'],
+  ['3','The bill','a borrowed lifetime'],
+  ['4','Why it composes','free, checked windows'],
+];
+let level='1';
+function setLevel(n){
+  level=n;
+  document.querySelectorAll('.levels button').forEach(b=>b.classList.toggle('on',b.dataset.n===n));
+  for(const [k] of LEVELS){ const el=document.getElementById('s'+k); if(el) el.classList.toggle('on',k===n); }
+  if(n==='1') renderL1();
+  if(n==='2') renderL2();
+  if(n==='3') renderL3();
+  if(n==='4') renderL4();
+}
+const lnav=document.getElementById('levelnav');
+for(const [n,tt,sub] of LEVELS){ const b=document.createElement('button'); b.dataset.n=n;
+  b.innerHTML=`<span class="lv">Level ${n} · ${sub}</span><span class="tt">${tt}</span>`;
+  b.onclick=()=>setLevel(n); lnav.appendChild(b); }
+setLevel('1');
+</script>
+</body>
+</html>

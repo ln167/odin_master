@@ -1,0 +1,5 @@
+filled(3, 7)      -> [7, 7, 7]  len 3
+filled(5, 7)      -> [7, 7, 7, 7, 7]  len 5
+filled(4, 'x')    -> [120, 120, 120, 120]  len 4
+type_of(filled(3,7)) = [3]int
+type_of(filled(5,7)) = [5]int

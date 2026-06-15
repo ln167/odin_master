@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Odin strings — a view over bytes, four levels deep</title>
+<style>
+  :root{
+    --paper:#15130f; --card:#1d1a14; --ink:#ece6d8; --muted:#9a9182;
+    --rule:#332e24; --accent:#5ec8b8; --accent-soft:#1f342f;
+    --tag:#e0875a; --pad:#5a544a; --bad:#e0675a; --bad-soft:#2a1815;
+    --r1:#5ec8b8; --r2:#e0875a; --r3:#c08adf; --r4:#7aa6e0;
+    --mono:"Cascadia Mono","Cascadia Code",Consolas,ui-monospace,"SF Mono",monospace;
+    --serif:-apple-system,"Segoe UI Variable Text","Segoe UI",system-ui,Roboto,"Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper);color:var(--ink)}
+  body{font-family:var(--serif);line-height:1.6;padding:0 20px;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-feature-settings:"kern" 1,"liga" 1}
+  .page{max-width:860px;margin:0 auto;padding:46px 0 90px}
+  .kicker{font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+  h1{font-size:30px;line-height:1.15;margin:0 0 18px;font-weight:600;letter-spacing:-.01em}
+
+  /* level tabs */
+  .levels{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+  .levels button{flex:1;min-width:150px;text-align:left;background:var(--card);border:1px solid var(--rule);
+    color:var(--muted);border-radius:10px;padding:11px 14px;cursor:pointer;transition:.12s;font-family:var(--serif)}
+  .levels button:hover{border-color:var(--accent)}
+  .levels button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--ink)}
+  .levels .lv{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);display:block;margin-bottom:3px}
+  .levels .tt{font-size:14px}
+  .rule{height:1px;background:var(--rule);margin:22px 0 26px}
+
+  .deck{color:var(--muted);font-size:17px;margin:0 0 24px;line-height:1.5}
+  .deck b{color:var(--ink)}
+  h2{font-size:21px;margin:0 0 14px;font-weight:600}
+  p.teach{font-size:16px;line-height:1.62;max-width:46em}
+  p.teach code,.il{font-family:var(--mono);font-size:.86em;background:#2a2519;padding:1px 5px;border-radius:4px}
+  .teach b{color:var(--tag)}
+  .section{display:none}
+  .section.on{display:block}
+
+  nav.sub{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;font-family:var(--mono);font-size:13px}
+  nav.sub button{background:var(--card);border:1px solid var(--rule);color:var(--muted);border-radius:8px;padding:8px 14px;cursor:pointer;transition:.12s}
+  nav.sub button:hover{color:var(--ink);border-color:var(--accent)}
+  nav.sub button.on{color:var(--ink);border-color:var(--accent);background:var(--accent-soft)}
+  .hint{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin:0 0 20px}
+
+  .canvas{background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:30px 28px}
+  .slotlabel{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
+
+  /* the header view (L1): two boxes, ptr -> the byte buffer */
+  .hdrrow{display:flex;align-items:stretch;gap:16px;flex-wrap:wrap;margin-bottom:8px}
+  .hdrcell{background:#1a1710;border:1px solid var(--rule);border-radius:12px;padding:14px 14px 12px;min-width:150px}
+  .hdrcell.live{border-color:var(--accent)}
+  .hdrcell .nm{font-family:var(--mono);font-size:12px;color:var(--ink);margin-bottom:8px}
+  .hdrword{font-family:var(--mono);font-size:12px;border-radius:7px;padding:8px 10px;margin:5px 0}
+  .hdrword.ptr{background:#3a2417;border:1px solid var(--tag);color:#f0b48a}
+  .hdrword.len{background:var(--accent-soft);border:1px solid var(--accent);color:#cdeee7}
+  .arrowto{align-self:center;font-family:var(--mono);color:var(--tag);font-size:22px;flex:none}
+  @media(max-width:640px){.arrowto{transform:rotate(90deg);margin:2px auto}}
+
+  /* the byte strip (variable cells, colored by which rune owns the byte) */
+  .strip{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+  .byte{width:50px;aspect-ratio:1/1.2;border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:var(--mono);position:relative;border:1px solid transparent;transition:.18s}
+  .byte .hx{font-size:13px;font-weight:600}
+  .byte .ix{position:absolute;top:2px;left:4px;font-size:8px;color:var(--muted);opacity:.75}
+  .byte.r1{background:rgba(94,200,184,.13);border-color:var(--r1);color:#bfe9e2}
+  .byte.r2{background:rgba(224,135,90,.13);border-color:var(--r2);color:#f0c0a2}
+  .byte.r3{background:rgba(192,138,223,.13);border-color:var(--r3);color:#dcc2ef}
+  .byte.r4{background:rgba(122,166,224,.13);border-color:var(--r4);color:#c0d4ef}
+  .byte.dim{opacity:.32}
+  .byte.cont{border-style:dashed}
+
+  .runerow{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:2px}
+  .runebrace{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;font-family:var(--mono);font-size:13px;border-bottom:2px solid;border-radius:3px;padding-bottom:2px;height:30px}
+  .runebrace.r1{border-color:var(--r1);color:#bfe9e2} .runebrace.r2{border-color:var(--r2);color:#f0c0a2}
+  .runebrace.r3{border-color:var(--r3);color:#dcc2ef} .runebrace.r4{border-color:var(--r4);color:#c0d4ef}
+  .runebrace small{font-size:9px;color:var(--muted)}
+
+  .legend{display:flex;gap:18px;flex-wrap:wrap;margin-top:20px;font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+  .legend span{display:flex;align-items:center;gap:7px}
+  .chip{width:13px;height:13px;border-radius:3px;border:1px solid}
+  .c1{background:rgba(94,200,184,.13);border-color:var(--r1)} .c2{background:rgba(224,135,90,.13);border-color:var(--r2)}
+  .c3{background:rgba(192,138,223,.13);border-color:var(--r3)} .c4{background:rgba(122,166,224,.13);border-color:var(--r4)}
+
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:26px}
+  @media(max-width:680px){.cols{grid-template-columns:1fr}}
+  .panel h3{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 12px;font-weight:600}
+  .sizes{font-family:var(--mono);font-size:13px;line-height:2}
+  .sizes .n{color:var(--accent);font-weight:600}
+  .sizes .big{color:var(--tag);font-weight:600}
+
+  /* the rune-walk stepper readout (L2) */
+  .walkbox{font-family:var(--mono);font-size:13px;background:#1a1710;border:1px solid var(--rule);border-radius:10px;padding:14px 16px;margin-top:14px;line-height:1.9}
+  .walkbox .k{color:var(--muted)}
+  .walkbox .iv{color:var(--accent);font-weight:600}
+  .walkbox .rv{color:var(--tag);font-weight:600}
+  .walkbox .jump{color:var(--r3);font-weight:600}
+
+  pre{font-family:var(--mono);font-size:12.5px;line-height:1.7;background:#1a1710;border:1px solid var(--rule);border-radius:10px;padding:16px 18px;overflow:auto;margin:22px 0 0;white-space:pre-wrap}
+  pre .cm{color:#6f6655}
+  pre .kw{color:var(--accent)}
+  pre .er{color:var(--bad)}
+  pre .ok{color:var(--accent)}
+
+  /* proportional widths (L4 cstring vs string) */
+  .bar{height:30px;border-radius:6px;display:flex;align-items:center;font-family:var(--mono);font-size:12px;padding-left:10px;color:#0e0c08;font-weight:600;margin:6px 0;transition:width .3s}
+  .bar.string{background:var(--accent)}
+  .bar.cstring{background:var(--tag)}
+  .barrow{display:flex;align-items:center;gap:10px}
+  .barrow .lab{font-family:var(--mono);font-size:11px;color:var(--muted);width:120px;flex:none}
+
+  .note{background:#1a1710;border:1px solid var(--rule);border-left:3px solid var(--tag);
+    border-radius:10px;padding:15px 18px;margin-top:24px;font-size:15px;line-height:1.6;color:var(--muted)}
+  .note b{color:var(--ink)}
+  .note .h{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--tag);display:block;margin-bottom:8px}
+  .foot{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;margin-top:34px}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="kicker">Odin · strings &amp; runes</div>
+  <h1>A string, four levels deep</h1>
+
+  <div class="levels" id="levelnav"></div>
+  <div class="rule"></div>
+
+  <!-- ===================== LEVEL 1 — WHAT IT IS ===================== -->
+  <section class="section" id="s1">
+    <p class="deck">A <span class="il">string</span> is <b>a 16-byte header that points at a run of UTF-8 bytes</b> — a data pointer plus a byte count. The header is not the text; it's <i>where the text lives</i> and <i>how many bytes long it is</i>. The bytes themselves are read-only. Pick a string and watch its bytes light up.</p>
+    <div class="hint">Real bytes &amp; sizes, measured from a compiled Odin program. The data pointer differs every run, so it's shown as one representative run; the length and the UTF-8 bytes are stable.</div>
+
+    <nav class="sub" id="strnav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="hdrlabel"></div>
+      <div class="hdrrow">
+        <div class="hdrcell live">
+          <div class="nm">s : string &nbsp; <span style="color:var(--muted)">— 16 bytes</span></div>
+          <div class="hdrword ptr" id="hdr-ptr">data &rarr; 0x… (8 bytes)</div>
+          <div class="hdrword len" id="hdr-len">len = … (8 bytes)</div>
+        </div>
+        <div class="arrowto">&rsaquo;</div>
+        <div class="hdrcell" style="flex:1">
+          <div class="nm" id="buflabel">the UTF-8 byte buffer</div>
+          <div class="runerow" id="runerow"></div>
+          <div class="strip" id="strip"></div>
+        </div>
+      </div>
+      <div class="legend" id="legend"></div>
+    </div>
+
+    <div class="cols">
+      <div class="panel"><h3>Sizes (size_of)</h3>
+        <div class="sizes">
+          string&nbsp;&nbsp;= <span class="big">16</span> <span style="color:var(--muted)">(ptr 8 + len 8)</span><br>
+          rune&nbsp;&nbsp;&nbsp;&nbsp;= <span class="n">4</span> <span style="color:var(--muted)">(one code point)</span><br>
+          u8&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= <span class="n">1</span> <span style="color:var(--muted)">(one byte)</span><br><br>
+          <span style="color:var(--muted)">The 16 is fixed no matter how long the text is — only the buffer it points at grows.</span>
+        </div>
+      </div>
+      <div class="panel"><h3>What you're seeing</h3><p class="teach" id="teach1"></p></div>
+    </div>
+  </section>
+
+  <!-- ============= LEVEL 2 — BYTES, NOT CHARACTERS ============= -->
+  <section class="section" id="s2">
+    <p class="deck">Level 1 was <i>what it holds</i>. Level 2 is the consequence that bites: <b>the length is a count of bytes, and one character can be several bytes.</b> So <span class="il">len(s)</span> is not the number of characters, and stepping through a string is stepping through bytes.</p>
+    <p class="teach">In <span class="il">"Aé猫🐈"</span> the four characters take <b>1, 2, 3, and 4 bytes</b> — ten bytes for four characters. <span class="il">len(s)</span> is <b>10</b>; the actual character count (<span class="il">utf8.rune_count</span>) is <b>4</b>. The decoder reads one character at a time, and a <span class="il">rune</span> — Odin's 4-byte type for a single Unicode code point — is what you get for each. Step the loop and watch the byte index <b>jump by the width</b> of the character just read:</p>
+
+    <nav class="sub" id="walknav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="walklabel"></div>
+      <div class="runerow" id="walk-runerow"></div>
+      <div class="strip" id="walk-strip"></div>
+      <div class="walkbox" id="walkbox"></div>
+    </div>
+
+    <p class="teach"><b>The mechanism:</b> a <span class="il">for r, i in s</span> loop is a <i>decoder</i>, not a counter. Each step reads one UTF-8 character, hands you the decoded <span class="il">rune</span> in <span class="il">r</span> and the <b>byte offset</b> where it started in <span class="il">i</span>, then advances <span class="il">i</span> by however many bytes that character occupied — 1 for <span class="il">A</span>, then 2 for <span class="il">é</span>, so <span class="il">i</span> goes <b>0 &rarr; 1 &rarr; 3 &rarr; 6</b>, never landing on <b>2</b>, <b>4</b>, <b>5</b>, <b>7</b>, <b>8</b>, or <b>9</b>. Those skipped indices are the <i>continuation bytes</i> in the middle of a character. The loop knows the width from the leading byte's bit pattern, so it always lands on a character boundary.</p>
+
+    <div class="note">
+      <span class="h">the trap: s[i] is a byte, not a character</span>
+      Indexing reaches a single <b>byte</b>, typed <span class="il">u8</span> — <span class="il">s[i]</span> is "give me byte <span class="il">i</span>", never "give me character <span class="il">i</span>". For <span class="il">"café"</span> (5 bytes), the <span class="il">é</span> lives in bytes 3 and 4 as the pair <span class="il">195, 169</span>; index either one and you get half of a character, a number that is no letter at all. When you want characters, you <i>decode</i> (the <span class="il">for r, i in s</span> loop, or <span class="il">utf8.rune_at</span>); when you want raw storage, you index. They are different questions with different answers.
+    </div>
+  </section>
+
+  <!-- ===================== LEVEL 3 — THE COST / SHARP EDGES ===================== -->
+  <section class="section" id="s3">
+    <p class="deck">Level 2 told you indexing is by byte. Level 3 is the bill that follows: <b>because a slice is a byte range, it can cut a character in half — and because the bytes are read-only, you cannot edit a string in place.</b> Two sharp edges, both caught honestly.</p>
+    <p class="teach"><b>Edge 1 — a byte slice can land mid-character.</b> Slicing is <span class="il">s[lo:hi]</span> by <i>byte</i> offset. Slice <span class="il">"café"[0:4]</span> and you keep <span class="il">c a f</span> plus the <b>first half</b> of <span class="il">é</span> — a dangling lead byte <span class="il">0xc3</span> with its partner left behind. That orphan is not a valid character; decoding it gives <span class="il">U+FFFD</span>, the replacement character. The slice is silent about it — the cut is lossy and nothing warns you:</p>
+    <pre>s := <span class="kw">"café"</span>           <span class="cm">// 5 bytes: 63 61 66 c3 a9   (é is c3 a9)</span>
+cut := s[<span class="kw">0</span>:<span class="kw">4</span>]         <span class="cm">// keeps 63 61 66 c3 — half of é</span>
+
+len(cut) = <span class="ok">4</span>
+last byte of cut = <span class="er">0xc3</span>   <span class="cm">// a lead byte with no continuation</span>
+decode of the orphan: <span class="er">U+FFFD</span>  valid=<span class="er">false</span></pre>
+    <p class="teach">The fix is to cut on boundaries you found by <i>decoding</i> — the byte index <span class="il">i</span> from a <span class="il">for r, i in s</span> loop is always a valid character boundary, so slicing at one of those never splits a character.</p>
+
+    <p class="teach" style="margin-top:26px"><b>Edge 2 — the bytes are read-only.</b> A string is a <i>view</i>; you cannot write through it. Try to overwrite a byte and the build stops before it ever runs:</p>
+    <pre>s := <span class="kw">"héllo"</span>
+s[<span class="kw">0</span>] = <span class="kw">'H'</span>
+
+<span class="er">Error: Cannot assign to 's[0]'</span></pre>
+    <p class="teach"><b>The fix:</b> to change text you build a <i>new</i> buffer. <span class="il">strings.concatenate</span>, <span class="il">strings.clone</span>, and the builder in <span class="il">core:strings</span> each allocate a fresh run of bytes through <span class="il">context.allocator</span> and hand you back a string pointing at it — which you then <span class="il">delete</span> when done (lesson 07b's <span class="il">defer</span> pairs with this perfectly). The original is never mutated; you produce a replacement.</p>
+
+    <div class="note">
+      <span class="h">the quiet edge: the bytes are owned by someone</span>
+      A string's header points at a buffer it does <b>not</b> own — the bytes might live in the program binary (a literal), in an allocator's memory, or inside another buffer. The string carries no lifetime; if you hold one past the point its buffer is freed or reused, the pointer dangles and you read whatever is there now. The safe move when a string must outlive its source is to <span class="il">strings.clone</span> a copy you own and <span class="il">defer delete</span> it.
+    </div>
+  </section>
+
+  <!-- ============= LEVEL 4 — THE PAYOFF + cstring ============= -->
+  <section class="section" id="s4">
+    <p class="deck">The last level is the payoff: <b>because the header carries the length, the string already knows where it ends</b> — and that one stored number is what makes correct text handling cheap and the boundary type, <span class="il">cstring</span>, the rare exception rather than the rule.</p>
+    <p class="teach">Carrying the byte count in the header means three things come for free. <b>One:</b> the end is known without scanning — no walking the bytes looking for a terminator, because the length is right there. <b>Two:</b> a slice <span class="il">s[lo:hi]</span> is just a new <i>(pointer, length)</i> pair aimed into the same buffer — no copy, and the sub-string knows its own length too. <b>Three:</b> the <span class="il">for r, i in s</span> decoder uses that length as its hard stop, so iteration is bounded and lands on every character boundary correctly, including the multi-byte ones from Level 2.</p>
+
+    <p class="teach">The one place the length is <i>not</i> there is <span class="il">cstring</span> — the NUL-terminated variant you use only at a foreign-library boundary. It is <b>8 bytes, just a pointer</b>: half the size of a <span class="il">string</span>, because it drops the length word and instead marks the end with a trailing NUL byte. The cost shows up the moment you ask its length — there's no stored count, so <span class="il">len</span> has to scan forward to the NUL to find it:</p>
+
+    <div class="canvas">
+      <div class="slotlabel">the two string types, to scale (size_of)</div>
+      <div class="barrow"><div class="lab">string</div><div style="flex:1"><div class="bar string" id="bar-string">16 bytes &nbsp;= ptr(8) + len(8)</div></div></div>
+      <div class="barrow"><div class="lab">cstring</div><div style="flex:1"><div class="bar cstring" id="bar-cstring">8 bytes = ptr only</div></div></div>
+      <div class="sizes" style="margin-top:14px">
+        <span class="n">len(c)</span> on a cstring scans to the NUL &rarr; <span class="n">6</span> for <span class="il" style="background:#2a2519;padding:1px 5px;border-radius:4px">"héllo"</span>; round-tripped to a real <span class="il" style="background:#2a2519;padding:1px 5px;border-radius:4px">string</span> the length (<span class="n">6</span>) now sits in the header, no scan needed.
+      </div>
+    </div>
+
+    <p class="teach"><b>The emergent payoff:</b> the stored length is the whole reason a string in Odin is a <i>safe, cheap value to pass around</i>. You hand a procedure a string and it knows the exact extent of the text — it can iterate it, slice it, and never run off the end, all without scanning and without copying. The terminator-based form still exists for talking to outside libraries that expect it, but it is the special case you reach for deliberately, not the default — the default already knows how long it is.</p>
+
+    <p class="teach" style="margin-top:24px;color:var(--muted)">That's the arc: <b style="color:var(--ink)">L1</b> a string is a 16-byte header — a pointer plus a byte count — over read-only UTF-8 &rarr; <b style="color:var(--ink)">L2</b> that count is <i>bytes</i>, and a character can span several, so iteration decodes and the index jumps &rarr; <b style="color:var(--ink)">L3</b> the bill: a byte slice can cut a character in half, and the bytes can't be edited in place &rarr; <b style="color:var(--ink)">L4</b> the stored length is the payoff — the end is known, slices are free, iteration is bounded; <span class="il">cstring</span> is the 8-byte terminator-based exception for foreign boundaries.</p>
+  </section>
+
+  <div class="foot">probes reproduce with <span style="color:var(--ink)">odin run</span> · sizes, bytes, the rune walk &amp; the L3 errors are real compiler output (claims/lessons/04-strings-and-runes)</div>
+</div>
+
+<script>
+/* ============================================================
+   Each interactive component = one data object + one render fn.
+   Vanilla JS, inline, no libraries.
+   All embedded sizes / bytes / outputs / errors come from passing
+   claims under claims/lessons/04-strings-and-runes/.
+   ============================================================ */
+
+/* ---------- shared: a measured string + its UTF-8 byte breakdown ----------
+   Measured (claim multibyte-walk): "Aé猫🐈"
+     len = 10, rune_count = 4
+     bytes: 41 c3 a9 e7 8c ab f0 9f 90 88
+     walk:  i=0 A  width1 | i=1 é width2 | i=3 猫 width3 | i=6 🐈 width4
+   Measured (claim header-layout): len field = 0a 00 .. (=10), data ptr nondeterministic.
+   Measured (claim sizes): string=16, rune=4, u8=1, cstring=8.                        */
+const STRINGS = {
+  rich: {
+    text:'Aé猫🐈', bytes:[0x41,0xc3,0xa9,0xe7,0x8c,0xab,0xf0,0x9f,0x90,0x88],
+    runes:[ {ch:'A',start:0,w:1,cp:'U+0041'}, {ch:'é',start:1,w:2,cp:'U+00E9'},
+            {ch:'猫',start:3,w:3,cp:'U+732B'}, {ch:'🐈',start:6,w:4,cp:'U+1F408'} ],
+    note:`Ten bytes, four characters. <code>len</code> = <b>10</b>, <code>rune_count</code> = <b>4</b>. Each character takes a different number of bytes (1, 2, 3, 4), and the header's length counts the <b>bytes</b>, not the characters.` },
+  cafe: {
+    text:'café', bytes:[0x63,0x61,0x66,0xc3,0xa9],
+    runes:[ {ch:'c',start:0,w:1,cp:'U+0063'}, {ch:'a',start:1,w:1,cp:'U+0061'},
+            {ch:'f',start:2,w:1,cp:'U+0066'}, {ch:'é',start:3,w:2,cp:'U+00E9'} ],
+    note:`Five bytes, four characters. The <code>é</code> is the byte pair <b>c3 a9</b> (195, 169) — index either one and you get half a character. <code>len</code> = <b>5</b>, <code>rune_count</code> = <b>4</b>.` },
+  ascii: {
+    text:'hi', bytes:[0x68,0x69],
+    runes:[ {ch:'h',start:0,w:1,cp:'U+0068'}, {ch:'i',start:1,w:1,cp:'U+0069'} ],
+    note:`Pure ASCII: every character is exactly one byte, so here <code>len</code> = <code>rune_count</code> = <b>2</b>. This is the only case where byte count and character count agree — the moment any character needs more than one byte, they part ways.` },
+};
+function runeClass(idx){ return 'r'+(((idx)%4)+1); }
+/* which rune owns byte b? */
+function ownerOf(runes, b){ for(let k=0;k<runes.length;k++){ const r=runes[k]; if(b>=r.start && b<r.start+r.w) return k; } return -1; }
+
+/* ---------- LEVEL 1: header + byte strip ---------- */
+let curStr='rich';
+function renderL1(){
+  document.querySelectorAll('#strnav button').forEach(b=>b.classList.toggle('on',b.dataset.s===curStr));
+  const S=STRINGS[curStr];
+  document.getElementById('hdrlabel').textContent=`s = "${S.text}"   —   string is a 16-byte header`;
+  document.getElementById('hdr-ptr').innerHTML=`data &rarr; 0x… &nbsp;<span style="color:var(--muted)">(8 bytes, differs every run)</span>`;
+  document.getElementById('hdr-len').innerHTML=`len = <b style="color:#cdeee7">${S.bytes.length}</b> &nbsp;<span style="color:var(--muted)">(8 bytes, the byte count)</span>`;
+  document.getElementById('buflabel').innerHTML=`the UTF-8 byte buffer &nbsp;<span style="color:var(--muted)">— ${S.bytes.length} bytes, ${S.runes.length} characters</span>`;
+  // rune braces
+  let rr='';
+  for(let k=0;k<S.runes.length;k++){ const r=S.runes[k];
+    rr+=`<div class="runebrace ${runeClass(k)}" style="width:${r.w*50 + (r.w-1)*6}px;flex:none">${r.ch}<small>${r.w}B</small></div>`; }
+  document.getElementById('runerow').innerHTML=rr;
+  // bytes
+  let s='';
+  for(let b=0;b<S.bytes.length;b++){ const owner=ownerOf(S.runes,b); const r=S.runes[owner];
+    const cont = b>r.start; // continuation byte
+    s+=`<div class="byte ${runeClass(owner)} ${cont?'cont':''}"><span class="ix">${b}</span><span class="hx">${S.bytes[b].toString(16).padStart(2,'0')}</span></div>`; }
+  document.getElementById('strip').innerHTML=s;
+  document.getElementById('legend').innerHTML=
+    `<span><i class="chip c1"></i> char 1</span><span><i class="chip c2"></i> char 2</span>`+
+    (S.runes.length>2?`<span><i class="chip c3"></i> char 3</span>`:'')+
+    (S.runes.length>3?`<span><i class="chip c4"></i> char 4</span>`:'')+
+    `<span style="color:var(--muted)">dashed = continuation byte (mid-character)</span>`;
+  document.getElementById('teach1').innerHTML=S.note;
+}
+const strnav=document.getElementById('strnav');
+[['rich','"Aé猫🐈" (1·2·3·4 bytes)'],['cafe','"café"'],['ascii','"hi" (ASCII)']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.s=k; b.textContent=t;
+  b.onclick=()=>{curStr=k;renderL1();}; strnav.appendChild(b);
+});
+
+/* ---------- LEVEL 2: the rune-walk stepper ---------- */
+const WALK=STRINGS.rich;          // the 1/2/3/4-byte string
+let walkStep=0;                   // 0..runes.length (0 = before start)
+function renderL2(){
+  document.querySelectorAll('#walknav button').forEach(b=>b.classList.toggle('on',+b.dataset.k===walkStep));
+  // rune braces (always shown)
+  let rr='';
+  for(let k=0;k<WALK.runes.length;k++){ const r=WALK.runes[k];
+    rr+=`<div class="runebrace ${runeClass(k)}" style="width:${r.w*50 + (r.w-1)*6}px;flex:none;opacity:${k<walkStep?1:.4}">${r.ch}<small>i=${r.start}</small></div>`; }
+  document.getElementById('walk-runerow').innerHTML=rr;
+  // bytes: highlight the rune read at this step, dim the not-yet-read
+  let s='';
+  for(let b=0;b<WALK.bytes.length;b++){ const owner=ownerOf(WALK.runes,b);
+    const read = owner < walkStep;
+    s+=`<div class="byte ${runeClass(owner)} ${read?'':'dim'} ${b>WALK.runes[owner].start?'cont':''}"><span class="ix">${b}</span><span class="hx">${WALK.bytes[b].toString(16).padStart(2,'0')}</span></div>`; }
+  document.getElementById('walk-strip').innerHTML=s;
+  // readout
+  if(walkStep===0){
+    document.getElementById('walklabel').textContent='before the loop — i starts at 0';
+    document.getElementById('walkbox').innerHTML=`<span class="k">for r, i in s { ... }</span> &nbsp; — press the steps to advance the decoder. <span class="k">i</span> is the <span class="iv">byte offset</span>, not a 0..N counter.`;
+  } else {
+    const r=WALK.runes[walkStep-1];
+    const next = walkStep<WALK.runes.length ? WALK.runes[walkStep].start : WALK.bytes.length;
+    document.getElementById('walklabel').textContent=`step ${walkStep} of ${WALK.runes.length} — read one character`;
+    document.getElementById('walkbox').innerHTML=
+      `<span class="k">i =</span> <span class="iv">${r.start}</span> &nbsp; <span class="k">r =</span> <span class="rv">${r.ch}</span> &nbsp; <span class="k">(${r.cp}, ${r.w} byte${r.w>1?'s':''})</span><br>`+
+      `<span class="k">next i jumps to</span> <span class="jump">${next}</span> <span class="k">— advanced by ${r.w} (the character's width)</span>`+
+      (r.w>1?` <span class="k">— skipping the ${r.w-1} continuation byte${r.w>2?'s':''}</span>`:'');
+  }
+}
+const walknav=document.getElementById('walknav');
+const walkLabels=['start','1 · A','2 · é','3 · 猫','4 · 🐈'];
+walkLabels.forEach((t,k)=>{
+  const b=document.createElement('button'); b.dataset.k=k; b.textContent=t;
+  b.onclick=()=>{walkStep=k;renderL2();}; walknav.appendChild(b);
+});
+
+/* ---------- level navigation ---------- */
+const LEVELS=[
+  ['1','What it is','a 16-byte header over bytes'],
+  ['2','The gotcha','length is bytes, not chars'],
+  ['3','The bill','mid-rune cuts · read-only'],
+  ['4','The payoff','the length is stored'],
+];
+let level='1';
+function setLevel(n){
+  level=n;
+  document.querySelectorAll('.levels button').forEach(b=>b.classList.toggle('on',b.dataset.n===n));
+  for(const [k] of LEVELS){ const el=document.getElementById('s'+k); if(el) el.classList.toggle('on',k===n); }
+  if(n==='1') renderL1();
+  if(n==='2') renderL2();
+}
+const lnav=document.getElementById('levelnav');
+for(const [n,tt,sub] of LEVELS){ const b=document.createElement('button'); b.dataset.n=n;
+  b.innerHTML=`<span class="lv">Level ${n} · ${sub}</span><span class="tt">${tt}</span>`;
+  b.onclick=()=>setLevel(n); lnav.appendChild(b); }
+setLevel('1');
+</script>
+</body>
+</html>

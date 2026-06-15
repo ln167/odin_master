@@ -1,0 +1,6 @@
+size_of(int)              = 8
+size_of(^int)             = 8
+size_of(^Player)          = 8
+size_of(^[dynamic]string) = 8
+size_of([^]int)           = 8
+size_of([]int)            = 16

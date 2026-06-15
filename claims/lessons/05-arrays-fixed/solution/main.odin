@@ -20,7 +20,9 @@ main :: proc() {
 	q := Vec3{10, 20, 30}
 	fmt.println("p + q =", p + q)
 
+
 	// 5. a slice (view) of the middle two elements.
 	mid := a[1:3]
 	fmt.println("a[1:3] =", mid, "len:", len(mid))
 }
+

@@ -1,0 +1,3 @@
+data ptr (bytes 0-7): <addr>
+len field (bytes 8-15): 0a 00 00 00 00 00 00 00
+len(s) = 10

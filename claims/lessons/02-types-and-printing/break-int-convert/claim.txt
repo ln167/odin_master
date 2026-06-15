@@ -1,0 +1,1 @@
+fails main.odin Cannot assign value 'x' of type 'int' to 'u8'

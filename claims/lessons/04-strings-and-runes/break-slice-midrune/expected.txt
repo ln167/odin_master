@@ -1,0 +1,3 @@
+len(cut) = 4
+last byte of cut = 0xc3 (a lead byte with no continuation)
+decode of the orphan: U+FFFD  valid=false

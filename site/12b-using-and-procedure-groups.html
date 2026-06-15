@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Odin — using &amp; procedure groups, four levels deep</title>
+<style>
+  :root{
+    --paper:#15130f; --card:#1d1a14; --ink:#ece6d8; --muted:#9a9182;
+    --rule:#332e24; --accent:#5ec8b8; --accent-soft:#1f342f;
+    --tag:#e0875a; --pad:#5a544a; --bad:#e0675a; --bad-soft:#2a1815;
+    --mono:"Cascadia Mono","Cascadia Code",Consolas,ui-monospace,"SF Mono",monospace;
+    --serif:-apple-system,"Segoe UI Variable Text","Segoe UI",system-ui,Roboto,"Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper);color:var(--ink)}
+  body{font-family:var(--serif);line-height:1.6;padding:0 20px;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-feature-settings:"kern" 1,"liga" 1}
+  .page{max-width:860px;margin:0 auto;padding:46px 0 90px}
+  .kicker{font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+  h1{font-size:30px;line-height:1.15;margin:0 0 18px;font-weight:600;letter-spacing:-.01em}
+
+  /* level tabs */
+  .levels{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+  .levels button{flex:1;min-width:150px;text-align:left;background:var(--card);border:1px solid var(--rule);
+    color:var(--muted);border-radius:10px;padding:11px 14px;cursor:pointer;transition:.12s;font-family:var(--serif)}
+  .levels button:hover{border-color:var(--accent)}
+  .levels button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--ink)}
+  .levels .lv{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);display:block;margin-bottom:3px}
+  .levels .tt{font-size:14px}
+  .rule{height:1px;background:var(--rule);margin:22px 0 26px}
+
+  .deck{color:var(--muted);font-size:17px;margin:0 0 24px;line-height:1.5}
+  .deck b{color:var(--ink)}
+  h2{font-size:21px;margin:0 0 14px;font-weight:600}
+  p.teach{font-size:16px;line-height:1.62;max-width:46em}
+  p.teach code,.il{font-family:var(--mono);font-size:.86em;background:#2a2519;padding:1px 5px;border-radius:4px}
+  .teach b{color:var(--tag)}
+  .section{display:none}
+  .section.on{display:block}
+
+  nav.sub{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;font-family:var(--mono);font-size:13px}
+  nav.sub button{background:var(--card);border:1px solid var(--rule);color:var(--muted);border-radius:8px;padding:8px 14px;cursor:pointer;transition:.12s}
+  nav.sub button:hover{color:var(--ink);border-color:var(--accent)}
+  nav.sub button.on{color:var(--ink);border-color:var(--accent);background:var(--accent-soft)}
+  .hint{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin:0 0 20px}
+
+  .canvas{background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:30px 28px}
+  .slotlabel{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
+
+  /* the promotion diagram (Level 1) */
+  .promo{display:flex;align-items:stretch;gap:20px;flex-wrap:wrap}
+  .pcol{flex:1;min-width:240px;background:#1a1710;border:1px solid var(--rule);border-radius:12px;padding:16px 16px 14px}
+  .pcol.outer{border-color:var(--accent)}
+  .pcol .nm{font-family:var(--mono);font-size:13px;color:var(--ink);margin-bottom:3px}
+  .pcol .ty{font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:12px}
+  .frow{font-family:var(--mono);font-size:13px;border-radius:8px;padding:8px 11px;margin:6px 0;border:1px solid var(--rule);display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .frow.named{background:#241f17;border-color:#5a4530;color:#c9b89a}
+  .frow.inner{background:var(--accent-soft);border-color:var(--accent);color:#cdeee7}
+  .frow.own{background:#3a2417;border-color:var(--tag);color:#f0b48a}
+  .frow .tg{font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;opacity:.85}
+  .promoarrow{align-self:center;font-family:var(--mono);color:var(--accent);font-size:22px;flex:none}
+  @media(max-width:640px){.promoarrow{transform:rotate(90deg);margin:4px auto}}
+  .reach{font-family:var(--mono);font-size:12px;color:var(--muted);margin:14px 0 0;text-align:center}
+  .reach b{color:var(--accent)}
+
+  .legend{display:flex;gap:18px;flex-wrap:wrap;margin-top:18px;font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+  .legend span{display:flex;align-items:center;gap:7px}
+  .chip{width:13px;height:13px;border-radius:3px;border:1px solid}
+  .c-inner{background:var(--accent-soft);border-color:var(--accent)}
+  .c-own{background:#3a2417;border-color:var(--tag)}
+  .c-named{background:#241f17;border-color:#5a4530}
+
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:26px}
+  @media(max-width:680px){.cols{grid-template-columns:1fr}}
+  .panel h3{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 12px;font-weight:600}
+  .sizes{font-family:var(--mono);font-size:13px;line-height:2}
+  .sizes .n{color:var(--accent);font-weight:600}
+  .sizes .big{color:var(--tag);font-weight:600}
+
+  pre{font-family:var(--mono);font-size:12.5px;line-height:1.7;background:#1a1710;border:1px solid var(--rule);border-radius:10px;padding:16px 18px;overflow:auto;margin:22px 0 0;white-space:pre-wrap}
+  pre .cm{color:#6f6655}
+  pre .kw{color:var(--accent)}
+  pre .er{color:var(--bad)}
+  pre .ok{color:var(--accent)}
+
+  /* the three forms (Level 2) */
+  .forms{display:grid;grid-template-columns:1fr;gap:14px;margin-top:6px}
+  .form{background:#1a1710;border:1px solid var(--rule);border-radius:11px;padding:14px 16px}
+  .form h4{font-family:var(--mono);font-size:12px;margin:0 0 8px;color:var(--accent);font-weight:600}
+  .form .desc{font-size:14.5px;color:var(--muted);line-height:1.55}
+  .form code,.form .il{font-family:var(--mono);font-size:.85em;background:#2a2519;padding:1px 5px;border-radius:4px}
+
+  /* dispatch table (Level 3) */
+  table.dispatch{width:100%;border-collapse:collapse;font-size:14px;margin-top:6px}
+  table.dispatch th,table.dispatch td{text-align:left;padding:11px 12px;border-bottom:1px solid var(--rule);vertical-align:middle}
+  table.dispatch th{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+  table.dispatch td.call{font-family:var(--mono);color:var(--ink);white-space:nowrap}
+  table.dispatch td.arrow{font-family:var(--mono);color:var(--tag);text-align:center}
+  table.dispatch td.picked{font-family:var(--mono);color:var(--accent);white-space:nowrap}
+  table.dispatch tr.live td{background:var(--accent-soft)}
+  table.dispatch tr.live td.picked{color:#cdeee7;font-weight:600}
+  table.dispatch td.res{font-family:var(--mono);color:var(--muted);text-align:right}
+
+  .trace{font-family:var(--mono);font-size:12.5px;background:#1a1710;border:1px solid var(--rule);border-radius:10px;padding:14px 16px;margin-top:18px;line-height:1.8;min-height:64px}
+  .trace .picked{color:var(--accent)}
+  .trace .dim{color:#6f6655}
+
+  /* "the wrong way" / closed-set list (Level 4) */
+  .candrow{font-family:var(--mono);font-size:12.5px;border-radius:8px;padding:9px 12px;margin:6px 0;border:1px solid var(--rule);background:#1a1710;display:flex;justify-content:space-between;gap:10px}
+  .candrow .v{color:#8a7a66}
+  .candrow.reject{border-color:#4a342a}
+  .candrow .x{color:var(--bad)}
+
+  .note{background:#1a1710;border:1px solid var(--rule);border-left:3px solid var(--tag);
+    border-radius:10px;padding:15px 18px;margin-top:24px;font-size:15px;line-height:1.6;color:var(--muted)}
+  .note b{color:var(--ink)}
+  .note .h{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--tag);display:block;margin-bottom:8px}
+  .foot{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;margin-top:34px}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="kicker">Odin · using &amp; procedure groups</div>
+  <h1>Two ways to flatten a name</h1>
+
+  <div class="levels" id="levelnav"></div>
+  <div class="rule"></div>
+
+  <!-- ===================== LEVEL 1 — WHAT IT IS ===================== -->
+  <section class="section" id="s1">
+    <p class="deck"><span class="il">using</span> on an embedded struct field <b>promotes the inner struct's field names one level up</b>, into the outer struct's scope. Write <span class="il">e.x</span> and the compiler reaches through to <span class="il">e.xform.x</span> for you — same storage, two names. Pick a field below and watch which path it travels.</p>
+    <div class="hint">Field values, sizes &amp; offsets measured from a compiled Odin program (claims promotion-access, promotion-sizes).</div>
+
+    <nav class="sub" id="fieldnav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="promolabel"></div>
+      <div class="promo">
+        <div class="pcol outer">
+          <div class="nm">Entity</div>
+          <div class="ty">the outer struct — what you hold and access</div>
+          <div id="outerfields"></div>
+        </div>
+        <div class="promoarrow">&lsaquo;</div>
+        <div class="pcol">
+          <div class="nm">Transform</div>
+          <div class="ty">embedded as <span class="il" style="background:#2a2519;padding:1px 4px;border-radius:3px">using xform: Transform</span></div>
+          <div id="innerfields"></div>
+        </div>
+      </div>
+      <div class="reach" id="reachline"></div>
+      <div class="legend">
+        <span><i class="chip c-inner"></i> promoted from Transform</span>
+        <span><i class="chip c-own"></i> Entity's own field</span>
+        <span><i class="chip c-named"></i> the named field (still there)</span>
+      </div>
+    </div>
+
+    <div class="cols">
+      <div class="panel"><h3>Layout (size_of)</h3>
+        <div class="sizes">
+          Transform&nbsp;&nbsp;= <span class="n">12</span><br>
+          <b style="color:var(--ink)">Entity</b>&nbsp;&nbsp;&nbsp;&nbsp; = <span class="n">24</span><br>
+          plain struct = <span class="n">24</span><br><br>
+          <span style="color:var(--muted)"><span class="il">using</span> adds <b style="color:var(--accent)">zero</b> bytes — Entity is the same size as a struct that names <span class="il">xform</span> with no promotion. <span class="il">xform</span> at offset <span class="n">0</span>, <span class="il">hp</span> at offset <span class="n">16</span>.</span>
+        </div>
+      </div>
+      <div class="panel"><h3>What you're seeing</h3><p class="teach" id="teach"></p></div>
+    </div>
+
+    <div class="note">
+      <span class="h">it's a source rewrite, not a lookup</span>
+      <span class="il">e.x</span> isn't a field on <span class="il">Entity</span> — the compiler rewrites it to <span class="il">e.xform.x</span> while parsing. The named field <span class="il">xform</span> never disappears, so <span class="il">e.xform.x</span> and <span class="il">e.x</span> are <b>the same bytes</b>: writing <span class="il">e.x = 9</span> then reading <span class="il">e.xform.x</span> gives <b>9</b>, and writing <span class="il">e.xform.y = 7</span> then reading <span class="il">e.y</span> gives <b>7</b>. No reflection, no extra indirection, no runtime cost — just a shorter name for a path you'd otherwise spell out.
+    </div>
+  </section>
+
+  <!-- ============= LEVEL 2 — THREE PLACES, ONE GOTCHA ============= -->
+  <section class="section" id="s2">
+    <p class="deck">Level 1 was the struct form. The same keyword does the same job — <b>pull inner names up one scope</b> — in two more places. Then comes the one sharp edge: when two promotions reach for the <i>same</i> name.</p>
+    <p class="teach">One keyword, one rule (the inner names become available one level up), three spots it shows up:</p>
+
+    <div class="forms">
+      <div class="form">
+        <h4>1 · on a struct field — fields promoted onto the outer struct</h4>
+        <div class="desc"><code>using xform: Transform</code> inside <code>Entity</code> (Level 1). <code>e.x</code> reaches through to <code>e.xform.x</code>.</div>
+      </div>
+      <div class="form">
+        <h4>2 · on a procedure parameter — fields promoted into the body</h4>
+        <div class="desc"><code>print_entity :: proc(using e: Entity)</code> lets the body write <code>x</code>, <code>y</code>, <code>z</code>, <code>hp</code> with no <code>e.</code> prefix — the parameter's fields read like locals. Calling it on the Level-1 entity prints <code>entity at (1, 2, 3) hp=100</code>.</div>
+      </div>
+      <div class="form">
+        <h4>3 · as a statement — an enum's labels into the current scope</h4>
+        <div class="desc"><code>using Color</code> brings <code>Red</code>, <code>Green</code>, <code>Blue</code> into scope as bare identifiers, so <code>c: Color = Red</code> (no <code>Color.</code>, no <code>.Red</code>). This form is <b>off by default</b> — see the gotcha below.</div>
+      </div>
+    </div>
+
+    <p class="teach" style="margin-top:26px"><b>The gotcha — two promotions, one name.</b> Promote a field name into the outer scope and it now lives there as a bare name. So if a <i>second</i> <span class="il">using</span> struct promotes a field with the <i>same</i> name, the bare name is ambiguous and the build stops. Add <span class="il">Health :: struct { x: int, hp: int }</span> and embed it alongside the Transform, both with <span class="il">using</span> — both want to own the bare name <span class="il">x</span>:</p>
+    <pre><span class="kw">Entity</span> :: <span class="kw">struct</span> {
+    <span class="kw">using</span> xform:  Transform,  <span class="cm">// promotes x, y, z</span>
+    <span class="kw">using</span> health: Health,     <span class="cm">// also promotes x  ← collision</span>
+}
+
+<span class="er">main.odin(6:2) Error: 'x' is already declared in 'struct {using xform: Transform, using health: Health}', through 'using' from 'Health'</span></pre>
+    <p class="teach"><b>The fix:</b> drop one of the <span class="il">using</span>s and reach that struct through its named field (<span class="il">e.health.x</span>). The promotion is an opt-in convenience for <i>one</i> obvious base; the moment two of them fight over a name, the convenience is gone and the explicit path is clearer anyway.</p>
+
+    <div class="note">
+      <span class="h">the statement form is fenced off on purpose</span>
+      <span class="il">using Color</span> as a bare statement (and <span class="il">using</span> on a procedure parameter) is <b>disallowed by default</b> in current Odin — the build is rejected before you can even hit a collision: <span class="il">'using' has been disallowed as it is considered bad practice to use as a statement outside of immediate refactoring</span>. The message points you at the per-file opt-in <span class="il">#+feature using-stmt</span> (line 1 of this lesson's file turns it on). The default-off status is the language steering you toward the explicit selector <span class="il">c: Color = .Red</span> instead of pouring labels into a broad scope. Struct-field <span class="il">using</span> (Level 1) needs no flag — that one's always on.
+    </div>
+  </section>
+
+  <!-- ===================== LEVEL 3 — PROCEDURE GROUPS ===================== -->
+  <section class="section" id="s3">
+    <p class="deck">A different flattening: a <b>procedure group</b> binds several type-specialized procs under one name. <span class="il">area :: proc{area_circle, area_square, area_triangle}</span> — and the compiler picks the matching member by the argument's type, at compile time. Pick a call and watch which concrete proc fires.</p>
+    <p class="teach">You declare each specialization as a normal proc with its <i>own</i> name, then list them inside <span class="il">proc{...}</span>. The group has no parameter list of its own — its members carry the signatures. At each call site the compiler matches the argument type against the members and emits a <b>direct call</b> to the one that fits:</p>
+
+    <nav class="sub" id="callnav"></nav>
+    <div class="canvas">
+      <div class="slotlabel">one name <span style="color:var(--accent)">area</span> · three members · the compiler routes by argument type</div>
+      <table class="dispatch">
+        <thead><tr><th>call site</th><th></th><th>compiler picks</th><th>result (f32)</th></tr></thead>
+        <tbody id="dispatchbody"></tbody>
+      </table>
+      <div class="trace" id="trace"></div>
+    </div>
+
+    <p class="teach"><b>It's resolved, then it's gone.</b> Once the compiler picks <span class="il">area_circle</span> for <span class="il">area(c)</span>, the call site is a plain direct call to <span class="il">area_circle</span> — indistinguishable from writing that name by hand. The group is a compile-time alias: there's no stored proc value, no table lookup, no runtime dispatch. The original member names also still work directly, and <span class="il">area_circle(c)</span> produces the <i>identical</i> result as <span class="il">area(c)</span> — same call, two spellings.</p>
+
+    <p class="teach"><b>Where you've already met this.</b> Every standard-library name that "looks like one proc but takes many types" is a group. <span class="il">fmt.println</span> routes to per-type printers; <span class="il">append</span> routes between <span class="il">append_elem</span>, <span class="il">append_elems</span>, <span class="il">append_string</span>, and more. The convention is fixed: the user-facing name is the group, and the implementations are named <span class="il">&lt;group&gt;_&lt;thing&gt;</span> and listed inside the braces. When a <span class="il">core:</span> proc seems to take "anything", search for <span class="il">name :: proc{</span> and you'll find the exact dispatch list.</p>
+  </section>
+
+  <!-- ============= LEVEL 4 — THE CLOSED CANDIDATE SET ============= -->
+  <section class="section" id="s4">
+    <p class="deck">The payoff <b>emerges from the group being a closed, listed set</b>. There's no best-match scoring and no silent conversion to wedge an argument in: an argument either matches a member's type or the call doesn't exist. When none match, the compiler hands you the whole considered list and says why.</p>
+    <p class="teach">Call <span class="il">area</span> with a type no member accepts — say a <span class="il">string</span> — and the build stops. The error isn't a vague "no such function": it enumerates <i>every candidate it weighed</i> and the argument type it couldn't place:</p>
+
+    <pre><span class="kw">area</span> :: <span class="kw">proc</span>{area_circle, area_square}
+<span class="cm">// ...</span>
+_ = <span class="er">area(<span style="color:#f0b48a">"hello"</span>)</span>   <span class="cm">// a string — no member takes one</span>
+
+<span class="er">main.odin(19:6) Error: No procedures or ambiguous call for procedure group 'area'
+    that match with the given arguments</span>
+<span class="cm">    Given argument types:
+     • untyped string</span>
+<span class="er">Did you mean one of the following overloads?</span>
+<span class="cm">    main.area_circle :: proc(c: Circle) -> f32
+    main.area_square :: proc(s: Square) -> f32</span></pre>
+
+    <p class="teach"><b>The emergent payoff:</b> the candidate set is <b>closed and visible from one declaration</b>. Nobody can extend <span class="il">area</span> from another file by happening to declare a proc with a matching name — the only members are the ones inside the braces. And because each candidate has a unique name and an exact-match-or-nothing rule (no implicit conversions to argue over), the resolution has no surprises: the compiler's job is "find the one whose parameter type fits", not "score N near-misses and hope you guessed the same winner". Reading a call, you can find the dispatch list; reading the error, you see exactly what was tried.</p>
+
+    <div class="note">
+      <span class="h">a group is not a procedure value</span>
+      You can't store a group untyped in a variable: <span class="il">f := area</span> fails with <span class="il">Error: Cannot determine type from overloaded procedure 'area'</span>, because the group has <b>no single signature</b> to infer a type from — it has three. A group is compile-time dispatch (the type is known where you write the call); a procedure <i>value</i> held in a variable is runtime dispatch and a different tool — that's the next lesson. Different problems, two halves of the same coin.
+    </div>
+
+    <p class="teach" style="margin-top:24px;color:var(--muted)">That's the arc: <b style="color:var(--ink)">L1</b> <span class="il">using</span> promotes inner field names up a scope — same bytes, shorter name, zero cost → <b style="color:var(--ink)">L2</b> the same keyword works on a parameter and (opt-in) on an enum, and its one sharp edge is two promotions colliding on a name → <b style="color:var(--ink)">L3</b> a procedure group bundles type-specialized procs under one name and the compiler routes by argument type, then compiles to a direct call → <b style="color:var(--ink)">L4</b> that group is a closed, listed set, so dispatch has no surprises and a bad argument gets the whole considered list back.</p>
+  </section>
+
+  <div class="foot">probes reproduce with <span style="color:var(--ink)">odin run</span> · field values, sizes, offsets, dispatch traces &amp; the L2/L4 errors are real compiler output (claims/lessons/12b-using-and-procedure-groups)</div>
+</div>
+
+<script>
+/* ============================================================
+   Each interactive component = one data object + one render fn.
+   Vanilla JS, inline, no libraries.
+   All embedded values/sizes/errors come from passing claims under
+   claims/lessons/12b-using-and-procedure-groups/.
+   ============================================================ */
+
+/* ---------- LEVEL 1: the promotion diagram ----------
+   Measured (claim promotion-access): e.x == e.xform.x == 1; e.hp = 100.
+   Measured (claim promotion-sizes): Transform=12, Entity=24, offsets 0 / 16.   */
+const FIELDS = {
+  x:  { val:1,   from:'inner', promoted:true,  src:'xform.x' },
+  y:  { val:2,   from:'inner', promoted:true,  src:'xform.y' },
+  z:  { val:3,   from:'inner', promoted:true,  src:'xform.z' },
+  hp: { val:100, from:'own',   promoted:false, src:'hp' },
+};
+const TEACH = {
+  x:`<code>e.x</code> is <b>promoted</b> from Transform. The compiler rewrites it to <code>e.xform.x</code> — both read <b>1</b>, the same storage. The named field <code>xform</code> is still there, so <code>e.xform.x</code> works too.`,
+  y:`<code>e.y</code> reaches through <code>xform</code> to read <b>2</b>. Write through either name and the other sees it: <code>e.xform.y = 7</code> makes <code>e.y</code> read <b>7</b>.`,
+  z:`<code>e.z</code> is the third promoted float, reading <b>3</b>. All three of Transform's fields are available on Entity directly — the <code>.xform.</code> layer is optional, not gone.`,
+  hp:`<code>hp</code> is <b>not</b> promoted — it's declared directly on Entity (value <b>100</b>). Promotion only pulls up the fields of the <code>using</code>'d struct; Entity's own fields sit beside them at the same scope.`,
+};
+let curField='x';
+function renderL1(){
+  document.querySelectorAll('#fieldnav button').forEach(b=>b.classList.toggle('on',b.dataset.f===curField));
+  const f=FIELDS[curField];
+  document.getElementById('promolabel').textContent = f.promoted
+    ? `e.${curField}  =  ${f.val}   (rewritten to  e.${f.src})`
+    : `e.${curField}  =  ${f.val}   (Entity's own field, no rewrite)`;
+
+  // Outer struct rows: promoted inner names (highlighted when selected) + own field.
+  let outer='';
+  for(const k of ['x','y','z']){
+    const sel = k===curField ? ' style="outline:1px solid var(--accent)"' : '';
+    outer += `<div class="frow inner"${sel}><span>e.${k}</span><span class="tg">promoted ← xform.${k}</span></div>`;
+  }
+  const hpsel = curField==='hp' ? ' style="outline:1px solid var(--tag)"' : '';
+  outer += `<div class="frow own"${hpsel}><span>e.hp</span><span class="tg">Entity's own</span></div>`;
+  document.getElementById('outerfields').innerHTML = outer;
+
+  // Inner struct rows: the actual Transform fields + the named handle.
+  let inner='';
+  for(const k of ['x','y','z']){
+    const sel = k===curField ? ' style="outline:1px solid var(--accent)"' : '';
+    inner += `<div class="frow inner"${sel}><span>${k}: f32</span><span class="tg">= ${FIELDS[k].val}</span></div>`;
+  }
+  inner += `<div class="frow named"><span>reach as e.xform.&lt;f&gt;</span><span class="tg">named, still works</span></div>`;
+  document.getElementById('innerfields').innerHTML = inner;
+
+  document.getElementById('reachline').innerHTML = f.promoted
+    ? `<b>e.${curField}</b>  travels to  <b>e.${f.src}</b>  →  reads <b>${f.val}</b>`
+    : `<b>e.${curField}</b>  is read directly on Entity  →  <b>${f.val}</b>`;
+  document.getElementById('teach').innerHTML = TEACH[curField];
+}
+const fieldnav=document.getElementById('fieldnav');
+[['x','e.x'],['y','e.y'],['z','e.z'],['hp','e.hp']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.f=k; b.textContent=t;
+  b.onclick=()=>{curField=k;renderL1();}; fieldnav.appendChild(b);
+});
+
+/* ---------- LEVEL 3: the dispatch table ----------
+   Measured (claim dispatch-trace):
+     area(c) -> area_circle    (3.14159)
+     area(s) -> area_square    (9)
+     area(t) -> area_triangle  (10)
+   group result == direct member-call result.                                   */
+const CALLS = [
+  { call:'area(c)', argty:'Circle',   picked:'area_circle',   res:'3.14159' },
+  { call:'area(s)', argty:'Square',   picked:'area_square',   res:'9' },
+  { call:'area(t)', argty:'Triangle', picked:'area_triangle', res:'10' },
+];
+let curCall=0;
+function renderL3(){
+  document.querySelectorAll('#callnav button').forEach((b,i)=>b.classList.toggle('on',i===curCall));
+  let rows='';
+  CALLS.forEach((c,i)=>{
+    rows += `<tr class="${i===curCall?'live':''}">`+
+      `<td class="call">${c.call}<span style="color:var(--muted)"> · arg: ${c.argty}</span></td>`+
+      `<td class="arrow">→</td>`+
+      `<td class="picked">${c.picked}</td>`+
+      `<td class="res">${c.res}</td></tr>`;
+  });
+  document.getElementById('dispatchbody').innerHTML = rows;
+
+  const c=CALLS[curCall];
+  document.getElementById('trace').innerHTML =
+    `<span class="dim">// compiler matches the ${c.argty} argument against the members of 'area'</span><br>`+
+    `area_circle(c: Circle)   ${c.picked==='area_circle'?'<span class="picked">✓ matches</span>':'<span class="dim">✗</span>'}<br>`+
+    `area_square(s: Square)   ${c.picked==='area_square'?'<span class="picked">✓ matches</span>':'<span class="dim">✗</span>'}<br>`+
+    `area_triangle(t: Triangle) ${c.picked==='area_triangle'?'<span class="picked">✓ matches</span>':'<span class="dim">✗</span>'}<br>`+
+    `<span class="dim">// emits a direct call to</span> <span class="picked">${c.picked}</span> <span class="dim">→</span> ${c.res}`;
+}
+const callnav=document.getElementById('callnav');
+CALLS.forEach((c,i)=>{
+  const b=document.createElement('button'); b.textContent=c.call;
+  b.onclick=()=>{curCall=i;renderL3();}; callnav.appendChild(b);
+});
+
+/* ---------- level navigation ---------- */
+const LEVELS=[
+  ['1','What it is','using promotes field names'],
+  ['2','Three forms + the gotcha','one keyword, three places'],
+  ['3','Procedure groups','one name, routed by type'],
+  ['4','Why it stays clear','a closed candidate set'],
+];
+let level='1';
+function setLevel(n){
+  level=n;
+  document.querySelectorAll('.levels button').forEach(b=>b.classList.toggle('on',b.dataset.n===n));
+  for(const [k] of LEVELS){ const el=document.getElementById('s'+k); if(el) el.classList.toggle('on',k===n); }
+  if(n==='1') renderL1();
+  if(n==='3') renderL3();
+}
+const lnav=document.getElementById('levelnav');
+for(const [n,tt,sub] of LEVELS){ const b=document.createElement('button'); b.dataset.n=n;
+  b.innerHTML=`<span class="lv">Level ${n} · ${sub}</span><span class="tt">${tt}</span>`;
+  b.onclick=()=>setLevel(n); lnav.appendChild(b); }
+setLevel('1');
+</script>
+</body>
+</html>

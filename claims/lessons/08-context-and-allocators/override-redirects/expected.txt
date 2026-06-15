@@ -1,0 +1,2 @@
+A count (implicit new + implicit make): 2
+B count (one explicit-allocator call) : 1

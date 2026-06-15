@@ -1,0 +1,3 @@
+bytes tracked before any allocation: 0
+bytes tracked after new(int): 8
+allocation count after make([]int,4) via helper: 2

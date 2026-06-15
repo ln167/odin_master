@@ -1,0 +1,4 @@
+offset after free_all=0
+stale read after reset (not zeroed)=1234
+after re-alloc, same address now reads=5678
+stale and second alias same address: true

@@ -1,0 +1,5 @@
+size_of(Element)            = 8
+size_of(enum u8)            = 1
+size_of(bit_set[Element])   = 1
+size_of(bit_set[Nine])      = 2
+size_of(bit_set[Seventeen]) = 4

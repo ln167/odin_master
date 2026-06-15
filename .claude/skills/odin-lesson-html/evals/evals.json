@@ -1,0 +1,13 @@
+{
+  "skill_name": "odin-lesson-html",
+  "evals": [
+    {
+      "id": 0,
+      "name": "pointers-lesson-06b",
+      "prompt": "In this repo there's an Odin curriculum lesson at content/domains/odin/vault/lessons/06b-pointers/ (README.md + main.odin + expected-output.txt). There's already a gorgeous interactive HTML explainer for lesson 10 at content/domains/odin/vault/lessons/10-tagged-unions/union-memory-layout.html. Make one like it for the pointers lesson (06b): a multi-level, interactive, single-file HTML page that teaches pointers far more deeply than the README does. Put it next to the lesson README.",
+      "expected_output": "A self-contained multi-level HTML lesson on Odin pointers. Should: climb through 3-5 distinct levels (mechanism -> motivation -> cost/gotcha -> emergent payoff); show only facts verified against a real Odin compile (addresses, sizes of ^T / [^]T / []T, the real 'Cannot convert untyped value 1 to ^int' pointer-arithmetic rejection, the 'unsafe to return address of a local variable' error); describe Odin in Odin's terms (NO 'pointer arithmetic' as something Odin does, NO C-decay/header/malloc framing except as labeled contrast); reuse the design system from the reference page; end with an arc recap and an honest provenance footer.",
+      "files": [],
+      "assertions": []
+    }
+  ]
+}

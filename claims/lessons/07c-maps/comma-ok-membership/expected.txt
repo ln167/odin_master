@@ -1,0 +1,5 @@
+single-value: Ghost = 0 | Missing = 0
+comma-ok: Ghost -> 0 found? true
+comma-ok: Missing -> 0 found? false
+Crim in map? true
+Missing in map? false

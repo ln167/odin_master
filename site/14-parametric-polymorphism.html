@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Odin parametric polymorphism — one source, many stamps</title>
+<style>
+  :root{
+    --paper:#15130f; --card:#1d1a14; --ink:#ece6d8; --muted:#9a9182;
+    --rule:#332e24; --accent:#5ec8b8; --accent-soft:#1f342f;
+    --tag:#e0875a; --pad:#5a544a; --bad:#e0675a; --bad-soft:#2a1815;
+    --mono:"Cascadia Mono","Cascadia Code",Consolas,ui-monospace,"SF Mono",monospace;
+    --serif:-apple-system,"Segoe UI Variable Text","Segoe UI",system-ui,Roboto,"Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper);color:var(--ink)}
+  body{font-family:var(--serif);line-height:1.6;padding:0 20px;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-feature-settings:"kern" 1,"liga" 1}
+  .page{max-width:860px;margin:0 auto;padding:46px 0 90px}
+  .kicker{font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+  h1{font-size:30px;line-height:1.15;margin:0 0 18px;font-weight:600;letter-spacing:-.01em}
+
+  /* level tabs */
+  .levels{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+  .levels button{flex:1;min-width:150px;text-align:left;background:var(--card);border:1px solid var(--rule);
+    color:var(--muted);border-radius:10px;padding:11px 14px;cursor:pointer;transition:.12s;font-family:var(--serif)}
+  .levels button:hover{border-color:var(--accent)}
+  .levels button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--ink)}
+  .levels .lv{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);display:block;margin-bottom:3px}
+  .levels .tt{font-size:14px}
+  .rule{height:1px;background:var(--rule);margin:22px 0 26px}
+
+  .deck{color:var(--muted);font-size:17px;margin:0 0 24px;line-height:1.5}
+  .deck b{color:var(--ink)}
+  h2{font-size:21px;margin:0 0 14px;font-weight:600}
+  p.teach{font-size:16px;line-height:1.62;max-width:46em}
+  p.teach code,.il{font-family:var(--mono);font-size:.86em;background:#2a2519;padding:1px 5px;border-radius:4px}
+  .teach b{color:var(--tag)}
+  .section{display:none}
+  .section.on{display:block}
+
+  nav.sub{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;font-family:var(--mono);font-size:13px}
+  nav.sub button{background:var(--card);border:1px solid var(--rule);color:var(--muted);border-radius:8px;padding:8px 14px;cursor:pointer;transition:.12s}
+  nav.sub button:hover{color:var(--ink);border-color:var(--accent)}
+  nav.sub button.on{color:var(--ink);border-color:var(--accent);background:var(--accent-soft)}
+  .hint{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin:0 0 20px}
+
+  .canvas{background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:30px 28px}
+  .slotlabel{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
+
+  /* the stamping press (Level 1) */
+  .press{display:grid;grid-template-columns:1fr auto 1.15fr;gap:18px;align-items:center}
+  @media(max-width:640px){.press{grid-template-columns:1fr}}
+  .source{background:#1a1710;border:1px solid var(--accent);border-radius:12px;padding:14px 15px;font-family:var(--mono);font-size:12px;line-height:1.7;color:#cdeee7}
+  .source .tl{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);display:block;margin-bottom:9px}
+  .pressarrow{align-self:center;text-align:center;font-family:var(--mono);color:var(--tag);font-size:13px}
+  .pressarrow .big{font-size:22px;display:block;margin:2px 0}
+  .stamps{display:flex;flex-direction:column;gap:9px}
+  .stamp{background:#241f17;border:1px solid var(--rule);border-radius:10px;padding:11px 13px;font-family:var(--mono);font-size:12px;transition:.18s;opacity:.45}
+  .stamp.on{opacity:1;border-color:var(--tag);background:#2a2118}
+  .stamp .ty{color:var(--tag);font-weight:600}
+  .stamp .out{display:block;margin-top:6px;color:var(--muted);font-size:11px}
+  .stamp.on .out{color:#cdeee7}
+
+  /* byte strip (Level 2) */
+  .fieldrow{display:grid;grid-template-columns:repeat(16,1fr);gap:6px;margin-bottom:6px;height:22px}
+  .fieldspan{grid-row:1;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:11px;color:var(--accent);border-bottom:2px solid var(--accent);border-radius:2px}
+  .fieldspan.tagf{color:var(--tag);border-color:var(--tag)}
+  .strip{display:grid;grid-template-columns:repeat(16,1fr);gap:6px}
+  .byte{aspect-ratio:1/1.15;border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:var(--mono);position:relative;border:1px solid transparent;font-size:10px}
+  .byte .ix{position:absolute;top:2px;left:4px;font-size:8px;color:var(--muted);opacity:.7}
+  .b-val{background:var(--accent-soft);border-color:var(--accent);color:#cdeee7}
+  .b-tag{background:#3a2417;border-color:var(--tag);color:#f0b48a}
+  .b-pad{background:#201d17;border-color:#332e24;color:#5a544a;background-image:repeating-linear-gradient(45deg,transparent,transparent 4px,#262119 4px,#262119 8px)}
+  .b-none{background:transparent;border-color:transparent}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;margin-top:18px;font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+  .legend span{display:flex;align-items:center;gap:7px}
+  .chip{width:13px;height:13px;border-radius:3px;border:1px solid}
+  .c-val{background:var(--accent-soft);border-color:var(--accent)}
+  .c-tag{background:#3a2417;border-color:var(--tag)}
+  .c-pad{background:#201d17;border-color:#332e24}
+
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:26px}
+  @media(max-width:680px){.cols{grid-template-columns:1fr}}
+  .panel h3{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 12px;font-weight:600}
+  .sizes{font-family:var(--mono);font-size:13px;line-height:2}
+  .sizes .n{color:var(--accent);font-weight:600}
+  .sizes .big{color:var(--tag);font-weight:600}
+
+  pre{font-family:var(--mono);font-size:12.5px;line-height:1.7;background:#1a1710;border:1px solid var(--rule);border-radius:10px;padding:16px 18px;overflow:auto;margin:22px 0 0;white-space:pre-wrap}
+  pre .cm{color:#6f6655}
+  pre .kw{color:var(--accent)}
+  pre .er{color:var(--bad)}
+
+  /* the [N]T length cells (Level 3) */
+  .arrstrip{display:flex;gap:5px;margin:6px 0;flex-wrap:wrap}
+  .acell{width:42px;height:42px;border-radius:7px;background:var(--accent-soft);border:1px solid var(--accent);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:13px;color:#cdeee7}
+  .typetag{font-family:var(--mono);font-size:12px;color:var(--tag);margin-top:10px}
+
+  /* gate (Level 4) */
+  .gate{display:flex;flex-direction:column;gap:10px}
+  .gaterow{display:flex;align-items:center;gap:12px;font-family:var(--mono);font-size:13px;background:#1a1710;border:1px solid var(--rule);border-radius:9px;padding:11px 14px}
+  .gaterow .ty{color:var(--ink);flex:none;width:118px}
+  .gaterow .vr{flex:1;color:var(--muted)}
+  .gaterow.pass{border-color:var(--accent)}
+  .gaterow.pass .mk{color:var(--accent)}
+  .gaterow.fail{border-color:#4a342a}
+  .gaterow.fail .mk{color:var(--bad)}
+  .gaterow .mk{font-weight:600;flex:none}
+
+  .note{background:#1a1710;border:1px solid var(--rule);border-left:3px solid var(--tag);
+    border-radius:10px;padding:15px 18px;margin-top:24px;font-size:15px;line-height:1.6;color:var(--muted)}
+  .note b{color:var(--ink)}
+  .note .h{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--tag);display:block;margin-bottom:8px}
+  .foot{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;margin-top:34px}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="kicker">Odin · parametric polymorphism</div>
+  <h1>One source, many stamps</h1>
+
+  <div class="levels" id="levelnav"></div>
+  <div class="rule"></div>
+
+  <!-- ===================== LEVEL 1 — WHAT IT IS ===================== -->
+  <section class="section" id="s1">
+    <p class="deck">A <span class="il">$T</span> parameter makes a proc a <b>blank for a type the compiler fills in from the call</b>. You write one definition; at every call the compiler reads the argument's type, fixes <span class="il">T</span> to it, and <b>stamps out a fresh, fully concrete copy</b> of the proc for that type. Pick a call below and watch which copy gets pressed.</p>
+    <div class="hint">Real output, captured from a compiled Odin program. One generic source on the left; three stamped copies on the right.</div>
+
+    <nav class="sub" id="nav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="presslabel"></div>
+      <div class="press">
+        <div class="source">
+          <span class="tl">the one source you write</span>
+<span class="kw">max</span> :: proc(a, b: <span style="color:#f0b48a">$T</span>) -> <span style="color:#f0b48a">T</span>
+    where ...is_ordered(<span style="color:#f0b48a">T</span>) {
+    <span class="kw">return</span> a <span class="kw">if</span> a > b <span class="kw">else</span> b
+}
+        </div>
+        <div class="pressarrow"><span class="big">&rang;</span>stamp<br>per call</div>
+        <div class="stamps" id="stamps"></div>
+      </div>
+      <div class="legend">
+        <span><i class="chip c-val"></i> the call you picked</span>
+        <span><i class="chip c-tag"></i> the stamped copy it presses out</span>
+      </div>
+    </div>
+
+    <div class="cols">
+      <div class="panel"><h3>What the dim copies are</h3>
+        <p class="teach" style="font-size:14px">All three copies exist in the binary at once — one for <span class="il">int</span>, one for <span class="il">f32</span>, one for <span class="il">string</span>. Each uses the right machine instructions for its type: integer compare, floating-point compare, the runtime's string compare. The call site jumps straight into its own copy — no type carried along at run time, nothing decided while the program runs.</p>
+      </div>
+      <div class="panel"><h3>What you're seeing</h3><p class="teach" id="teach"></p></div>
+    </div>
+  </section>
+
+  <!-- ============= LEVEL 2 — THE STAMPS ARE REAL, DISTINCT TYPES ============= -->
+  <section class="section" id="s2">
+    <p class="deck">Level 1 stamped <i>procs</i>. A <span class="il">$T</span> on a <b>struct</b> stamps <i>types</i> — and they are <b>genuinely different types with different memory layouts</b>, not one shape with a label swapped. The proof is that they have different <span class="il">size_of</span>. Pick a <span class="il">T</span> and watch the bytes change.</p>
+    <p class="teach">Here is <span class="il">Slot :: struct($T: typeid) { value: T, live: u8 }</span> — one <span class="il">T</span> by value plus a one-byte <span class="il">live</span> flag. The stamped size is whatever <i>that</i> <span class="il">T</span> needs, plus the flag, plus alignment padding.</p>
+
+    <nav class="sub" id="slotnav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="slotlabel"></div>
+      <div class="fieldrow" id="slotfields"></div>
+      <div class="strip" id="slotstrip"></div>
+      <div class="legend">
+        <span><i class="chip c-val"></i> the value: T</span>
+        <span><i class="chip c-tag"></i> the live: u8 flag</span>
+        <span><i class="chip c-pad"></i> alignment padding</span>
+      </div>
+    </div>
+
+    <div class="cols">
+      <div class="panel"><h3>Sizes (size_of)</h3>
+        <div class="sizes">
+          Slot(u8)&nbsp;&nbsp; = <span class="n">2</span><br>
+          Slot(i32)&nbsp; = <span class="n">8</span><br>
+          Slot(f64)&nbsp; = <span class="big">16</span><br><br>
+          <span style="color:var(--muted)">One source. Three sizes. Three real types.</span>
+        </div>
+      </div>
+      <div class="panel"><h3>What you're seeing</h3><p class="teach" id="slotteach"></p></div>
+    </div>
+
+    <p class="teach" style="margin-top:26px"><b>The consequence:</b> because each stamp is its own type, the compiler keeps them apart the same way it keeps <span class="il">int</span> and <span class="il">string</span> apart. Try to assign one stamped struct into a variable of another and the build stops you — it even prints both stamped names:</p>
+    <pre><span class="kw">a</span>: Bag(int)
+<span class="kw">b</span>: Bag(string)
+<span class="er">b = a</span>   <span class="cm">// two different stamped types</span>
+
+<span class="er">Error: Cannot assign value 'a' of type 'Bag($T=int)' to 'Bag($T=string)' in assignment</span></pre>
+
+    <div class="note">
+      <span class="h">stamping is not type erasure</span>
+      There is <b>no single hidden <span class="il">Slot</span></b> that carries its element type along at run time and boxes the value behind a pointer. Each <span class="il">Slot(T)</span> is laid out, sized, and offset independently at <b>compile time</b> — <span class="il">Slot(f64)</span> genuinely holds 8 bytes of float inline, <span class="il">Slot(u8)</span> genuinely holds 1. The size difference you just toggled <i>is</i> the evidence: a single erased type could not be 2 bytes here and 16 bytes there.
+    </div>
+  </section>
+
+  <!-- ===================== LEVEL 3 — $N CONSTANT PARAMETERS ===================== -->
+  <section class="section" id="s3">
+    <p class="deck">So far <span class="il">$T</span> stamped on a <i>type</i>. A <span class="il">$N</span> stamps on a <b>compile-time value</b> — most often a length. <span class="il">filled :: proc($N: int, val: $T) -> [N]T</span> bakes the number <span class="il">N</span> straight into the <i>return type</i>, so different <span class="il">N</span>s produce arrays of different lengths — and different types.</p>
+
+    <nav class="sub" id="arrnav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="arrlabel"></div>
+      <div class="arrstrip" id="arrstrip"></div>
+      <div class="typetag" id="arrtype"></div>
+    </div>
+    <p class="teach" style="margin-top:20px"><b>N is part of the type, not a runtime length:</b> <span class="il">filled(3, 7)</span> returns a <span class="il">[3]int</span> and <span class="il">filled(5, 7)</span> returns a <span class="il">[5]int</span> — two distinct fixed-array types, each with its length fixed before the program runs. The loop bound <span class="il">0 ..&lt; N</span> is a constant the compiler can see.</p>
+
+    <p class="teach"><b>The catch:</b> a <span class="il">$N</span> parameter <i>demands</i> a value the compiler already knows. Hand it a runtime variable and there is no length to bake into the type, so the build fails — and the message says exactly that:</p>
+    <pre><span class="kw">n</span> := 3                          <span class="cm">// an ordinary runtime variable</span>
+arr := <span class="er">make_constant_array(n, 3)</span>   <span class="cm">// $N wants a constant, not n</span>
+
+<span class="er">Error: Expected a constant value for this polymorphic name parameter, got n</span></pre>
+
+    <p class="teach"><b>The fix</b> is to pass a literal or a constant: <span class="il">make_constant_array(3, 3)</span>, or <span class="il">SIZE :: 3</span> then <span class="il">make_constant_array(SIZE, 3)</span>. The whole point of <span class="il">$N</span> is that the value is settled at stamp time, so it can shape the type itself.</p>
+
+    <div class="note">
+      <span class="h">$T and $N are the same machinery</span>
+      Both are compile-time parameters marked with <span class="il">$</span>: <span class="il">$T</span> binds a <b>type</b>, <span class="il">$N</span> binds a <b>value</b>. Each distinct <span class="il">(N, T)</span> you actually call with presses out its own specialization — <span class="il">filled(3, int)</span> and <span class="il">filled(5, int)</span> are two separate stamped procs returning two separate array types. The compiler keeps one copy per unique combination and reuses it everywhere that combination appears.
+    </div>
+  </section>
+
+  <!-- ============= LEVEL 4 — where GUARDS THE STAMP ============= -->
+  <section class="section" id="s4">
+    <p class="deck">The last level is the <b>gate on the stamp</b>. A blank that accepts <i>any</i> type is too loose — most generic bodies only make sense for <i>some</i> types. A <span class="il">where</span> clause is a compile-time predicate the compiler checks <b>before it ever stamps the body</b>, so an unsupported type is turned away early, with a message that names the type.</p>
+    <p class="teach"><span class="il">total :: proc(arr: []$T) -> T where ...type_is_numeric(T)</span> adds up a slice. The <span class="il">where</span> says "<span class="il">T</span> must be numeric." Run it on three slices and watch the gate decide:</p>
+
+    <nav class="sub" id="gatenav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="gatelabel"></div>
+      <div class="gate" id="gatestage"></div>
+    </div>
+
+    <p class="teach" style="margin-top:22px">Hand <span class="il">total</span> a slice of strings and the <span class="il">where</span> check fails up front. The build never stamps the body — it stops at the gate, prints the constraint that failed, and reports the offending type as <span class="il">T :: string</span>:</p>
+    <pre>total :: proc(arr: []<span style="color:#f0b48a">$T</span>) -> <span style="color:#f0b48a">T</span>
+    where intrinsics.<span class="kw">type_is_numeric</span>(<span style="color:#f0b48a">T</span>) { ... }
+
+words := []string{<span class="cm">"a", "b", "c"</span>}
+<span class="er">total(words)</span>
+
+<span class="er">Error: 'where' clause evaluated to false:</span>
+<span class="er">    intrinsics.type_is_numeric(T)</span>
+<span class="er">        T :: string;</span></pre>
+
+    <p class="teach"><b>The other guard is inference itself.</b> When one <span class="il">$T</span> feeds two arguments, both must agree on <i>the same</i> stamped type — the compiler won't quietly bend one to fit. Call <span class="il">max(3, 2.5)</span>: the first argument fixes <span class="il">T</span> to <span class="il">int</span>, and rather than silently chop <span class="il">2.5</span> down to match, the build refuses:</p>
+    <pre><span class="er">max(3, 2.5)</span>   <span class="cm">// T fixed to int by the 3; 2.5 doesn't fit</span>
+
+<span class="er">Error: '2.5' truncated to 'int', got 2.500000</span></pre>
+
+    <p class="teach"><b>The emergent payoff:</b> a generic proc is not a hole you can drop anything into and hope. The <span class="il">where</span> clause turns "this only works for numbers" from a comment into a <b>checked precondition</b>, and shared-<span class="il">$T</span> inference turns "both arguments are the same type" into a <b>checked fact</b>. A wrong call is caught at the stamp — at compile time, with the failing type named — so a generic stays exactly as safe as a hand-written proc for one concrete type, while you only wrote it once.</p>
+
+    <p class="teach" style="margin-top:24px;color:var(--muted)">That's the arc: <b style="color:var(--ink)">L1</b> <span class="il">$T</span> is a blank the compiler fills from the call, stamping one concrete copy per type → <b style="color:var(--ink)">L2</b> stamped on a struct it makes real, distinctly-sized types, not one erased shape → <b style="color:var(--ink)">L3</b> a <span class="il">$N</span> stamps a compile-time value into the type itself, so it must be a constant → <b style="color:var(--ink)">L4</b> a <span class="il">where</span> clause gates the stamp, rejecting unsupported types before the body is ever pressed.</p>
+  </section>
+
+  <div class="foot">probes reproduce with <span style="color:var(--ink)">odin run</span> · the outputs, sizes &amp; the L2/L3/L4 errors are real compiler output (claims/lessons/14-parametric-polymorphism)</div>
+</div>
+
+<script>
+/* ============================================================
+   Each interactive component = one data object + one render fn.
+   Vanilla JS, inline, no libraries.
+   All embedded outputs/sizes/errors come from passing claims
+   under claims/lessons/14-parametric-polymorphism/.
+   ============================================================ */
+
+/* ---------- LEVEL 1: the stamping press ----------
+   Measured (claim stamp-three-types):
+     max(int)    3, 7         -> 7
+     max(f32)    2.5, 1.0     -> 2.5
+     max(string) alpha, bravo -> bravo                         */
+const CALLS = {
+  int:    { call:'max(3, 7)',           t:'int',    out:'7' },
+  f32:    { call:'max(2.5, 1.0)',       t:'f32',    out:'2.5' },
+  string: { call:'max("alpha", "bravo")', t:'string', out:'bravo' },
+};
+const L1TEACH = {
+  int:`The call <code>max(3, 7)</code> has <code>int</code> arguments, so <b>T = int</b>. The compiler presses out a copy of <code>max</code> that compares two ints with an integer compare. It returns <b>7</b>.`,
+  f32:`<code>max(2.5, 1.0)</code> here forces <code>f32</code> arguments, so <b>T = f32</b>. A second, separate copy is stamped — this one uses a floating-point compare. It returns <b>2.5</b>.`,
+  string:`<code>max("alpha", "bravo")</code> has <code>string</code> arguments, so <b>T = string</b>. A third copy is stamped that compares strings. <b>"bravo"</b> sorts after <b>"alpha"</b>, so out comes <b>bravo</b>.`,
+};
+let curCall = 'int';
+function renderL1(){
+  document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('on',b.dataset.c===curCall));
+  const c = CALLS[curCall];
+  document.getElementById('presslabel').textContent = `you wrote one max — this call presses out the ${c.t} copy`;
+  let s='';
+  for(const k of Object.keys(CALLS)){
+    const v=CALLS[k];
+    s += `<div class="stamp ${k===curCall?'on':''}">max for <span class="ty">${v.t}</span>`+
+         `<span class="out">${v.call} &rarr; ${v.out}</span></div>`;
+  }
+  document.getElementById('stamps').innerHTML = s;
+  document.getElementById('teach').innerHTML = L1TEACH[curCall];
+}
+const nav=document.getElementById('nav');
+[['int','max(3, 7)'],['f32','max(2.5, 1.0)'],['string','max("alpha","bravo")']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.c=k; b.textContent=t;
+  b.onclick=()=>{curCall=k;renderL1();}; nav.appendChild(b);
+});
+
+/* ---------- LEVEL 2: the Slot byte strip ----------
+   Measured (claim bag-distinct-sizes, offset_of probe):
+     Slot(u8)  size 2,  value@0 (1B), live@1
+     Slot(i32) size 8,  value@0 (4B), live@4, pad 5..7
+     Slot(f64) size 16, value@0 (8B), live@8, pad 9..15
+   align: u8=1, i32=4, f64=8                                    */
+const SLOT = {
+  u8:  { size:2,  valBytes:1, tagAt:1,  align:1,
+         teach:`<code>Slot(u8)</code>: the <b>value</b> is 1 byte (0), the <b>live</b> flag is 1 byte (1). No padding needed — total <b>2 bytes</b>.` },
+  i32: { size:8,  valBytes:4, tagAt:4,  align:4,
+         teach:`<code>Slot(i32)</code>: the <b>value</b> takes bytes 0–3, the <b>live</b> flag sits at byte 4, then 3 padding bytes round the struct up to its 4-byte alignment — total <b>8 bytes</b>.` },
+  f64: { size:16, valBytes:8, tagAt:8,  align:8,
+         teach:`<code>Slot(f64)</code>: the <b>value</b> fills bytes 0–7, the <b>live</b> flag sits at byte 8, then 7 padding bytes round up to the 8-byte alignment an f64 forces — total <b>16 bytes</b>.` },
+};
+let curSlot = 'i32';
+function renderL2(){
+  document.querySelectorAll('#slotnav button').forEach(b=>b.classList.toggle('on',b.dataset.s===curSlot));
+  const v = SLOT[curSlot];
+  document.getElementById('slotlabel').textContent = `Slot(${curSlot})   —   ${v.size}-byte struct, ${v.align}-byte aligned`;
+  // field spans across a 16-wide grid
+  let fr = `<div class="fieldspan" style="grid-column:1/${v.valBytes+1}">value</div>`+
+           `<div class="fieldspan tagf" style="grid-column:${v.tagAt+1}/${v.tagAt+2}">live</div>`;
+  document.getElementById('slotfields').innerHTML = fr;
+  // bytes
+  let s='';
+  for(let i=0;i<16;i++){
+    let cls,txt;
+    if(i>=v.size){ cls='b-none'; txt=''; }
+    else if(i<v.valBytes){ cls='b-val'; txt='val'; }
+    else if(i===v.tagAt){ cls='b-tag'; txt='live'; }
+    else { cls='b-pad'; txt='pad'; }
+    s += `<div class="byte ${cls}"><span class="ix">${i<v.size?i:''}</span>${txt}</div>`;
+  }
+  document.getElementById('slotstrip').innerHTML = s;
+  document.getElementById('slotteach').innerHTML = v.teach;
+}
+const slotnav=document.getElementById('slotnav');
+[['u8','Slot(u8) = 2'],['i32','Slot(i32) = 8'],['f64','Slot(f64) = 16']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.s=k; b.textContent=t;
+  b.onclick=()=>{curSlot=k;renderL2();}; slotnav.appendChild(b);
+});
+
+/* ---------- LEVEL 3: the [N]T length cells ----------
+   Measured (claim const-array):
+     filled(3, 7) -> [7, 7, 7]        type [3]int
+     filled(5, 7) -> [7, 7, 7, 7, 7]  type [5]int
+     filled(4, 'x') -> [120,120,120,120] type [4]u8            */
+const ARR = {
+  n3: { n:3, val:'7',   type:'[3]int', label:'filled(3, 7)' },
+  n5: { n:5, val:'7',   type:'[5]int', label:'filled(5, 7)' },
+  n4: { n:4, val:'120', type:'[4]u8',  label:"filled(4, 'x')" },
+};
+let curArr='n3';
+function renderL3(){
+  document.querySelectorAll('#arrnav button').forEach(b=>b.classList.toggle('on',b.dataset.a===curArr));
+  const v=ARR[curArr];
+  document.getElementById('arrlabel').textContent = `${v.label}   —   ${v.n} cells, all = ${v.val}`;
+  let cells=''; for(let i=0;i<v.n;i++) cells+=`<div class="acell">${v.val}</div>`;
+  document.getElementById('arrstrip').innerHTML = cells;
+  document.getElementById('arrtype').innerHTML = `return type: <b>${v.type}</b> — the length <b>${v.n}</b> is part of the type, fixed before the program runs`;
+}
+const arrnav=document.getElementById('arrnav');
+[['n3','filled(3, 7)'],['n5','filled(5, 7)'],['n4',"filled(4, 'x')"]].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.a=k; b.textContent=t;
+  b.onclick=()=>{curArr=k;renderL3();}; arrnav.appendChild(b);
+});
+
+/* ---------- LEVEL 4: the where gate ----------
+   Verified: total([]string) -> where clause evaluated to false (T :: string)
+             total of int/f64 slices is numeric, passes the gate.            */
+const GATE = {
+  int:    { ok:true,  ty:'[]int',    why:'int is numeric — gate opens, body is stamped' },
+  f64:    { ok:true,  ty:'[]f64',    why:'f64 is numeric — gate opens, body is stamped' },
+  string: { ok:false, ty:'[]string', why:"string is not numeric — gate stays shut: 'where' clause evaluated to false" },
+};
+let curGate='int';
+function renderL4(){
+  document.querySelectorAll('#gatenav button').forEach(b=>b.classList.toggle('on',b.dataset.g===curGate));
+  document.getElementById('gatelabel').textContent = 'total :: proc(arr: []$T) -> T where type_is_numeric(T)';
+  let rows='';
+  for(const k of Object.keys(GATE)){
+    const v=GATE[k];
+    const on = k===curGate;
+    rows += `<div class="gaterow ${v.ok?'pass':'fail'}" style="opacity:${on?1:.5}">`+
+            `<span class="ty">total(${v.ty})</span>`+
+            `<span class="mk">${v.ok?'✓ stamps':'✕ rejected'}</span>`+
+            `<span class="vr">${v.why}</span></div>`;
+  }
+  document.getElementById('gatestage').innerHTML = rows;
+}
+const gatenav=document.getElementById('gatenav');
+[['int','total([]int)'],['f64','total([]f64)'],['string','total([]string)']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.g=k; b.textContent=t;
+  b.onclick=()=>{curGate=k;renderL4();}; gatenav.appendChild(b);
+});
+
+/* ---------- level navigation ---------- */
+const LEVELS=[
+  ['1','What it is','a blank the compiler fills'],
+  ['2','Real types','distinct stamped layouts'],
+  ['3','Constant $N','a value baked into the type'],
+  ['4','The gate','where guards the stamp'],
+];
+let level='1';
+function setLevel(n){
+  level=n;
+  document.querySelectorAll('.levels button').forEach(b=>b.classList.toggle('on',b.dataset.n===n));
+  for(const [k] of LEVELS){ const el=document.getElementById('s'+k); if(el) el.classList.toggle('on',k===n); }
+  if(n==='1') renderL1();
+  if(n==='2') renderL2();
+  if(n==='3') renderL3();
+  if(n==='4') renderL4();
+}
+const lnav=document.getElementById('levelnav');
+for(const [n,tt,sub] of LEVELS){ const b=document.createElement('button'); b.dataset.n=n;
+  b.innerHTML=`<span class="lv">Level ${n} · ${sub}</span><span class="tt">${tt}</span>`;
+  b.onclick=()=>setLevel(n); lnav.appendChild(b); }
+setLevel('1');
+</script>
+</body>
+</html>

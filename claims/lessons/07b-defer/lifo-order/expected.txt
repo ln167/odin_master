@@ -1,0 +1,4 @@
+after defers
+defer C
+defer B
+defer A

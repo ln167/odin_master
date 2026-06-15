@@ -1,0 +1,2 @@
+after inner block: x = 4
+outer defer, main exit: x = 234

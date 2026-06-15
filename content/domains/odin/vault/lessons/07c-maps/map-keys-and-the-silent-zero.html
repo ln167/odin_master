@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Odin maps — keys, buckets, and the silent zero</title>
+<style>
+  :root{
+    --paper:#15130f; --card:#1d1a14; --ink:#ece6d8; --muted:#9a9182;
+    --rule:#332e24; --accent:#5ec8b8; --accent-soft:#1f342f;
+    --tag:#e0875a; --pad:#5a544a; --bad:#e0675a; --bad-soft:#2a1815;
+    --mono:"Cascadia Mono","Cascadia Code",Consolas,ui-monospace,"SF Mono",monospace;
+    --serif:-apple-system,"Segoe UI Variable Text","Segoe UI",system-ui,Roboto,"Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper);color:var(--ink)}
+  body{font-family:var(--serif);line-height:1.6;padding:0 20px;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-feature-settings:"kern" 1,"liga" 1}
+  .page{max-width:860px;margin:0 auto;padding:46px 0 90px}
+  .kicker{font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+  h1{font-size:30px;line-height:1.15;margin:0 0 18px;font-weight:600;letter-spacing:-.01em}
+
+  /* level tabs */
+  .levels{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+  .levels button{flex:1;min-width:150px;text-align:left;background:var(--card);border:1px solid var(--rule);
+    color:var(--muted);border-radius:10px;padding:11px 14px;cursor:pointer;transition:.12s;font-family:var(--serif)}
+  .levels button:hover{border-color:var(--accent)}
+  .levels button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--ink)}
+  .levels .lv{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);display:block;margin-bottom:3px}
+  .levels .tt{font-size:14px}
+  .rule{height:1px;background:var(--rule);margin:22px 0 26px}
+
+  .deck{color:var(--muted);font-size:17px;margin:0 0 24px;line-height:1.5}
+  .deck b{color:var(--ink)}
+  h2{font-size:21px;margin:0 0 14px;font-weight:600}
+  p.teach{font-size:16px;line-height:1.62;max-width:46em}
+  p.teach code,.il{font-family:var(--mono);font-size:.86em;background:#2a2519;padding:1px 5px;border-radius:4px}
+  .teach b{color:var(--tag)}
+  .section{display:none}
+  .section.on{display:block}
+
+  nav.sub{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;font-family:var(--mono);font-size:13px}
+  nav.sub button{background:var(--card);border:1px solid var(--rule);color:var(--muted);border-radius:8px;padding:8px 14px;cursor:pointer;transition:.12s}
+  nav.sub button:hover{color:var(--ink);border-color:var(--accent)}
+  nav.sub button.on{color:var(--ink);border-color:var(--accent);background:var(--accent-soft)}
+  .hint{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin:0 0 20px}
+
+  .canvas{background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:30px 28px}
+  .slotlabel{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
+
+  /* key -> hash -> bucket diagram (Level 1) */
+  .pipe{display:grid;grid-template-columns:auto auto 1fr;gap:14px 18px;align-items:center}
+  @media(max-width:640px){.pipe{grid-template-columns:1fr}}
+  .keycard{font-family:var(--mono);font-size:13px;background:var(--accent-soft);border:1px solid var(--accent);
+    color:#cdeee7;border-radius:8px;padding:10px 12px;white-space:nowrap}
+  .keycard.miss{background:var(--bad-soft);border-color:#5a3a30;color:#f0a892}
+  .hasharrow{font-family:var(--mono);font-size:12px;color:var(--muted);text-align:center;white-space:nowrap}
+  .hasharrow b{color:var(--tag)}
+  .buckets{display:grid;grid-template-columns:repeat(8,1fr);gap:6px}
+  .bk{aspect-ratio:1/1.25;border-radius:7px;border:1px solid var(--rule);background:#1a1710;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:var(--mono);font-size:12px;position:relative;transition:.18s}
+  .bk .bi{position:absolute;top:3px;left:5px;font-size:8px;color:var(--muted);opacity:.7}
+  .bk.hit{background:var(--accent-soft);border-color:var(--accent);color:#cdeee7;font-weight:600}
+  .bk.miss{background:var(--bad-soft);border-color:var(--bad);color:#f0a892}
+  .bk.empty{color:#5a544a}
+  .resultline{font-family:var(--mono);font-size:13px;margin-top:18px;color:var(--muted)}
+  .resultline b{color:var(--accent)}
+  .resultline .z{color:var(--bad)}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;margin-top:18px;font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+  .legend span{display:flex;align-items:center;gap:7px}
+  .chip{width:13px;height:13px;border-radius:3px;border:1px solid}
+  .c-hit{background:var(--accent-soft);border-color:var(--accent)}
+  .c-miss{background:var(--bad-soft);border-color:var(--bad)}
+  .c-empty{background:#1a1710;border-color:var(--rule)}
+
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:26px}
+  @media(max-width:680px){.cols{grid-template-columns:1fr}}
+  .panel h3{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 12px;font-weight:600}
+  .sizes{font-family:var(--mono);font-size:13px;line-height:2}
+  .sizes .n{color:var(--accent);font-weight:600}
+  .sizes .big{color:var(--tag);font-weight:600}
+
+  pre{font-family:var(--mono);font-size:12.5px;line-height:1.7;background:#1a1710;border:1px solid var(--rule);border-radius:10px;padding:16px 18px;overflow:auto;margin:22px 0 0;white-space:pre-wrap}
+  pre .cm{color:#6f6655}
+  pre .kw{color:var(--accent)}
+  pre .er{color:var(--bad)}
+  pre .ok{color:var(--accent)}
+
+  /* two-lane comparison (Level 2) */
+  .twoup{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:6px}
+  @media(max-width:640px){.twoup{grid-template-columns:1fr}}
+  .lane{background:#1a1710;border:1px solid var(--rule);border-radius:12px;padding:16px}
+  .lane.good{border-color:var(--accent)}
+  .lane.bad{border-color:#4a342a}
+  .lane h4{font-family:var(--mono);font-size:12px;margin:0 0 10px;font-weight:600}
+  .lane.good h4{color:var(--accent)}
+  .lane.bad h4{color:var(--tag)}
+  .obj{font-family:var(--mono);font-size:12px;border-radius:8px;padding:9px 11px;margin:6px 0;border:1px solid var(--rule);color:#cdeee7}
+  .obj.q{background:#241f17;border-color:var(--rule);color:#8a7a66}
+  .verdict{font-family:var(--mono);font-size:12px;margin-top:10px;padding:8px 10px;border-radius:7px}
+  .verdict.good{background:var(--accent-soft);color:#cdeee7;border:1px solid var(--accent)}
+  .verdict.bad{background:var(--bad-soft);color:#f0a892;border:1px solid #5a3a30}
+
+  /* lifecycle / ownership (Level 3) */
+  .frame{background:#1a1710;border:1px solid var(--rule);border-radius:10px;padding:14px 16px;font-family:var(--mono);font-size:12px;margin:6px 0;transition:.3s}
+  .frame .lbl{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:6px}
+  .frame .big{color:var(--tag);font-weight:600}
+  .frame .n{color:var(--accent);font-weight:600}
+  .stagebar{display:flex;align-items:center;gap:10px;margin:6px 0}
+  .stagebar .lab{font-family:var(--mono);font-size:11px;color:var(--muted);width:160px;flex:none}
+  .bar{height:30px;border-radius:6px;display:flex;align-items:center;font-family:var(--mono);font-size:12px;padding-left:10px;color:#0e0c08;font-weight:600;transition:width .3s,background .2s}
+  .bar.live{background:var(--accent)}
+  .bar.gone{background:repeating-linear-gradient(45deg,#5a544a,#5a544a 6px,#48433b 6px,#48433b 12px);color:var(--ink)}
+
+  .note{background:#1a1710;border:1px solid var(--rule);border-left:3px solid var(--tag);
+    border-radius:10px;padding:15px 18px;margin-top:24px;font-size:15px;line-height:1.6;color:var(--muted)}
+  .note b{color:var(--ink)}
+  .note .h{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--tag);display:block;margin-bottom:8px}
+  .foot{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;margin-top:34px}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="kicker">Odin · maps</div>
+  <h1>A map, four levels deep</h1>
+
+  <div class="levels" id="levelnav"></div>
+  <div class="rule"></div>
+
+  <!-- ===================== LEVEL 1 — WHAT IT IS ===================== -->
+  <section class="section" id="s1">
+    <p class="deck">A <span class="il">map[K]V</span> stores <b>a value for each key</b>, where the keys are decided while the program runs. To place a key it <b>hashes</b> the key down to a slot number and parks the value there; to look one up it hashes again and goes straight to that slot. Pick a key below and watch it land — then pick one that was never inserted and watch what comes back.</p>
+    <nav class="sub" id="nav"></nav>
+    <div class="hint">Real hashes &amp; slots, measured from a compiled Odin program (core:hash fnv32a, folded to 8 slots). Lookup values are real program output.</div>
+    <div class="canvas">
+      <div class="slotlabel" id="pipelabel"></div>
+      <div class="pipe">
+        <div class="keycard" id="keycard"></div>
+        <div class="hasharrow" id="hashstep"></div>
+        <div class="buckets" id="buckets"></div>
+      </div>
+      <div class="resultline" id="resultline"></div>
+      <div class="legend">
+        <span><i class="chip c-hit"></i> the slot this key hashes to</span>
+        <span><i class="chip c-miss"></i> hashed slot, key not stored there</span>
+        <span><i class="chip c-empty"></i> other slots</span>
+      </div>
+    </div>
+    <div class="cols">
+      <div class="panel"><h3>What's stored</h3>
+        <div class="sizes">
+          scores[<span style="color:var(--ink)">"Crim"</span>]&nbsp;= <span class="n">42</span><br>
+          scores[<span style="color:var(--ink)">"Hollis"</span>] = <span class="n">67</span><br>
+          scores[<span style="color:var(--ink)">"Vandal"</span>] = <span class="n">99</span><br>
+          scores[<span style="color:var(--ink)">"Liberty Bell"</span>] = <span class="n">88</span><br><br>
+          <span style="color:var(--muted)">four <b style="color:var(--ink)">string</b> keys, four <b style="color:var(--ink)">int</b> values</span>
+        </div>
+      </div>
+      <div class="panel"><h3>What you're seeing</h3><p class="teach" id="teach"></p></div>
+    </div>
+  </section>
+
+  <!-- ============= LEVEL 2 — THE SILENT ZERO ============= -->
+  <section class="section" id="s2">
+    <p class="deck">Level 1 showed a miss returning <b>0</b>. That's not an error state — it's the rule: <span class="il">v := m[k]</span> on an absent key hands back <b>the zero value of V</b>, silently. Which means the value alone <b>cannot tell you</b> whether a key was there. Level 2 is the form that can.</p>
+    <p class="teach">Here's the trap drawn out. Store one key, <span class="il">"Ghost"</span>, with a real value of <b>0</b>. Then look up <span class="il">"Ghost"</span> (present, value 0) and <span class="il">"Missing"</span> (never inserted) with the single-value form. Both come back <b>0</b> — indistinguishable. Flip to the comma-ok form to separate them:</p>
+
+    <nav class="sub" id="okform"></nav>
+    <div class="twoup">
+      <div class="lane good">
+        <h4>scores["Ghost"]  — present, stored 0</h4>
+        <div id="lane-ghost"></div>
+      </div>
+      <div class="lane bad">
+        <h4>scores["Missing"] — never inserted</h4>
+        <div id="lane-missing"></div>
+      </div>
+    </div>
+
+    <p class="teach"><b>The mechanism:</b> <span class="il">v, ok := m[k]</span> returns a second value, <span class="il">ok</span>, that is <b>true</b> exactly when the key was actually in the map. It's the only thing that distinguishes "stored, and its value happens to be the zero value" from "absent." Reach for it by default; the single-value <span class="il">v := m[k]</span> is the shortcut you use only when you've already established the key is there (or genuinely don't care which case you're in). When you need only the yes/no and not the value, <span class="il">k in m</span> is a plain <span class="il">bool</span>: <span class="il">"Crim" in scores</span> is <b>true</b>, <span class="il">"Missing" in scores</span> is <b>false</b>.</p>
+
+    <p class="teach"><b>The counterfactual:</b> if your values are something a real entry could never be — say every stored score is at least 1, so a returned 0 <i>must</i> mean "absent" — then the single-value form is unambiguous and the bool buys you nothing. The comma-ok form earns its keep precisely when <b>the zero value is a value a real entry might hold</b>: a score of 0, an empty string, a <span class="il">nil</span> handle. That's the case where reading the value alone silently lies.</p>
+  </section>
+
+  <!-- ===================== LEVEL 3 — THE BILL ===================== -->
+  <section class="section" id="s3">
+    <p class="deck">Level 2 was the lookup gotcha. Level 3 is the resource bill: <b>a map owns heap memory.</b> The slots live in a buffer the map allocated, and nothing reclaims it for you — pairing creation with cleanup is your job, the same discipline as <span class="il">[dynamic]T</span>.</p>
+    <p class="teach">You bring the table to life with <span class="il">make</span>, and you put the cleanup on the very next line with <span class="il">defer delete</span> so the two read as one unit. Removing a single entry is a different proc — <span class="il">delete_key(&amp;m, k)</span>, with the <span class="il">&amp;</span> because a removal can resize the table — and <span class="il">len(m)</span> reports the live entry count. Step through the lifecycle:</p>
+
+    <pre><span class="kw">scores</span> := make(map[string]int)
+<span class="kw">defer</span> delete(scores)        <span class="cm">// the whole table, freed at scope exit</span>
+scores[<span class="ok">"Crim"</span>] = 42        <span class="cm">// insert</span>
+<span class="kw">delete_key</span>(&scores, <span class="ok">"Crim"</span>)  <span class="cm">// remove ONE entry — note the &</span></pre>
+
+    <nav class="sub" id="lifenav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="lifelabel"></div>
+      <div class="stagebar"><div class="lab">live entries — len(m)</div><div style="flex:1"><div class="bar live" id="bar-len"></div></div></div>
+      <div id="lifestage"></div>
+    </div>
+
+    <p class="teach"><b>The bill, stated plainly:</b> every <span class="il">make</span> is a heap allocation you now own. No <span class="il">delete</span>, and the buffer sits there until the process exits — a leak. The two procs are not interchangeable: <span class="il">delete(m)</span> frees the <i>entire</i> table; <span class="il">delete_key(&amp;m, k)</span> removes <i>one</i> pair and leaves the table live. Mixing them up is how you either leak the whole map or accidentally tear it down.</p>
+
+    <div class="note">
+      <span class="h">delete_key vs delete — and why the &amp;</span>
+      <b>delete_key(&amp;m, k)</b> takes a <b>pointer to the map</b> for the same reason <span class="il">append(&amp;arr, x)</span> does: the operation can move the underlying buffer, and the proc has to write the new header fields back into your variable. <b>delete(m)</b> takes the map by value because it's done with it — it just hands the buffer back to the allocator. Reach for <span class="il">delete_key</span> to prune one entry; reach for <span class="il">delete</span> exactly once, at the end, to retire the whole table.
+    </div>
+  </section>
+
+  <!-- ============= LEVEL 4 — ORDER IS NOT YOURS ============= -->
+  <section class="section" id="s4">
+    <p class="deck">The last level is a property that only bites <b>at scale and over time</b>: a map has <b>no iteration order you can rely on.</b> It's not random per se — it's <i>unspecified</i>, free to differ across runs, across grows, and across compiler versions. Lean on it and you've planted a bug that sprouts later.</p>
+    <p class="teach">The table reorders its slots whenever it grows (it rehashes every entry into a bigger buffer), so <span class="il">for k, v in m</span> makes no promise about which key comes out first. If you print straight from that loop, the output is at the mercy of the hash layout. The fix is one idiom, and it's worth memorizing: <b>collect the keys into a <span class="il">[dynamic]K</span>, sort the slice, then iterate the sorted slice.</b></p>
+
+    <pre><span class="kw">keys</span> := make([dynamic]string, 0, len(scores))
+<span class="kw">defer</span> delete(keys)
+<span class="kw">for</span> k <span class="kw">in</span> scores { append(&keys, k) }   <span class="cm">// order here is unspecified</span>
+slice.sort(keys[:])                      <span class="cm">// now it's deterministic</span>
+<span class="kw">for</span> k <span class="kw">in</span> keys { fmt.printfln(<span class="ok">"%q = %d"</span>, k, scores[k]) }</pre>
+
+    <p class="teach">That sorted loop produces the <b>same output every run</b> — the deterministic lines below — which is exactly what you need for logs, golden tests, and reproducible gameplay. The unsorted loop might happen to match today and silently diverge after the table grows past a resize threshold.</p>
+    <pre id="sortedout"></pre>
+
+    <p class="teach"><b>The type system guards the front door, too.</b> A key has to be hashable — its bits must form a stable identity. Most basic types qualify automatically, but a growable container can't: its contents and address move, so there's no fixed identity to hash. Try to declare a map keyed on one and the <b>build fails</b>, before the program ever runs:</p>
+    <pre><span class="kw">m</span>: map[<span class="er">[dynamic]int</span>]int   <span class="cm">// a key whose identity isn't stable</span>
+
+<span class="er">Error: Invalid type of a key for a map, got '[dynamic]int'</span></pre>
+
+    <p class="teach"><b>The emergent payoff:</b> the two facts work together. Iteration order is unspecified <i>because</i> the map is free to rearrange itself for speed — and the moment you need a fixed order you reach for the collect-sort-iterate idiom rather than hoping. Meanwhile the hashable-key rule means a key that <i>could</i> silently change identity mid-flight is rejected at compile time, not discovered as a corrupt lookup at 2 a.m. The map trades away order to stay fast, and the type system makes sure the keys you hand it can actually be found again.</p>
+
+    <p class="teach" style="margin-top:24px;color:var(--muted)">That's the arc: <b style="color:var(--ink)">L1</b> hash the key to a slot, store a value per key → <b style="color:var(--ink)">L2</b> a missing key returns the zero value silently, so <span class="il">v, ok := m[k]</span> is the real read → <b style="color:var(--ink)">L3</b> the map owns heap memory, so pair <span class="il">make</span> with <span class="il">defer delete</span> and prune with <span class="il">delete_key</span> → <b style="color:var(--ink)">L4</b> order is unspecified, so sort a key slice when you need it, and unhashable keys are refused at compile time.</p>
+  </section>
+
+  <div class="foot">probes reproduce with <span style="color:var(--ink)">odin run</span> · hashes, slots, lookups, lengths, the sorted output &amp; the key error are real compiler output (claims/lessons/07c-maps)</div>
+</div>
+
+<script>
+/* ============================================================
+   Each interactive component = one data object + one render fn.
+   Vanilla JS, inline, no libraries.
+   Every embedded number/hash/slot/output comes from a passing claim
+   under claims/lessons/07c-maps/ (hash-bucket, insert-lookup-zero,
+   comma-ok-membership, ownership-delete-len, sorted-iteration,
+   break-unhashable-key).
+   ============================================================ */
+
+/* ---------- LEVEL 1: key -> hash -> slot ----------
+   Measured (claim hash-bucket, fnv32a % 8):
+     "Crim"         hash=0xfffa9352  slot 2
+     "Hollis"       hash=0xbb2a7768  slot 0
+     "Vandal"       hash=0x420168bf  slot 7
+     "Liberty Bell" hash=0x3938b775  slot 5
+   Measured lookups (claim insert-lookup-zero): present "Crim" -> 42,
+   absent "Vandal-not-stored"... here a never-inserted key -> 0.        */
+const NBUCKETS = 8;
+const KEYS = {
+  Crim:        { key:'"Crim"',         hash:'0xfffa9352', slot:2, present:true,  val:42 },
+  Hollis:      { key:'"Hollis"',       hash:'0xbb2a7768', slot:0, present:true,  val:67 },
+  Vandal:      { key:'"Vandal"',       hash:'0x420168bf', slot:7, present:true,  val:99 },
+  LibertyBell: { key:'"Liberty Bell"', hash:'0x3938b775', slot:5, present:true,  val:88 },
+  /* a key that was never inserted: it still hashes to a slot, but nothing's there. */
+  Stranger:    { key:'"Stranger"',     hash:'0x????????', slot:null, present:false, val:0 },
+};
+let curKey = 'Crim';
+function renderL1(){
+  document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('on',b.dataset.k===curKey));
+  const k = KEYS[curKey];
+  const card = document.getElementById('keycard');
+  card.textContent = k.key;
+  card.className = 'keycard' + (k.present ? '' : ' miss');
+  document.getElementById('pipelabel').textContent =
+    k.present ? 'insert / lookup of a stored key' : 'lookup of a key that was never inserted';
+
+  if(k.present){
+    document.getElementById('hashstep').innerHTML =
+      `fnv32a → <b>${k.hash}</b><br>% ${NBUCKETS} = slot ${k.slot}`;
+  } else {
+    document.getElementById('hashstep').innerHTML =
+      `fnv32a → <b>some slot</b><br>but nothing is parked there`;
+  }
+
+  let bk = '';
+  for(let i=0;i<NBUCKETS;i++){
+    let cls = 'bk empty', inner = '·';
+    if(k.present && i===k.slot){ cls='bk hit'; inner = k.val; }
+    else if(!k.present){ cls='bk empty'; inner='·'; }
+    bk += `<div class="${cls}"><span class="bi">${i}</span>${inner}</div>`;
+  }
+  document.getElementById('buckets').innerHTML = bk;
+
+  if(k.present){
+    document.getElementById('resultline').innerHTML =
+      `v := scores[${k.key}]  →  <b>${k.val}</b>   <span style="color:var(--muted)">(found at slot ${k.slot})</span>`;
+    document.getElementById('teach').innerHTML =
+      `<code>scores[${k.key}]</code> hashes to <b>${k.hash}</b>, folded to <b>slot ${k.slot}</b>. The value <code>${k.val}</code> is parked there, so the lookup is a single jump to that slot — no scanning the other entries.`;
+  } else {
+    document.getElementById('resultline').innerHTML =
+      `v := scores[${k.key}]  →  <span class="z">0</span>   <span style="color:var(--muted)">(no entry — the zero value of int)</span>`;
+    document.getElementById('teach').innerHTML =
+      `<code>${k.key}</code> was never inserted. The lookup still hashes it to a slot and finds <b>nothing stored</b>, so it hands back <code>0</code> — the <b>zero value of int</b>. No error, no panic. That silent <code>0</code> is the whole subject of Level 2.`;
+  }
+}
+const nav=document.getElementById('nav');
+[['Crim','"Crim"'],['Hollis','"Hollis"'],['Vandal','"Vandal"'],['LibertyBell','"Liberty Bell"'],['Stranger','"Stranger" (absent)']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.k=k; b.textContent=t;
+  b.onclick=()=>{curKey=k;renderL1();}; nav.appendChild(b);
+});
+
+/* ---------- LEVEL 2: single-value vs comma-ok ----------
+   Measured (claim comma-ok-membership):
+     single-value: Ghost = 0 | Missing = 0
+     comma-ok: Ghost -> 0 found? true ; Missing -> 0 found? false
+     "Crim" in map true ; "Missing" in map false                        */
+const OK = {
+  single: {
+    ghost:`<div class="obj">scores["Ghost"]  →  <b>0</b></div>
+           <div class="obj q">stored 0, or never stored? the value can't say</div>
+           <div class="verdict bad">indistinguishable from absent</div>`,
+    missing:`<div class="obj">scores["Missing"]  →  <b>0</b></div>
+             <div class="obj q">stored 0, or never stored? the value can't say</div>
+             <div class="verdict bad">indistinguishable from present-0</div>`,
+  },
+  ok: {
+    ghost:`<div class="obj">v, ok := scores["Ghost"]</div>
+           <div class="obj">v = <b>0</b>  ·  ok = <b>true</b></div>
+           <div class="verdict good">present — stored value really is 0</div>`,
+    missing:`<div class="obj">v, ok := scores["Missing"]</div>
+             <div class="obj">v = <b>0</b>  ·  ok = <b>false</b></div>
+             <div class="verdict bad">absent — the 0 is just the zero value</div>`,
+  },
+};
+let okMode='single';
+function renderL2(){
+  document.querySelectorAll('#okform button').forEach(b=>b.classList.toggle('on',b.dataset.m===okMode));
+  document.getElementById('lane-ghost').innerHTML = OK[okMode].ghost;
+  document.getElementById('lane-missing').innerHTML = OK[okMode].missing;
+}
+const okform=document.getElementById('okform');
+[['single','single-value: v := m[k]'],['ok','comma-ok: v, ok := m[k]']].forEach(([m,t])=>{
+  const b=document.createElement('button'); b.dataset.m=m; b.textContent=t;
+  b.onclick=()=>{okMode=m;renderL2();}; okform.appendChild(b);
+});
+
+/* ---------- LEVEL 3: lifecycle / len ----------
+   Measured (claim ownership-delete-len):
+     len after 4 inserts: 4
+     len after delete_key(Crim): 3
+     "Crim" in map false ; "Hollis" in map true                         */
+const LIFE = {
+  inserted: { len:4, label:'after 4 inserts',
+    stage:`<div class="frame"><span class="lbl">live entries</span>"Liberty Bell"=88 &nbsp; "Crim"=42 &nbsp; "Hollis"=67 &nbsp; "Vandal"=99 &nbsp; <span class="n">len = 4</span></div>` },
+  deleted: { len:3, label:'after delete_key(&scores, "Crim")',
+    stage:`<div class="frame"><span class="lbl">live entries</span>"Liberty Bell"=88 &nbsp; <span style="text-decoration:line-through;color:#6f6655">"Crim"=42</span> &nbsp; "Hollis"=67 &nbsp; "Vandal"=99 &nbsp; <span class="n">len = 3</span></div>
+           <div class="frame"><span class="lbl">membership after the prune</span>"Crim" in scores → <b style="color:var(--bad)">false</b> &nbsp;·&nbsp; "Hollis" in scores → <b style="color:var(--accent)">true</b></div>` },
+};
+let lifeMode='inserted';
+const LIFE_MAX=4;
+function renderL3(){
+  document.querySelectorAll('#lifenav button').forEach(b=>b.classList.toggle('on',b.dataset.m===lifeMode));
+  const f=LIFE[lifeMode];
+  document.getElementById('lifelabel').textContent=f.label+`  —  len = ${f.len}`;
+  const bar=document.getElementById('bar-len');
+  bar.style.width=Math.round(f.len/LIFE_MAX*100)+'%';
+  bar.textContent=f.len+' entries';
+  document.getElementById('lifestage').innerHTML=f.stage;
+}
+const lifenav=document.getElementById('lifenav');
+[['inserted','1 · insert 4'],['deleted','2 · delete_key("Crim")']].forEach(([m,t])=>{
+  const b=document.createElement('button'); b.dataset.m=m; b.textContent=t;
+  b.onclick=()=>{lifeMode=m;renderL3();}; lifenav.appendChild(b);
+});
+
+/* ---------- LEVEL 4: the deterministic sorted output ----------
+   Measured verbatim (claim sorted-iteration).                          */
+document.getElementById('sortedout').textContent =
+`"Crim" = 42
+"Hollis" = 67
+"Liberty Bell" = 88
+"Vandal" = 99`;
+
+/* ---------- level navigation ---------- */
+const LEVELS=[
+  ['1','What it is','hash a key to a slot'],
+  ['2','The silent zero','v, ok := m[k]'],
+  ['3','The bill','the map owns memory'],
+  ['4','Order is not yours','sort, or be surprised'],
+];
+let level='1';
+function setLevel(n){
+  level=n;
+  document.querySelectorAll('.levels button').forEach(b=>b.classList.toggle('on',b.dataset.n===n));
+  for(const [k] of LEVELS){ const el=document.getElementById('s'+k); if(el) el.classList.toggle('on',k===n); }
+  if(n==='1') renderL1();
+  if(n==='2') renderL2();
+  if(n==='3') renderL3();
+}
+const lnav=document.getElementById('levelnav');
+for(const [n,tt,sub] of LEVELS){ const b=document.createElement('button'); b.dataset.n=n;
+  b.innerHTML=`<span class="lv">Level ${n} · ${sub}</span><span class="tt">${tt}</span>`;
+  b.onclick=()=>setLevel(n); lnav.appendChild(b); }
+setLevel('1');
+</script>
+</body>
+</html>

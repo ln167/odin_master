@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Odin structs &amp; #soa — from bytes to a layout pivot</title>
+<style>
+  :root{
+    --paper:#15130f; --card:#1d1a14; --ink:#ece6d8; --muted:#9a9182;
+    --rule:#332e24; --accent:#5ec8b8; --accent-soft:#1f342f;
+    --tag:#e0875a; --pad:#5a544a; --bad:#e0675a; --bad-soft:#2a1815;
+    --mono:"Cascadia Mono","Cascadia Code",Consolas,ui-monospace,"SF Mono",monospace;
+    --serif:-apple-system,"Segoe UI Variable Text","Segoe UI",system-ui,Roboto,"Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper);color:var(--ink)}
+  body{font-family:var(--serif);line-height:1.6;padding:0 20px;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-feature-settings:"kern" 1,"liga" 1}
+  .page{max-width:860px;margin:0 auto;padding:46px 0 90px}
+  .kicker{font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+  h1{font-size:30px;line-height:1.15;margin:0 0 18px;font-weight:600;letter-spacing:-.01em}
+
+  /* level tabs */
+  .levels{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+  .levels button{flex:1;min-width:150px;text-align:left;background:var(--card);border:1px solid var(--rule);
+    color:var(--muted);border-radius:10px;padding:11px 14px;cursor:pointer;transition:.12s;font-family:var(--serif)}
+  .levels button:hover{border-color:var(--accent)}
+  .levels button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--ink)}
+  .levels .lv{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);display:block;margin-bottom:3px}
+  .levels .tt{font-size:14px}
+  .rule{height:1px;background:var(--rule);margin:22px 0 26px}
+
+  .deck{color:var(--muted);font-size:17px;margin:0 0 24px;line-height:1.5}
+  .deck b{color:var(--ink)}
+  h2{font-size:21px;margin:0 0 14px;font-weight:600}
+  p.teach{font-size:16px;line-height:1.62;max-width:46em}
+  p.teach code,.il{font-family:var(--mono);font-size:.86em;background:#2a2519;padding:1px 5px;border-radius:4px}
+  .teach b{color:var(--tag)}
+  .section{display:none}
+  .section.on{display:block}
+
+  nav.sub{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;font-family:var(--mono);font-size:13px}
+  nav.sub button{background:var(--card);border:1px solid var(--rule);color:var(--muted);border-radius:8px;padding:8px 14px;cursor:pointer;transition:.12s}
+  nav.sub button:hover{color:var(--ink);border-color:var(--accent)}
+  nav.sub button.on{color:var(--ink);border-color:var(--accent);background:var(--accent-soft)}
+  .hint{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin:0 0 20px}
+
+  .canvas{background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:30px 28px}
+  .slotlabel{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
+
+  /* byte strip (L1 struct layout) — 16 bytes per row */
+  .fieldrow{display:grid;grid-template-columns:repeat(16,1fr);gap:5px;margin-bottom:5px;height:20px}
+  .fieldspan{grid-row:1;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:10.5px;color:var(--accent);border-bottom:2px solid var(--accent);border-radius:2px;overflow:hidden;white-space:nowrap}
+  .fieldspan.pad{color:var(--pad);border-bottom-color:var(--pad)}
+  .strip{display:grid;grid-template-columns:repeat(16,1fr);gap:5px;margin-bottom:12px}
+  .byte{aspect-ratio:1/1.18;border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:var(--mono);position:relative;border:1px solid transparent}
+  .byte .hx{font-size:11.5px;font-weight:600}
+  .byte .ix{position:absolute;top:2px;left:4px;font-size:8px;color:var(--muted);opacity:.7}
+  .b-id{background:var(--accent-soft);border-color:var(--accent);color:#cdeee7}
+  .b-pos{background:#15302b;border-color:#3a6e64;color:#9fd9cf}
+  .b-alive{background:#2a2417;border-color:#7a6a44;color:#d8c890}
+  .b-mass{background:#3a2417;border-color:var(--tag);color:#f0b48a}
+  .b-pad{background:#201d17;border-color:#332e24;color:#5a544a;background-image:repeating-linear-gradient(45deg,transparent,transparent 4px,#262119 4px,#262119 8px)}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:6px;font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+  .legend span{display:flex;align-items:center;gap:7px}
+  .chip{width:13px;height:13px;border-radius:3px;border:1px solid}
+  .c-id{background:var(--accent-soft);border-color:var(--accent)}
+  .c-pos{background:#15302b;border-color:#3a6e64}
+  .c-alive{background:#2a2417;border-color:#7a6a44}
+  .c-mass{background:#3a2417;border-color:var(--tag)}
+  .c-pad{background:#201d17;border-color:#332e24}
+
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:26px}
+  @media(max-width:680px){.cols{grid-template-columns:1fr}}
+  .panel h3{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 12px;font-weight:600}
+  .sizes{font-family:var(--mono);font-size:13px;line-height:2}
+  .sizes .n{color:var(--accent);font-weight:600}
+  .sizes .big{color:var(--tag);font-weight:600}
+
+  pre{font-family:var(--mono);font-size:12.5px;line-height:1.7;background:#1a1710;border:1px solid var(--rule);border-radius:10px;padding:16px 18px;overflow:auto;margin:22px 0 0;white-space:pre-wrap}
+  pre .cm{color:#6f6655}
+  pre .kw{color:var(--accent)}
+  pre .er{color:var(--bad)}
+  pre .ok{color:var(--accent)}
+
+  /* L2 AoS-vs-SoA layout diagram */
+  .layoutlabel{font-family:var(--mono);font-size:12px;color:var(--ink);margin:2px 0 8px}
+  .layoutlabel .sub{color:var(--muted);font-size:11px}
+  /* AoS: a row of particle blocks, each block its 7 fields interleaved */
+  .aosrow{display:flex;gap:8px;flex-wrap:wrap}
+  .pblock{flex:1;min-width:150px;border:1px solid var(--rule);border-radius:9px;padding:6px;background:#1a1710}
+  .pblock .ph{font-family:var(--mono);font-size:10px;color:var(--muted);text-align:center;margin-bottom:5px}
+  .ffrow{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+  .ff{font-family:var(--mono);font-size:9.5px;text-align:center;border-radius:4px;padding:6px 0;border:1px solid transparent}
+  .ff-pos{background:#15302b;border-color:#3a6e64;color:#9fd9cf}
+  .ff-vel{background:#2a2417;border-color:#7a6a44;color:#d8c890}
+  .ff-mass{background:#3a2417;border-color:var(--tag);color:#f0b48a}
+  /* SoA: a row of columns, each column the same field across all particles */
+  .soarow{display:flex;gap:8px;flex-wrap:wrap}
+  .colblk{flex:1;min-width:78px;border:1px solid var(--rule);border-radius:9px;padding:6px;background:#1a1710}
+  .colblk .ch{font-family:var(--mono);font-size:9.5px;color:var(--muted);text-align:center;margin-bottom:5px}
+  .colblk.hot{border-color:var(--accent);background:#142a26}
+  .colblk.cold{opacity:.5}
+  .cc{font-family:var(--mono);font-size:9.5px;text-align:center;border-radius:4px;padding:6px 0;margin:3px 0;border:1px solid transparent}
+  .cc-pos{background:#15302b;border-color:#3a6e64;color:#9fd9cf}
+  .cc-vel{background:#2a2417;border-color:#7a6a44;color:#d8c890}
+  .cc-mass{background:#3a2417;border-color:var(--tag);color:#f0b48a}
+  .touchcap{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:12px;text-align:center}
+  .touchcap b{color:var(--accent)}
+
+  /* L3 proportional bars */
+  .bar{height:30px;border-radius:6px;display:flex;align-items:center;font-family:var(--mono);font-size:12px;padding-left:10px;color:#0e0c08;font-weight:600;margin:6px 0;transition:width .3s,background .2s}
+  .bar.used{background:var(--accent)}
+  .bar.waste{background:repeating-linear-gradient(45deg,#5a544a,#5a544a 6px,#48433b 6px,#48433b 12px);color:var(--ink)}
+  .barrow{display:flex;align-items:center;gap:10px}
+  .barrow .lab{font-family:var(--mono);font-size:11px;color:var(--muted);width:150px;flex:none}
+
+  .note{background:#1a1710;border:1px solid var(--rule);border-left:3px solid var(--tag);
+    border-radius:10px;padding:15px 18px;margin-top:24px;font-size:15px;line-height:1.6;color:var(--muted)}
+  .note b{color:var(--ink)}
+  .note .h{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--tag);display:block;margin-bottom:8px}
+  .foot{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;margin-top:34px}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="kicker">Odin · structs &amp; #soa</div>
+  <h1>A struct, and the one-keyword layout pivot</h1>
+
+  <div class="levels" id="levelnav"></div>
+  <div class="rule"></div>
+
+  <!-- ===================== LEVEL 1 — WHAT IT IS ===================== -->
+  <section class="section" id="s1">
+    <p class="deck">A struct is <b>named fields laid out one after another in memory</b>. Each field starts at an offset that satisfies its type's alignment, the compiler inserts <b>padding</b> to make that work, and the whole struct's <span class="il">size_of</span> rounds up so an array of them stays aligned. Pick a field and watch which bytes are its data — and which are padding nobody asked for.</p>
+    <div class="hint">Real offsets &amp; sizes, measured from a compiled Odin program (claims/lessons/12-structs-and-soa/struct-layout). Byte index is top-left of each cell.</div>
+
+    <nav class="sub" id="fnav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="movlabel"></div>
+      <div class="fieldrow" id="fieldrow0"></div>
+      <div class="strip" id="strip0"></div>
+      <div class="fieldrow" id="fieldrow1"></div>
+      <div class="strip" id="strip1"></div>
+      <div class="legend">
+        <span><i class="chip c-id"></i> id : u8</span>
+        <span><i class="chip c-pos"></i> pos : [3]f32</span>
+        <span><i class="chip c-alive"></i> alive : bool</span>
+        <span><i class="chip c-mass"></i> mass : f64</span>
+        <span><i class="chip c-pad"></i> padding</span>
+      </div>
+    </div>
+
+    <div class="cols">
+      <div class="panel"><h3>Sizes (size_of)</h3>
+        <div class="sizes">
+          u8&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= <span class="n">1</span><br>
+          bool&nbsp;&nbsp;= <span class="n">1</span><br>
+          [3]f32 = <span class="n">12</span><br>
+          f64&nbsp;&nbsp;&nbsp;= <span class="n">8</span><br><br>
+          <b style="color:var(--ink)">Mover (struct)</b> = <span class="big">32</span><br>
+          align_of = <span class="n">8</span><br>
+          <span style="color:var(--muted)">= 22 bytes of fields<br>&nbsp;&nbsp;+ 10 bytes of padding</span>
+        </div>
+      </div>
+      <div class="panel"><h3>What you're seeing</h3><p class="teach" id="fteach"></p></div>
+    </div>
+
+    <div class="note">
+      <span class="h">the struct is just the data</span>
+      A struct body is a <b>list of fields</b> — nothing else lives inside it. There is no method, constructor, property, or hidden header attached to <span class="il">Mover</span>; behavior lives in free procedures that take a <span class="il">^Mover</span>. That's the property the rest of this page leans on: because nothing clings to the type, the compiler is free to <b>reorganize the bytes</b> — which is exactly what Level&nbsp;2 does. A fresh <span class="il">m: Mover</span> is also fully <b>zero-initialized</b>; every byte above starts at <span class="il">00</span>, padding included.
+    </div>
+  </section>
+
+  <!-- ============= LEVEL 2 — WHY YOU'D REACH FOR #soa ============= -->
+  <section class="section" id="s2">
+    <p class="deck">Level 1 was <i>what a struct is</i>. Now the payoff Odin builds on top of it: <span class="il">#soa</span>. Write it in front of an array type and the compiler <b>pivots the layout</b> — an <i>array of structs</i> becomes a <i>struct of arrays</i> — while <span class="il">arr[i].field</span> reads exactly the same. Use a <span class="il">Particle :: struct { pos: [3]f32, vel: [3]f32, mass: f32 }</span> and watch where one field lives in each layout.</p>
+
+    <nav class="sub" id="laynav"></nav>
+    <div class="canvas">
+      <div class="layoutlabel" id="laylabel"></div>
+      <div id="laystage"></div>
+      <div class="touchcap" id="laycap"></div>
+    </div>
+
+    <p class="teach"><b>The reach-for-it case:</b> a hot loop that touches <i>a few fields across many elements</i> — say a position update <span class="il">pos += vel * dt</span> over a million particles. A CPU never fetches one float; it pulls a whole <b>cache line</b> and the next read from inside that line is essentially free. So the question that decides speed is: <i>of the bytes a cache line drags in, how many does this loop actually want?</i></p>
+
+    <p class="teach"><b>Why the array-of-structs layout loses here:</b> consecutive particles' <span class="il">pos</span> values sit <b>28 bytes apart</b> — a whole <span class="il">Particle</span>, with that particle's <span class="il">vel</span> and <span class="il">mass</span> wedged between the two <span class="il">pos</span> values. A loop that only reads <span class="il">pos</span> still hauls every interleaved <span class="il">vel</span> and <span class="il">mass</span> through cache and then ignores them.</p>
+
+    <p class="teach"><b>Why <span class="il">#soa</span> wins:</b> after the pivot, consecutive <span class="il">pos</span> values sit <b>12 bytes apart</b> — back to back, nothing between them (12 is exactly <span class="il">size_of([3]f32)</span>). The loop <i>touches only the bytes it needs</i>, packed contiguously; the <span class="il">mass</span> column's cache lines are never fetched at all. Same data, same total size — a better road through it.</p>
+
+    <p class="teach"><b>The counterfactual:</b> if the loop touched <i>most or all</i> fields of one element at a time (read <span class="il">pos</span>, <span class="il">vel</span> and <span class="il">mass</span> together), the array-of-structs layout would be the right call — one element's fields are already adjacent, and <span class="il">#soa</span> would spread them across separate columns and fetch a line per field. For a handful of elements it makes no measurable difference either way. <span class="il">#soa</span> earns its keep precisely when a hot loop reads a <i>narrow slice of fields over a wide run of elements</i>.</p>
+  </section>
+
+  <!-- ===================== LEVEL 3 — THE BILL ===================== -->
+  <section class="section" id="s3">
+    <p class="deck">Two costs come with all this. First, the padding you saw in Level 1 is real bytes you pay for in <i>every</i> element. Second, <span class="il">#soa</span> is not magic compression — the pivot moves bytes, it never removes them.</p>
+
+    <p class="teach"><b>The bill on padding:</b> field <b>order</b> decides padding, and padding is paid per element. The Level&nbsp;1 <span class="il">Mover</span> spent <b>10 of its 32 bytes</b> on padding. Reorder the <i>same four fields</i> largest-alignment-first and the small fields drop into what was padding — toggle it:</p>
+
+    <nav class="sub" id="ordnav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="ordlabel"></div>
+      <div class="barrow"><div class="lab">struct size</div><div style="flex:1"><div class="bar used" id="bar-size"></div></div></div>
+      <div class="barrow"><div class="lab">real field bytes</div><div style="flex:1"><div class="bar used" id="bar-need" style="background:#3a6e64"></div><div class="bar waste" id="bar-waste"></div></div></div>
+      <div class="sizes" id="ordsizes" style="margin-top:16px"></div>
+    </div>
+    <p class="teach"><b>The fix:</b> order fields large-to-small to soak up padding, and reach for <span class="il">#packed</span> only when you must match a byte-exact binary protocol (network packet, file header, hardware register) — packed structs can force slow or trapping misaligned loads, so it's a tool for the wire, not for speed.</p>
+
+    <p class="teach" style="margin-top:26px"><b>The bill on the pivot:</b> a <span class="il">#soa</span> array holds the <i>same total bytes</i> as the array of structs — both <span class="il">[4]Particle</span> and <span class="il">#soa [4]Particle</span> are <b>112 bytes</b>. The pivot is a <b>transposition, not a packing</b>: the 28 bytes per particle still exist, just re-grouped by column instead of by element. You buy locality for the hot loop, not smaller memory.</p>
+
+    <div class="note">
+      <span class="h">a plain array has no field columns</span>
+      Per-field columns are something <b>only an <span class="il">#soa</span> array exposes</b>. On a normal <span class="il">[4]Particle</span>, reaching for <span class="il">aos.pos</span> is a compile error — there's no <span class="il">pos</span> field on the array type, only on the <span class="il">Particle</span> element:
+      <pre style="margin-top:12px"><span class="kw">aos</span>: [4]Particle
+fmt.println(<span class="er">aos.pos</span>)   <span class="cm">// no such field on the array</span>
+
+<span class="er">Error: 'aos' of type '[4]Particle' has no field 'pos'</span></pre>
+      The column view is a thing the <span class="il">#soa</span> pivot grants; it is not a property of arrays in general.
+    </div>
+  </section>
+
+  <!-- ============= LEVEL 4 — THE EMERGENT PAYOFF ============= -->
+  <section class="section" id="s4">
+    <p class="deck">The last level is the property that makes <span class="il">#soa</span> feel like a superpower rather than a trick: <b>the layout is negotiable without touching the code that uses it.</b> One keyword flips the bytes; not one line at the call sites changes.</p>
+
+    <p class="teach"><b>One storage, two names.</b> After the pivot, the i-th particle's position is reachable two ways — the <i>row</i> view <span class="il">soa[i].pos</span> (the same indexing you'd write on a plain array) and the <i>column</i> view <span class="il">soa.pos[i]</span>. They are not copies that happen to agree; they resolve to the <b>identical address</b>:</p>
+    <pre><span class="kw">soa</span>: #soa [4]Particle
+<span class="cm">// the row view and the column view name one storage location</span>
+assert(&soa[0].pos == &soa.pos[0])   <span class="ok">// holds: same address</span></pre>
+
+    <p class="teach"><b>The free column views.</b> Because the bytes are now grouped by field, every field name becomes an <b>array view of length N</b> at no cost — <span class="il">soa.pos</span> is a <span class="il">[4][3]f32</span>, <span class="il">soa.mass</span> is a <span class="il">[4]f32</span>. That <span class="il">[4]f32</span> is already the contiguous run a vectorized loop, a GPU upload, or an audio mixer wants — no copy-out, no strided gather. Filling four particles like the lesson and reading the columns back:</p>
+    <pre><span class="cm">// type soa.pos  : [4][3]f32</span>
+<span class="cm">// type soa.mass : [4]f32</span>
+soa.pos column : [[0.5, 0, 0], [1.5, 0, 0], [2.5, 0, 0], [3.5, 0, 0]]
+soa.mass column: [1, 1, 1, 1]</pre>
+
+    <p class="teach"><b>The emergent payoff:</b> in a real codebase you sketch with the array of structs because one element reads naturally; then a profiler points at one hot table, you prepend <span class="il">#soa</span>, and <i>every</i> <span class="il">arr[i].field</span> in the calling code keeps working unchanged while the bytes underneath are now cache-friendly columns. The cost of switching is one keyword and zero edits to the consumers — which is the entire reason to keep behavior out of the struct in the first place. A type that's <i>only data</i> is a type whose shape stays yours to negotiate.</p>
+
+    <p class="teach" style="margin-top:24px;color:var(--muted)">That's the arc: <b style="color:var(--ink)">L1</b> a struct is named fields with alignment-driven padding → <b style="color:var(--ink)">L2</b> <span class="il">#soa</span> pivots an array's bytes so a hot loop touches only the field it needs, contiguously → <b style="color:var(--ink)">L3</b> the bill is padding-per-element and that the pivot moves bytes (112 = 112) rather than shrinking them → <b style="color:var(--ink)">L4</b> the pivot is one keyword with zero changes to calling code, because the struct is only data.</p>
+  </section>
+
+  <div class="foot">probes reproduce with <span style="color:var(--ink)">odin run</span> · sizes, offsets, strides, column types &amp; the L3 error are real compiler output (claims/lessons/12-structs-and-soa) · perf shown qualitatively only — the measured SoA win sits inside the harness noise band</div>
+</div>
+
+<script>
+/* ============================================================
+   Each interactive component = one data object + one render fn.
+   Vanilla JS, inline, no libraries.
+   Every embedded number/offset/type/error/output traces to a
+   passing claim under claims/lessons/12-structs-and-soa/.
+   ============================================================ */
+
+/* ---------- LEVEL 1: the Mover byte strip (32 bytes, 2 rows) ----------
+   Measured (claim struct-layout): size 32, align 8;
+   offsets id=0, pos=4, alive=16, mass=24.
+   So: id[0], pad[1..3], pos[4..15], alive[16], pad[17..23], mass[24..31]. */
+const REGION = new Array(32).fill('pad');
+REGION[0]='id';
+for(let i=4;i<16;i++) REGION[i]='pos';
+REGION[16]='alive';
+for(let i=24;i<32;i++) REGION[i]='mass';
+const RCLASS = {id:'b-id',pos:'b-pos',alive:'b-alive',mass:'b-mass',pad:'b-pad'};
+/* field spans, as [name, lo, hi) within each 16-byte row, plus pad spans */
+const SPANS = {
+  id:    {teach:`<code>id : u8</code> is a single byte at offset <b>0</b>. The very next field, <code>pos</code>, must start at a multiple of 4 (its alignment), so bytes <b>1–3</b> are <b>padding</b> — three bytes spent buying <code>pos</code> its alignment.`},
+  pos:   {teach:`<code>pos : [3]f32</code> is 12 bytes at offset <b>4</b> (through byte 15). An <code>f32</code> aligns to 4, and 4 already is, so no padding before it. This is the biggest single field but it is <i>not</i> what sets the struct's alignment.`},
+  alive: {teach:`<code>alive : bool</code> is one byte at offset <b>16</b>. The next field, <code>mass : f64</code>, aligns to 8, and 17 isn't a multiple of 8 — so bytes <b>17–23</b> are <b>padding</b>, seven bytes wasted to line <code>mass</code> up.`},
+  mass:  {teach:`<code>mass : f64</code> is 8 bytes at offset <b>24</b> (through 31). Its 8-byte alignment is the largest in the struct, so <code>align_of(Mover)</code> is <b>8</b> and the size rounds up to a multiple of 8 — landing exactly on <b>32</b>, no trailing padding this time.`},
+  pad:   {teach:`<b>Padding</b> is the bytes the compiler inserts so each field lands on a valid offset for its type. Here it's bytes <b>1–3</b> (lining up <code>pos</code>) and <b>17–23</b> (lining up <code>mass</code>): <b>10 wasted bytes</b> out of 32. Reorder the fields and most of it vanishes — that's Level 3.`},
+};
+let fcur='pos';
+function renderL1(){
+  document.querySelectorAll('#fnav button').forEach(b=>b.classList.toggle('on',b.dataset.f===fcur));
+  document.getElementById('movlabel').textContent='Mover{ id:u8, pos:[3]f32, alive:bool, mass:f64 }   —   32-byte struct, align 8';
+  // build field-span rows + byte rows for both 16-byte halves
+  for(let row=0; row<2; row++){
+    const base=row*16;
+    // field spans for this row: merge contiguous same-region runs
+    let fr=''; let i=0;
+    while(i<16){
+      const r=REGION[base+i]; let j=i+1; while(j<16 && REGION[base+j]===r) j++;
+      const isPad = r==='pad';
+      const lit = isPad?'pad':r;
+      fr+=`<div class="fieldspan ${isPad?'pad':''}" style="grid-column:${i+1}/${j+1}">${lit}</div>`;
+      i=j;
+    }
+    document.getElementById('fieldrow'+row).innerHTML=fr;
+    let s='';
+    for(let k=0;k<16;k++){
+      const idx=base+k; const r=REGION[idx];
+      const hot = (r===fcur) || (fcur==='pad' && r==='pad');
+      const dim = !hot;
+      s+=`<div class="byte ${RCLASS[r]}" style="${dim?'opacity:.32':''}"><span class="ix">${idx}</span><span class="hx">00</span></div>`;
+    }
+    document.getElementById('strip'+row).innerHTML=s;
+  }
+  document.getElementById('fteach').innerHTML=SPANS[fcur].teach;
+}
+const fnav=document.getElementById('fnav');
+[['id','id'],['pos','pos'],['alive','alive'],['mass','mass'],['pad','padding']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.f=k; b.textContent=t;
+  b.onclick=()=>{fcur=k;renderL1();}; fnav.appendChild(b);
+});
+
+/* ---------- LEVEL 2: AoS vs SoA layout, "touch pos only" ----------
+   Measured (claim aos-vs-soa-layout): size_of(Particle)=28, [3]f32=12,
+   [4]Particle=112, #soa [4]Particle=112, AoS pos stride=28, SoA pos stride=12. */
+const PN = 4;
+let layMode='aos';
+function renderL2(){
+  document.querySelectorAll('#laynav button').forEach(b=>b.classList.toggle('on',b.dataset.m===layMode));
+  const stage=document.getElementById('laystage');
+  if(layMode==='aos'){
+    document.getElementById('laylabel').innerHTML =
+      `[4]Particle — array of structs <span class="sub">· one particle is one contiguous block · consecutive pos are <b style="color:var(--tag)">28 bytes</b> apart</span>`;
+    let html='<div class="aosrow">';
+    for(let p=0;p<PN;p++){
+      html+=`<div class="pblock"><div class="ph">particle ${p} · 28 B</div><div class="ffrow">
+        <div class="ff ff-pos">px</div><div class="ff ff-pos">py</div><div class="ff ff-pos">pz</div>
+        <div class="ff ff-vel">vx</div><div class="ff ff-vel">vy</div><div class="ff ff-vel">vz</div>
+        <div class="ff ff-mass">m</div></div></div>`;
+    }
+    html+='</div>';
+    stage.innerHTML=html;
+    document.getElementById('laycap').innerHTML =
+      `a loop reading only <b>pos</b> still drags every <span style="color:#d8c890">vel</span> and <span style="color:#f0b48a">mass</span> through cache between the pos values it wants`;
+  } else {
+    document.getElementById('laylabel').innerHTML =
+      `#soa [4]Particle — struct of arrays <span class="sub">· one field is one contiguous column · consecutive pos are <b style="color:var(--accent)">12 bytes</b> apart</span>`;
+    const cols=[['pos.x','cc-pos','hot'],['pos.y','cc-pos','hot'],['pos.z','cc-pos','hot'],
+                ['vel.x','cc-vel','cold'],['vel.y','cc-vel','cold'],['vel.z','cc-vel','cold'],['mass','cc-mass','cold']];
+    let html='<div class="soarow">';
+    for(const [name,cls,heat] of cols){
+      html+=`<div class="colblk ${heat}"><div class="ch">${name}</div>`;
+      for(let p=0;p<PN;p++) html+=`<div class="cc ${cls}">${p}</div>`;
+      html+='</div>';
+    }
+    html+='</div>';
+    stage.innerHTML=html;
+    document.getElementById('laycap').innerHTML =
+      `the <b>pos</b> columns are read end-to-end; the dimmed <span style="color:#d8c890">vel</span> and <span style="color:#f0b48a">mass</span> columns are never fetched at all`;
+  }
+}
+const laynav=document.getElementById('laynav');
+[['aos','array of structs'],['soa','#soa · struct of arrays']].forEach(([m,t])=>{
+  const b=document.createElement('button'); b.dataset.m=m; b.textContent=t;
+  b.onclick=()=>{layMode=m;renderL2();}; laynav.appendChild(b);
+});
+
+/* ---------- LEVEL 3: padding cost, reorder toggle ----------
+   Measured: original Mover = 32 (claim struct-layout); reordered MoverPacked = 24
+   (claim reorder-shrinks). Real field bytes = 22 (1+12+1+8). */
+const ORD = {
+  declared: {label:'fields as declared: id, pos, alive, mass', size:32,
+    note:'Size <span class="big">32</span> = 22 field bytes + <span class="big">10</span> padding. Pad sits after <code>id</code> (3 B) and after <code>alive</code> (7 B).'},
+  reordered:{label:'reordered big→small: mass, pos, id, alive', size:24,
+    note:'Size <span class="n">24</span> = 22 field bytes + only <span class="n">2</span> padding. <code>id</code> and <code>alive</code> tuck in after <code>pos</code>; one trailing pad byte to reach a multiple of 8.'},
+};
+const ORD_MAX=32, ORD_NEED=22;
+let ordMode='declared';
+function renderL3(){
+  document.querySelectorAll('#ordnav button').forEach(b=>b.classList.toggle('on',b.dataset.m===ordMode));
+  const f=ORD[ordMode];
+  document.getElementById('ordlabel').textContent=f.label+`  —  size_of = ${f.size} bytes`;
+  document.getElementById('bar-size').style.width=Math.round(f.size/ORD_MAX*100)+'%';
+  document.getElementById('bar-size').textContent=f.size+' bytes';
+  document.getElementById('bar-need').style.width=Math.round(ORD_NEED/ORD_MAX*100)+'%';
+  document.getElementById('bar-need').textContent=ORD_NEED+'B fields';
+  const waste=f.size-ORD_NEED;
+  document.getElementById('bar-waste').style.width=Math.round(waste/ORD_MAX*100)+'%';
+  document.getElementById('bar-waste').textContent=waste+' pad';
+  document.getElementById('ordsizes').innerHTML=f.note;
+}
+const ordnav=document.getElementById('ordnav');
+[['declared','as declared (32)'],['reordered','reordered (24)']].forEach(([m,t])=>{
+  const b=document.createElement('button'); b.dataset.m=m; b.textContent=t;
+  b.onclick=()=>{ordMode=m;renderL3();}; ordnav.appendChild(b);
+});
+
+/* ---------- level navigation ---------- */
+const LEVELS=[
+  ['1','What it is','fields, alignment, padding'],
+  ['2','Why use #soa','the layout pivot'],
+  ['3','The cost','padding & a transposition'],
+  ['4','The payoff','negotiable layout'],
+];
+let level='1';
+function setLevel(n){
+  level=n;
+  document.querySelectorAll('.levels button').forEach(b=>b.classList.toggle('on',b.dataset.n===n));
+  for(const [k] of LEVELS){ const el=document.getElementById('s'+k); if(el) el.classList.toggle('on',k===n); }
+  if(n==='1') renderL1();
+  if(n==='2') renderL2();
+  if(n==='3') renderL3();
+}
+const lnav=document.getElementById('levelnav');
+for(const [n,tt,sub] of LEVELS){ const b=document.createElement('button'); b.dataset.n=n;
+  b.innerHTML=`<span class="lv">Level ${n} · ${sub}</span><span class="tt">${tt}</span>`;
+  b.onclick=()=>setLevel(n); lnav.appendChild(b); }
+setLevel('1');
+</script>
+</body>
+</html>

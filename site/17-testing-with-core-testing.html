@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Odin testing — a test proc, four levels deep</title>
+<style>
+  :root{
+    --paper:#15130f; --card:#1d1a14; --ink:#ece6d8; --muted:#9a9182;
+    --rule:#332e24; --accent:#5ec8b8; --accent-soft:#1f342f;
+    --tag:#e0875a; --pad:#5a544a; --bad:#e0675a; --bad-soft:#2a1815;
+    --mono:"Cascadia Mono","Cascadia Code",Consolas,ui-monospace,"SF Mono",monospace;
+    --serif:-apple-system,"Segoe UI Variable Text","Segoe UI",system-ui,Roboto,"Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper);color:var(--ink)}
+  body{font-family:var(--serif);line-height:1.6;padding:0 20px;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-feature-settings:"kern" 1,"liga" 1}
+  .page{max-width:860px;margin:0 auto;padding:46px 0 90px}
+  .kicker{font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+  h1{font-size:30px;line-height:1.15;margin:0 0 18px;font-weight:600;letter-spacing:-.01em}
+
+  /* level tabs */
+  .levels{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+  .levels button{flex:1;min-width:150px;text-align:left;background:var(--card);border:1px solid var(--rule);
+    color:var(--muted);border-radius:10px;padding:11px 14px;cursor:pointer;transition:.12s;font-family:var(--serif)}
+  .levels button:hover{border-color:var(--accent)}
+  .levels button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--ink)}
+  .levels .lv{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);display:block;margin-bottom:3px}
+  .levels .tt{font-size:14px}
+  .rule{height:1px;background:var(--rule);margin:22px 0 26px}
+
+  .deck{color:var(--muted);font-size:17px;margin:0 0 24px;line-height:1.5}
+  .deck b{color:var(--ink)}
+  h2{font-size:21px;margin:0 0 14px;font-weight:600}
+  p.teach{font-size:16px;line-height:1.62;max-width:46em}
+  p.teach code,.il{font-family:var(--mono);font-size:.86em;background:#2a2519;padding:1px 5px;border-radius:4px}
+  .teach b{color:var(--tag)}
+  .section{display:none}
+  .section.on{display:block}
+
+  nav.sub{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;font-family:var(--mono);font-size:13px}
+  nav.sub button{background:var(--card);border:1px solid var(--rule);color:var(--muted);border-radius:8px;padding:8px 14px;cursor:pointer;transition:.12s}
+  nav.sub button:hover{color:var(--ink);border-color:var(--accent)}
+  nav.sub button.on{color:var(--ink);border-color:var(--accent);background:var(--accent-soft)}
+  .hint{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin:0 0 20px}
+
+  .canvas{background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:30px 28px}
+  .slotlabel{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
+
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:26px}
+  @media(max-width:680px){.cols{grid-template-columns:1fr}}
+  .panel h3{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 12px;font-weight:600}
+
+  pre{font-family:var(--mono);font-size:12.5px;line-height:1.7;background:#1a1710;border:1px solid var(--rule);border-radius:10px;padding:16px 18px;overflow:auto;margin:22px 0 0;white-space:pre-wrap}
+  pre .cm{color:#6f6655}
+  pre .kw{color:var(--accent)}
+  pre .er{color:var(--bad)}
+  pre .ok{color:var(--accent)}
+  pre .dim{color:#6f6655}
+  pre .tg{color:var(--tag)}
+
+  /* terminal-styled runner output */
+  .term{font-family:var(--mono);font-size:12px;line-height:1.65;background:#120f0b;border:1px solid var(--rule);border-radius:10px;padding:15px 17px;overflow:auto;white-space:pre-wrap;margin:0}
+  .term .info{color:#6f6655}
+  .term .err{color:var(--bad)}
+  .term .ok{color:var(--accent)}
+  .term .ts{color:#564f44}
+  .term .cmd{color:var(--ink)}
+  .term .name{color:#b9b0a0}
+
+  /* two-lane (tangled vs pure) */
+  .twoup{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:6px}
+  @media(max-width:640px){.twoup{grid-template-columns:1fr}}
+  .lane{background:#1a1710;border:1px solid var(--rule);border-radius:12px;padding:16px}
+  .lane.good{border-color:var(--accent)}
+  .lane.bad{border-color:#4a342a}
+  .lane h4{font-family:var(--mono);font-size:12px;margin:0 0 10px;font-weight:600}
+  .lane.good h4{color:var(--accent)}
+  .lane.bad h4{color:var(--tag)}
+  .lane pre{margin:0;font-size:11.5px;background:#120f0b}
+  .verdict{font-family:var(--mono);font-size:12px;margin-top:12px;padding:8px 10px;border-radius:7px}
+  .verdict.good{background:var(--accent-soft);color:#cdeee7;border:1px solid var(--accent)}
+  .verdict.bad{background:var(--bad-soft);color:#f0a892;border:1px solid #5a3a30}
+
+  /* assertion ladder table */
+  table.ladder{width:100%;border-collapse:collapse;font-size:14px;margin-top:6px}
+  table.ladder th,table.ladder td{text-align:left;padding:10px 10px;border-bottom:1px solid var(--rule);vertical-align:top}
+  table.ladder th{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+  table.ladder td.t{font-family:var(--mono);color:var(--accent);white-space:nowrap}
+  table.ladder tr:hover td{background:#1a1710}
+
+  /* verdict badge for the toggle */
+  .badge{display:inline-block;font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;padding:4px 10px;border-radius:6px;margin-left:8px}
+  .badge.pass{background:var(--accent-soft);color:#cdeee7;border:1px solid var(--accent)}
+  .badge.fail{background:var(--bad-soft);color:#f0a892;border:1px solid #5a3a30}
+
+  .note{background:#1a1710;border:1px solid var(--rule);border-left:3px solid var(--tag);
+    border-radius:10px;padding:15px 18px;margin-top:24px;font-size:15px;line-height:1.6;color:var(--muted)}
+  .note b{color:var(--ink)}
+  .note .h{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--tag);display:block;margin-bottom:8px}
+  .foot{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;margin-top:34px}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="kicker">Odin · core:testing</div>
+  <h1>A test proc, four levels deep</h1>
+
+  <div class="levels" id="levelnav"></div>
+  <div class="rule"></div>
+
+  <!-- ===================== LEVEL 1 — WHAT IT IS ===================== -->
+  <section class="section" id="s1">
+    <p class="deck">A test is <b>a normal proc with a marker on it</b>. You stamp <span class="il">@(test)</span> above a proc, give it the signature <span class="il">proc(t: ^testing.T)</span>, and run <span class="il">odin test .</span> from the package's directory. The runner finds every marked proc, runs each one, and tallies what passed. No framework to pick, no config, no class to put it in.</p>
+    <p class="teach">Inside, you assert with a handful of procs from <span class="il">core:testing</span>. The handle <span class="il">t</span> is how each assertion records <i>which</i> check failed and <i>where</i> — you thread it through to every call:</p>
+    <pre><span class="kw">import</span> <span class="ok">"core:testing"</span>
+
+<span class="tg">@(test)</span>
+clamp_in_range_returns_value_unchanged :: <span class="kw">proc</span>(t: ^testing.T) {
+    testing.expect_value(t, clamp_to_range(5, 0, 10), 5)
+}</pre>
+    <p class="teach">Now run it. The toggle below switches between the four <span class="il">@(test)</span> procs in this lesson's package and the <span class="il">step</span> bounce test from Level 2 — different test counts, <b>same shape of output</b>. The header lines are the runner announcing its setup; the last line is the verdict:</p>
+
+    <nav class="sub" id="runnav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="runlabel"></div>
+      <pre class="term" id="runterm"></pre>
+    </div>
+
+    <div class="cols">
+      <div class="panel"><h3>What the runner gives you free</h3>
+        <p class="teach">A <b>thread per test</b> (the header says how many). A <b>random seed</b> printed every run, so a flaky test can be replayed with <span class="il">-define:ODIN_TEST_RANDOM_SEED=n</span>. A <b>per-test memory tracker</b> that flags anything you allocate and don't free. You write the proc; the runner brings the scaffolding.</p>
+      </div>
+      <div class="panel"><h3>What's stable, what isn't</h3>
+        <p class="teach">Only the final <span class="il">All tests were successful.</span> line is stable run to run. The timestamps, the seed, the thread count, and the duration all change every invocation — so a test asserts on <i>your code's</i> behavior, never on the runner's bookkeeping.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============= LEVEL 2 — WHY YOU'D REACH FOR IT ============= -->
+  <section class="section" id="s2">
+    <p class="deck">Level 1 was <i>what it is</i>. Level 2 is <i>why it earns its keep</i>: a test can only assert on logic it can <b>call in isolation</b>. The move that unlocks testing is pulling pure logic <b>out</b> of side-effecting code.</p>
+    <p class="teach">Take a bouncing ball. The per-frame update is tangled into the loop that also opens a window, reads input, and draws pixels. You <i>cannot</i> assert "the ball bounced off the right wall" against that — there's no value to inspect, only a window that flickers. So you cut the math out into a <b>pure proc</b>: a ball and the box size in, a new ball out, nothing else touched.</p>
+
+    <div class="twoup">
+      <div class="lane bad">
+        <h4>tangled — math lives inside the frame loop</h4>
+        <pre><span class="kw">for</span> running {
+    poll_events()
+    <span class="dim">// physics buried among I/O...</span>
+    ball.x += ball.vx
+    <span class="kw">if</span> ball.x &gt; w { ball.vx = -ball.vx }
+    draw(ball)        <span class="dim">// only output is pixels</span>
+}</pre>
+        <div class="verdict bad">nothing to assert — no value comes back out</div>
+      </div>
+      <div class="lane good">
+        <h4>pure — the math is a proc you can call</h4>
+        <pre><span class="kw">step</span> :: <span class="kw">proc</span>(b: Ball, w, h: f32) -&gt; Ball {
+    nb := b
+    nb.x += nb.vx
+    <span class="kw">if</span> nb.x &gt; w { nb.vx = -nb.vx }
+    <span class="kw">return</span> nb        <span class="dim">// a new ball, fully inspectable</span>
+}</pre>
+        <div class="verdict good">a ball in, a ball out — assertable in isolation</div>
+      </div>
+    </div>
+
+    <p class="teach"><b>The payoff, made concrete:</b> put a ball at the right wall moving right, call <span class="il">step</span> once, and assert its horizontal velocity is now negative — it turned around. Add one that checks a ball mid-box keeps its velocity. Two procs, run them:</p>
+    <div class="canvas">
+      <div class="slotlabel">odin test .  &mdash;  the step package (2 tests)</div>
+      <pre class="term" id="stepterm"></pre>
+    </div>
+    <pre><span class="tg">@(test)</span>
+ball_bounces_off_right_wall :: <span class="kw">proc</span>(t: ^testing.T) {
+    b := Ball{x = 99, y = 50, vx = 5, vy = 0}
+    after := step(b, 100, 100)
+    testing.expect(t, after.vx &lt; 0, <span class="ok">"ball at the right wall should reverse vx"</span>)
+}</pre>
+
+    <p class="teach"><b>The counterfactual:</b> if <span class="il">step</span> stayed welded to the window, the only way to "test" it would be to launch the game, watch the ball, and trust your eyes — slow, manual, and silent the day someone breaks the math. The proc is worth extracting <i>because</i> a pure function of its inputs is a thing you can pin an assertion to. No pure proc, no test.</p>
+  </section>
+
+  <!-- ===================== LEVEL 3 — A FAILING ASSERTION IS A REAL VERDICT ===================== -->
+  <section class="section" id="s3">
+    <p class="deck">Level 2 gave you something to assert. Level 3 is what makes the assertion <b>load-bearing</b>: when a check is false, the runner prints exactly what broke and the run exits <b>nonzero</b>. A green test you can't make go red proves nothing. Flip the assertion and watch the verdict turn over.</p>
+    <p class="teach">Two assertion procs, two failure styles. <span class="il">expect_value(t, got, want)</span> is the typed-equality form — on failure it names <b>both sides</b> for you. <span class="il">expect(t, cond, "msg")</span> is the boolean form — on failure it prints <b>your message</b>. Toggle a passing vs failing version of each and read the runner's real verdict:</p>
+
+    <nav class="sub" id="asrtnav"></nav>
+    <nav class="sub" id="togglenav" style="margin-top:2px"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="togglelabel"></div>
+      <pre id="codepre" style="margin-top:0"></pre>
+      <div style="font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:20px 0 10px">runner verdict <span id="verdictbadge"></span></div>
+      <pre class="term" id="failterm" style="margin-top:0"></pre>
+    </div>
+
+    <p class="teach"><b>Why the order matters:</b> the convention is <span class="il">expect_value(t, got, want)</span> — the value you computed first, the value you expected second. The failure message reads <span class="il">expected clamp_to_range(99, 0, 10) to be 10, got 99</span>: the <i>want</i> after "to be", the <i>got</i> after "got". Swap the two arguments and the equality still holds, so the test still passes — but the day it breaks, the message labels are reversed and lying to you. Keep got first.</p>
+
+    <table class="ladder">
+      <thead><tr><th>Assertion</th><th>Form</th><th>On failure it prints</th></tr></thead>
+      <tbody>
+        <tr><td class="t">expect(t, cond, msg)</td><td>a bool + your message</td><td>your message — use it when the check is naturally one bool (<span class="il">is_sorted(xs)</span>, <span class="il">err == nil</span>)</td></tr>
+        <tr><td class="t">expect_value(t, got, want)</td><td>typed equality</td><td>both sides (<span class="il">expected X, got Y</span>) — prefer it whenever you compare two values</td></tr>
+        <tr><td class="t">expectf(t, cond, fmt, …)</td><td>a bool + a format string</td><td>the formatted message — for a loop over table rows, so it says <i>which row</i> failed</td></tr>
+        <tr><td class="t">fail_now(t, msg)</td><td>abort this test now</td><td>bails immediately; <span class="il">fail(t)</span> flags failure but keeps running</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ============= LEVEL 4 — THE MARKER IS CHECKED ============= -->
+  <section class="section" id="s4">
+    <p class="deck">The last level is the property that <b>emerges</b> from how the runner finds tests: <span class="il">@(test)</span> is not a passive label the runner trusts. The compiler <b>verifies the signature</b> when it builds the test binary — so a malformed test is a build error, not a silent no-op.</p>
+    <p class="teach">Here's the mechanism behind it. <span class="il">odin build .</span> and <span class="il">odin test .</span> compile the <i>same source files</i> into <b>two different binaries</b>. A normal build's entry point is your <span class="il">main</span>, and it <b>strips out</b> every <span class="il">@(test)</span> proc — so shipping tests next to production code costs nothing at runtime. A test build's entry point is the runner from <span class="il">core:testing</span>, which gathers the marked procs and calls each one. Because the test build is a real compile, the marker is real syntax the compiler must make sense of.</p>
+    <p class="teach">So mark a proc that has the wrong shape — say <span class="il">clamp_to_range</span>, which is <span class="il">proc(int, int, int) -&gt; int</span>, not <span class="il">proc(^testing.T)</span>. A plain <span class="il">odin build .</span> succeeds (it just strips the proc). But <span class="il">odin test .</span> stops cold:</p>
+    <pre><span class="tg">@(test)</span>
+clamp_to_range :: <span class="kw">proc</span>(value, lo, hi: int) -&gt; int { <span class="dim">/* ... */</span> }
+
+<span class="er">Error: Testing procedures must have a signature type of proc(^testing.T), got proc(int, int, int) -&gt; int</span></pre>
+
+    <p class="teach"><b>The emergent payoff:</b> the marker isn't a sticky note the runner hopes you got right — it's a contract the type system enforces. You cannot accidentally register a proc that doesn't match the test shape, because the test build won't compile until it does. A test that "didn't run" because its signature was subtly wrong is a whole class of silent failure that simply can't happen here.</p>
+
+    <div class="note">
+      <span class="h">@(test), not @test</span>
+      The parentheses are required — the bare form <span class="il">@test</span> does not register the proc as a test at all. And the proc must take <b>exactly</b> <span class="il">t: ^testing.T</span> and return nothing; an extra parameter or a return value is the same signature error you saw above. The attribute is the only thing that distinguishes a test from any other proc, so getting it exactly right is the one piece of ceremony the runner asks of you.
+    </div>
+
+    <p class="teach" style="margin-top:24px;color:var(--muted)">That's the arc: <b style="color:var(--ink)">L1</b> a test is a marked proc that <span class="il">odin test .</span> finds and runs → <b style="color:var(--ink)">L2</b> you reach for it by pulling pure logic out so there's a value to assert on → <b style="color:var(--ink)">L3</b> a false check prints what broke and exits nonzero, so the test is load-bearing → <b style="color:var(--ink)">L4</b> the marker is signature-checked at compile time, so a malformed test fails the build instead of silently never running.</p>
+  </section>
+
+  <div class="foot">the runner outputs &amp; the L4 error on this page are real <span style="color:var(--ink)">odin test</span> output (claims/lessons/17-testing-with-core-testing) · timestamps, seeds, thread counts &amp; durations vary every run</div>
+</div>
+
+<script>
+/* ============================================================
+   Each interactive component = one data object + one render fn.
+   Vanilla JS, inline, no libraries.
+   Every embedded runner output / error string comes from a
+   PASSING claim under claims/lessons/17-testing-with-core-testing/.
+   The <ts>/<seed>/<dur> placeholders stand in for the per-run
+   bookkeeping the runner itself says is not stable.
+   ============================================================ */
+
+/* shared header the runner prints before any verdict (4 INFO lines).
+   nThreads varies with the test count; the rest is fixed text. */
+function header(nThreads){
+  const thr = nThreads === 1 ? '1 thread' : nThreads + ' threads';
+  return [
+    `<span class="info">[INFO ] --- [<span class="ts">&lt;timestamp&gt;</span>] Starting test runner with ${thr}. Set with -define:ODIN_TEST_THREADS=n.</span>`,
+    `<span class="info">[INFO ] --- [<span class="ts">&lt;timestamp&gt;</span>] The random seed sent to every test is: <span class="ts">&lt;seed&gt;</span>. Set with -define:ODIN_TEST_RANDOM_SEED=n.</span>`,
+    `<span class="info">[INFO ] --- [<span class="ts">&lt;timestamp&gt;</span>] Memory tracking is enabled. Tests will log their memory usage if there's an issue.</span>`,
+    `<span class="info">[INFO ] --- [<span class="ts">&lt;timestamp&gt;</span>] &lt; Final Mem/ Total Mem&gt; &lt;  Peak Mem&gt; (#Free/Alloc) :: [package.test_name]</span>`,
+  ].join('\n');
+}
+
+/* ---------- LEVEL 1: green runs, toggled by package ----------
+   Verified PASS claims:
+     solution  -> Finished 4 tests in <dur>. All tests were successful.
+     step-pass -> Finished 2 tests in <dur>. All tests were successful.          */
+const RUNS = {
+  clamp: { label:'odin test .  —  this lesson\'s package (4 tests)', threads:4,
+           tail:`<span class="ok">Finished 4 tests in <span class="ts">&lt;dur&gt;</span>. All tests were successful.</span>` },
+  step:  { label:'odin test .  —  the step bounce package (2 tests)', threads:2,
+           tail:`<span class="ok">Finished 2 tests in <span class="ts">&lt;dur&gt;</span>. All tests were successful.</span>` },
+};
+let runCur='clamp';
+function renderRun(){
+  document.querySelectorAll('#runnav button').forEach(b=>b.classList.toggle('on',b.dataset.r===runCur));
+  const r=RUNS[runCur];
+  document.getElementById('runlabel').textContent=r.label;
+  document.getElementById('runterm').innerHTML = header(r.threads) + '\n\n' + r.tail;
+}
+const runnav=document.getElementById('runnav');
+[['clamp','4 clamp tests'],['step','2 step tests']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.r=k; b.textContent=t;
+  b.onclick=()=>{runCur=k;renderRun();}; runnav.appendChild(b);
+});
+
+/* ---------- LEVEL 2: the step package green run (claim step-pass) ---------- */
+function renderStep(){
+  document.getElementById('stepterm').innerHTML =
+    header(2) + '\n\n<span class="ok">Finished 2 tests in <span class="ts">&lt;dur&gt;</span>. All tests were successful.</span>';
+}
+
+/* ---------- LEVEL 3: pass/fail toggle for two assertion procs ----------
+   Verified strings:
+     break-forgot-clamp (expect_value fail):
+       [ERROR] --- [<ts>] [tests.odin:17:clamp_above_range_returns_hi()] expected clamp_to_range(99, 0, 10) to be 10, got 99
+       Finished 4 tests in <dur>. 2 tests failed.   (+ the ODIN_TEST_NAMES rerun line)
+     step-fail (expect fail):
+       [ERROR] --- [<ts>] [ball_test.odin:7:ball_bounces_off_right_wall()] ball at the right wall should reverse vx
+       Finished 1 test in <dur>. The test failed.                                   */
+const ASRT = {
+  expectval: {
+    nav:'expect_value',
+    pass: {
+      code:`<span class="tg">@(test)</span>\nclamp_above_range_returns_hi :: <span class="kw">proc</span>(t: ^testing.T) {\n    testing.expect_value(t, clamp_to_range(99, 0, 10), <span class="ok">10</span>)\n}`,
+      verdict:'pass',
+      term: header(4) + '\n\n<span class="ok">Finished 4 tests in <span class="ts">&lt;dur&gt;</span>. All tests were successful.</span>',
+    },
+    fail: {
+      code:`<span class="tg">@(test)</span>\nclamp_above_range_returns_hi :: <span class="kw">proc</span>(t: ^testing.T) {\n    <span class="dim">// the proc was broken to stop clamping the top:</span>\n    testing.expect_value(t, clamp_to_range(99, 0, 10), <span class="ok">10</span>)  <span class="dim">// got 99</span>\n}`,
+      verdict:'fail',
+      term: header(4) +
+        '\n<span class="err">[ERROR] --- [<span class="ts">&lt;timestamp&gt;</span>] [<span class="name">tests.odin:17:clamp_above_range_returns_hi()</span>] expected clamp_to_range(99, 0, 10) to be 10, got 99</span>' +
+        '\n<span class="err">[ERROR] --- [<span class="ts">&lt;timestamp&gt;</span>] [<span class="name">tests.odin:26:clamp_handles_boundary_values()</span>] clamp_to_range(7, 3, 3) should equal 3</span>' +
+        '\n\n<span class="err">Finished 4 tests in <span class="ts">&lt;dur&gt;</span>. 2 tests failed.</span>' +
+        '\n<span class="err"> - lesson_17.clamp_above_range_returns_hi           expected clamp_to_range(99, 0, 10) to be 10, got 99</span>' +
+        '\n<span class="err"> - lesson_17.clamp_handles_boundary_values          clamp_to_range(7, 3, 3) should equal 3</span>',
+    },
+  },
+  expectbool: {
+    nav:'expect',
+    pass: {
+      code:`<span class="tg">@(test)</span>\nball_bounces_off_right_wall :: <span class="kw">proc</span>(t: ^testing.T) {\n    after := step(Ball{x = 99, vx = 5}, 100, 100)\n    testing.expect(t, after.vx &lt; 0, <span class="ok">"ball at the right wall should reverse vx"</span>)\n}`,
+      verdict:'pass',
+      term: header(2) + '\n\n<span class="ok">Finished 2 tests in <span class="ts">&lt;dur&gt;</span>. All tests were successful.</span>',
+    },
+    fail: {
+      code:`<span class="tg">@(test)</span>\nball_bounces_off_right_wall :: <span class="kw">proc</span>(t: ^testing.T) {\n    <span class="dim">// step was broken to skip the right-wall reflection:</span>\n    after := step(Ball{x = 99, vx = 5}, 100, 100)  <span class="dim">// vx stays +5</span>\n    testing.expect(t, after.vx &lt; 0, <span class="ok">"ball at the right wall should reverse vx"</span>)\n}`,
+      verdict:'fail',
+      term: header(1) +
+        '\n<span class="err">[ERROR] --- [<span class="ts">&lt;timestamp&gt;</span>] [<span class="name">ball_test.odin:9:ball_bounces_off_right_wall()</span>] ball at the right wall should reverse vx</span>' +
+        '\n\n<span class="err">Finished 1 test in <span class="ts">&lt;dur&gt;</span>. The test failed.</span>' +
+        '\n<span class="err"> - step_fail.ball_bounces_off_right_wall   ball at the right wall should reverse vx</span>',
+    },
+  },
+};
+let asrtCur='expectval', asrtPhase='fail';
+function renderAsrt(){
+  document.querySelectorAll('#asrtnav button').forEach(b=>b.classList.toggle('on',b.dataset.a===asrtCur));
+  document.querySelectorAll('#togglenav button').forEach(b=>b.classList.toggle('on',b.dataset.p===asrtPhase));
+  const a=ASRT[asrtCur][asrtPhase];
+  document.getElementById('togglelabel').textContent =
+    (asrtCur==='expectval'?'expect_value':'expect') + (asrtPhase==='pass'?' — assertion holds':' — assertion is false');
+  document.getElementById('codepre').innerHTML=a.code;
+  const badge=document.getElementById('verdictbadge');
+  badge.className='badge '+a.verdict;
+  badge.textContent = a.verdict==='pass'?'PASS · exit 0':'FAIL · exit 1';
+  document.getElementById('failterm').innerHTML=a.term;
+}
+const asrtnav=document.getElementById('asrtnav');
+[['expectval','expect_value'],['expectbool','expect']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.a=k; b.textContent=t;
+  b.onclick=()=>{asrtCur=k;renderAsrt();}; asrtnav.appendChild(b);
+});
+const togglenav=document.getElementById('togglenav');
+[['fail','✕ make it false'],['pass','✓ make it hold']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.p=k; b.textContent=t;
+  b.onclick=()=>{asrtPhase=k;renderAsrt();}; togglenav.appendChild(b);
+});
+
+/* ---------- level navigation ---------- */
+const LEVELS=[
+  ['1','What it is','a marked proc the runner finds'],
+  ['2','Why use it','pull pure logic out to assert it'],
+  ['3','The verdict','a false check prints &amp; exits nonzero'],
+  ['4','Why it stays honest','the marker is signature-checked'],
+];
+let level='1';
+function setLevel(n){
+  level=n;
+  document.querySelectorAll('.levels button').forEach(b=>b.classList.toggle('on',b.dataset.n===n));
+  for(const [k] of LEVELS){ const el=document.getElementById('s'+k); if(el) el.classList.toggle('on',k===n); }
+  if(n==='1') renderRun();
+  if(n==='2') renderStep();
+  if(n==='3') renderAsrt();
+}
+const lnav=document.getElementById('levelnav');
+for(const [n,tt,sub] of LEVELS){ const b=document.createElement('button'); b.dataset.n=n;
+  b.innerHTML=`<span class="lv">Level ${n} · ${sub}</span><span class="tt">${tt}</span>`;
+  b.onclick=()=>setLevel(n); lnav.appendChild(b); }
+setLevel('1');
+</script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+size_of([dynamic]int)        = 40
+size_of([]int)               = 16
+size_of(rawptr)              = 8
+size_of(int)                 = 8
+size_of(mem.Allocator)       = 16
+size_of(runtime.Raw_Dynamic_Array) = 40

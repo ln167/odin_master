@@ -1,0 +1,1 @@
+after two add_point, caller score: 12

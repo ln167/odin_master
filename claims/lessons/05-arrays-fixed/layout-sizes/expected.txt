@@ -1,0 +1,8 @@
+size_of(int)       = 8
+size_of([4]int)    = 32
+size_of(f32)       = 4
+size_of(Vec3)      = 12
+size_of([4096]u8)  = 4096
+align_of([4]int)   = 8
+len(a)             = 4
+slot stride        = 8

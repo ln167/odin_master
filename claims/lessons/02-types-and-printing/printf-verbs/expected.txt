@@ -1,0 +1,17 @@
+%d  -> 255
+%v  -> 255
+%x  -> ff
+%X  -> FF
+%o  -> 377
+%b  -> 11111111
+%c  -> ÿ
+%T  -> int
+rune %v -> A
+rune %d -> 65
+rune %c -> A
+f32 %v   -> 3.14159
+f32 %.2f -> 3.14
+f32 %e   -> 3.141590e+00
+str %v -> hi
+str %q -> "hi"
+str %T -> string

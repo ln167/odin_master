@@ -1,0 +1,4 @@
+type soa.pos  : [4][3]f32
+type soa.mass : [4]f32
+soa.pos column : [[0.5, 0, 0], [1.5, 0, 0], [2.5, 0, 0], [3.5, 0, 0]]
+soa.mass column: [1, 1, 1, 1]

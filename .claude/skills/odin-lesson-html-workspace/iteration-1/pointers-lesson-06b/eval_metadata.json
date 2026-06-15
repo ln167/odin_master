@@ -1,0 +1,15 @@
+{
+  "eval_id": 0,
+  "eval_name": "pointers-lesson-06b",
+  "prompt": "Make a multi-level interactive HTML lesson for Odin lesson 06b-pointers, like the union-memory-layout.html reference, placed next to the lesson README.",
+  "assertions": [
+    {"text": "Produces a single self-contained HTML file (inline <style> and <script>, no external assets/CDNs)", "passed": null, "evidence": ""},
+    {"text": "Climbs through 3-5 distinct levels with level-tab navigation, each a different altitude (not a restatement)", "passed": null, "evidence": ""},
+    {"text": "Describes Odin in Odin's terms: does NOT present pointer arithmetic as something Odin does; no malloc/header/decay framing except as explicitly-labeled cross-language contrast", "passed": null, "evidence": ""},
+    {"text": "Shows the verified 'Cannot convert untyped value 1 to ^int' pointer-arithmetic rejection (Odin has no pointer arithmetic) as a teaching beat", "passed": null, "evidence": ""},
+    {"text": "Every number/size/error/output shown is backed by a real compile (claim under claims/lessons/06b-pointers/ run via the harness), not copied from the README or recalled", "passed": null, "evidence": ""},
+    {"text": "Reuses the reference design system (dark warm-paper theme, mono+serif roles, .canvas/.byte/.note components)", "passed": null, "evidence": ""},
+    {"text": "Ends with an arc recap and an honest provenance footer that claims only what was verified", "passed": null, "evidence": ""},
+    {"text": "Includes a misconception callout disambiguating a confusable neighbor (e.g. ^T vs [^]T vs []T, or & vs ^)", "passed": null, "evidence": ""}
+  ]
+}

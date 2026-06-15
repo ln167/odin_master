@@ -1,0 +1,3 @@
+strlen of abcdef = 6
+strlen of hi = 2
+strlen of  = 0

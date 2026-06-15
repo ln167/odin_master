@@ -1,0 +1,2 @@
+divide(10, 0) or_else 0 -> 0
+divide(20, 4) or_else 0 -> 5

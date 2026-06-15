@@ -1,0 +1,6 @@
+Player_Id(1) + Player_Id(2) = 3  (type stays Player_Id)
+Player_Id(1) < Player_Id(2) = true
+Player_Id(1) == Player_Id(2) = false
+Player_Id(1) + 1 = 2  (untyped literal adapts)
+int(Player_Id(1)) = 1  (unwrap to underlying int)
+f32(Meters(100)) / f32(Seconds(4)) = 25  (plain f32, no unit)

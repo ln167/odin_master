@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hellope! — the smallest Odin program, taken apart</title>
+<style>
+  :root{
+    --paper:#15130f; --card:#1d1a14; --ink:#ece6d8; --muted:#9a9182;
+    --rule:#332e24; --accent:#5ec8b8; --accent-soft:#1f342f;
+    --tag:#e0875a; --pad:#5a544a; --bad:#e0675a; --bad-soft:#2a1815;
+    --mono:"Cascadia Mono","Cascadia Code",Consolas,ui-monospace,"SF Mono",monospace;
+    --serif:-apple-system,"Segoe UI Variable Text","Segoe UI",system-ui,Roboto,"Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper);color:var(--ink)}
+  body{font-family:var(--serif);line-height:1.6;padding:0 20px;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-feature-settings:"kern" 1,"liga" 1}
+  .page{max-width:860px;margin:0 auto;padding:46px 0 90px}
+  .kicker{font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+  h1{font-size:30px;line-height:1.15;margin:0 0 18px;font-weight:600;letter-spacing:-.01em}
+
+  /* level tabs */
+  .levels{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+  .levels button{flex:1;min-width:170px;text-align:left;background:var(--card);border:1px solid var(--rule);
+    color:var(--muted);border-radius:10px;padding:11px 14px;cursor:pointer;transition:.12s;font-family:var(--serif)}
+  .levels button:hover{border-color:var(--accent)}
+  .levels button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--ink)}
+  .levels .lv{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);display:block;margin-bottom:3px}
+  .levels .tt{font-size:14px}
+  .rule{height:1px;background:var(--rule);margin:22px 0 26px}
+
+  .deck{color:var(--muted);font-size:17px;margin:0 0 24px;line-height:1.5}
+  .deck b{color:var(--ink)}
+  h2{font-size:21px;margin:0 0 14px;font-weight:600}
+  p.teach{font-size:16px;line-height:1.62;max-width:46em}
+  p.teach code,.il{font-family:var(--mono);font-size:.86em;background:#2a2519;padding:1px 5px;border-radius:4px}
+  .teach b{color:var(--tag)}
+  .section{display:none}
+  .section.on{display:block}
+
+  nav.sub{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;font-family:var(--mono);font-size:13px}
+  nav.sub button{background:var(--card);border:1px solid var(--rule);color:var(--muted);border-radius:8px;padding:8px 14px;cursor:pointer;transition:.12s}
+  nav.sub button:hover{color:var(--ink);border-color:var(--accent)}
+  nav.sub button.on{color:var(--ink);border-color:var(--accent);background:var(--accent-soft)}
+  .hint{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin:0 0 20px}
+
+  .canvas{background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:30px 28px}
+  .slotlabel{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
+
+  /* the anatomy code block (Level 1) — each line is a hoverable / clickable part */
+  .codeblock{font-family:var(--mono);font-size:15px;line-height:1.95;margin:0}
+  .codeline{display:block;padding:3px 12px;border-radius:7px;border:1px solid transparent;cursor:pointer;transition:.12s;white-space:pre-wrap}
+  .codeline:hover{background:#221e16}
+  .codeline.on{background:var(--accent-soft);border-color:var(--accent)}
+  .codeline .pk{color:var(--tag)}      /* keywords: package, import, proc, for */
+  .codeline .nm{color:var(--ink)}      /* a bound name (main) */
+  .codeline .cc{color:var(--accent);font-weight:600}  /* the :: operator */
+  .codeline .st{color:#cdb98a}         /* string literal */
+  .codeline .pp{color:var(--muted)}    /* the fmt. package qualifier */
+  .codeline .cm{color:#6f6655}
+  .partbox{margin-top:20px;background:#1a1710;border:1px solid var(--rule);border-left:3px solid var(--accent);border-radius:10px;padding:16px 18px;min-height:96px}
+  .partbox .ph{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);display:block;margin-bottom:8px}
+  .partbox .pt{font-size:15px;line-height:1.6;color:var(--ink)}
+  .partbox .pt code{font-family:var(--mono);font-size:.86em;background:#2a2519;padding:1px 5px;border-radius:4px}
+
+  /* output terminal */
+  pre{font-family:var(--mono);font-size:12.5px;line-height:1.7;background:#1a1710;border:1px solid var(--rule);border-radius:10px;padding:16px 18px;overflow:auto;margin:22px 0 0;white-space:pre-wrap}
+  pre .cm{color:#6f6655}
+  pre .kw{color:var(--accent)}
+  pre .er{color:var(--bad)}
+  pre .ok{color:var(--accent)}
+  pre .prompt{color:var(--muted)}
+
+  /* the :: binding board (Level 2) */
+  .bindrow{display:flex;flex-direction:column;gap:10px;margin-top:6px}
+  .bind{display:grid;grid-template-columns:130px 28px 1fr;align-items:center;gap:12px;background:#1a1710;border:1px solid var(--rule);border-radius:10px;padding:12px 14px;font-family:var(--mono);font-size:14px}
+  .bind .bn{color:var(--ink)}
+  .bind .bc{color:var(--accent);font-weight:600;text-align:center}
+  .bind .bv{color:#cdb98a}
+  .bind .bv .ty{color:var(--muted);font-size:11px;display:block;margin-top:3px}
+  .bind.proc .bv{color:#cdeee7}
+
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:26px}
+  @media(max-width:680px){.cols{grid-template-columns:1fr}}
+  .panel h3{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 12px;font-weight:600}
+
+  .note{background:#1a1710;border:1px solid var(--rule);border-left:3px solid var(--tag);
+    border-radius:10px;padding:15px 18px;margin-top:24px;font-size:15px;line-height:1.6;color:var(--muted)}
+  .note b{color:var(--ink)}
+  .note code,.note .il{font-family:var(--mono);font-size:.86em;background:#2a2519;padding:1px 5px;border-radius:4px}
+  .note .h{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--tag);display:block;margin-bottom:8px}
+  .foot{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;margin-top:34px}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="kicker">Odin · the first program</div>
+  <h1>Hellope! — the smallest program, taken apart</h1>
+
+  <div class="levels" id="levelnav"></div>
+  <div class="rule"></div>
+
+  <!-- ===================== LEVEL 1 — LINE BY LINE ===================== -->
+  <section class="section" id="s1">
+    <p class="deck">The whole program is <b>four lines that do real jobs</b> and nothing decorative — there is no boilerplate here to ignore. Click any line to see exactly what it contributes.</p>
+    <div class="hint">The output below is real — captured from <span style="color:var(--ink)">odin run main.odin -file</span> (claim: solution).</div>
+
+    <div class="canvas">
+      <div class="slotlabel">main.odin &nbsp;—&nbsp; the entire program</div>
+      <pre class="codeblock" id="codeblock" style="background:transparent;border:none;padding:0;margin:0"></pre>
+      <div class="partbox"><span class="ph" id="partph"></span><span class="pt" id="partpt"></span></div>
+    </div>
+
+    <div class="cols">
+      <div class="panel"><h3>What it prints</h3>
+        <pre style="margin-top:0"><span class="prompt">$</span> odin run main.odin -file
+<span class="ok">Hellope!</span></pre>
+      </div>
+      <div class="panel"><h3>The whole story</h3>
+        <p class="teach" style="margin-top:0;font-size:15px">A <code>package</code> line names the file's package, an <code>import</code> brings in a package to call, <code>::</code> binds the name <code>main</code> to a procedure, and that procedure's one statement asks <code>fmt</code> to print a string. Run it, the line is written, the program is over.</p>
+      </div>
+    </div>
+
+    <div class="note">
+      <span class="h">the &ldquo;ln&rdquo; in println is the newline</span>
+      <span class="il">fmt.println</span> writes its text <b>and then a newline</b>. Its sibling <span class="il">fmt.print</span> writes the same text with <b>no</b> trailing newline. So <span class="il">println("Hellope!")</span> followed by <span class="il">print("Hellope!")</span> then <span class="il">print(" again")</span> lands on stdout as two lines &mdash; <span class="il">Hellope!</span>, then <span class="il">Hellope! again</span> with nothing after it. The break between them is the <span class="il">ln</span> doing its one job.
+    </div>
+  </section>
+
+  <!-- ============= LEVEL 2 — WHAT :: AND main REALLY MEAN ============= -->
+  <section class="section" id="s2">
+    <p class="deck">Level 1 was <i>what each line does</i>. Level 2 is the idea hiding in the punctuation: <b><span class="il">::</span> is one universal &ldquo;bind this name to this value&rdquo; operator</b>, and <b><span class="il">main</span> is a name with a fixed type the compiler will not let you change.</b></p>
+
+    <h2>One operator binds them all</h2>
+    <p class="teach"><span class="il">main :: proc() { … }</span> looks like special entry-point syntax, but it isn't. The <span class="il">::</span> reads <b>&ldquo;the name on the left is permanently this value on the right&rdquo;</b> &mdash; and that value can be a string, a number, or a procedure. A procedure is just another value you can bind to a name. All three of these are the same construction, and they compile together in one file:</p>
+
+    <div class="canvas">
+      <div class="slotlabel">name &nbsp;::&nbsp; value &nbsp;&mdash;&nbsp; the same binding, three kinds of value</div>
+      <div class="bindrow">
+        <div class="bind"><span class="bn">GREETING</span><span class="bc">::</span><span class="bv">"Hellope!"<span class="ty">a string value</span></span></div>
+        <div class="bind"><span class="bn">TIMES</span><span class="bc">::</span><span class="bv">3<span class="ty">an int value</span></span></div>
+        <div class="bind proc"><span class="bn">main</span><span class="bc">::</span><span class="bv">proc() { … }<span class="ty">a procedure value</span></span></div>
+      </div>
+    </div>
+    <p class="teach" style="margin-top:18px"><b>Why this matters:</b> there is no separate grammar to memorise for &ldquo;declaring a function&rdquo; versus &ldquo;declaring a constant.&rdquo; You learned <span class="il">::</span> once on line&nbsp;5 of your first program, and it is the exact same operator you'll use to name a constant, a type, or any procedure for the rest of the language. <span class="il">main</span> is not blessed syntax &mdash; it's an ordinary <span class="il">::</span> binding whose value happens to be a procedure. <span style="color:var(--muted)">(All three bindings above compile in one file &mdash; claim: colon-colon-binds-both.)</span></p>
+
+    <h2 style="margin-top:34px">But <code style="font-size:.8em">main</code> has one rule it can't break</h2>
+    <p class="teach">The name <span class="il">main</span> <i>is</i> special in exactly one way: when the program starts, the runtime calls it. That call has a fixed shape &mdash; no arguments, no return &mdash; so the <b>type</b> of <span class="il">main</span> is locked to <span class="il">proc()</span>. You're free to bind <span class="il">main</span> to a procedure value; you are not free to give that procedure a different signature. The compiler checks this at build time. Pick a way to break it:</p>
+
+    <nav class="sub" id="errnav"></nav>
+    <pre id="errpre"></pre>
+    <p class="teach" id="errwhy" style="margin-top:16px"></p>
+
+    <div class="note">
+      <span class="h">these are compiler errors, not crashes</span>
+      Both messages above stop the <b>build</b> &mdash; the program is never produced, so it never runs. The first is a <b>Syntax Error</b>: the parser reaches the <span class="il">import</span> on line 3 before it ever saw a <span class="il">package</span> line, and refuses to continue. The second is a type <b>Error</b>: the file parses fine, but <span class="il">main</span>'s type doesn't match the <span class="il">proc()</span> the runtime requires. Reading <i>which kind</i> of error you got tells you whether the problem is in the shape of the text or in the meaning of the code.
+    </div>
+
+    <p class="teach" style="margin-top:30px;color:var(--muted)">That's the arc: <b style="color:var(--ink)">L1</b> four working lines &mdash; a package, an import, a <span class="il">::</span> binding, and one printed string &mdash; produce <span class="il">Hellope!</span> &rarr; <b style="color:var(--ink)">L2</b> that <span class="il">::</span> is one universal &ldquo;name binds to value&rdquo; operator, and <span class="il">main</span> is just a binding whose <span class="il">proc()</span> type the compiler holds fixed because the runtime calls it.</p>
+  </section>
+
+  <div class="foot">probes reproduce with <span style="color:var(--ink)">odin run / odin build</span> · the printed output &amp; both compile errors are real compiler output (claims/lessons/01-hellope)</div>
+</div>
+
+<script>
+/* ============================================================
+   Each interactive component = one data object + one render fn.
+   Vanilla JS, inline, no libraries.
+   Every embedded line of output and every error string comes from
+   a passing claim under claims/lessons/01-hellope/:
+     solution               -> prints "Hellope!"
+     println-adds-newline   -> println newline vs print
+     colon-colon-binds-both -> the three :: bindings compile together
+     break-no-package       -> the "Expected a package declaration" error
+     break-main-param       -> the "expected to be 'proc()'" error
+   ============================================================ */
+
+/* ---------- LEVEL 1: the anatomy, line by line ---------- */
+/* Each entry: the rendered (already-colored) line HTML + its explanation. */
+const LINES = [
+  { key:'pkg',
+    html:`<span class="pk">package</span> <span class="nm">main</span>`,
+    ph:'package main',
+    pt:`Every <code>.odin</code> file opens by naming its package. A program's entry package is named <code>main</code>; the compiler builds one runnable binary from it. This line is the file saying which package it belongs to &mdash; it must come first, before anything else.` },
+  { key:'blank1', html:``, skip:true },
+  { key:'imp',
+    html:`<span class="pk">import</span> <span class="st">"core:fmt"</span>`,
+    ph:'import "core:fmt"',
+    pt:`This pulls in a package so you can call it. <code>core:</code> is the standard library collection that ships with the toolchain, and <code>fmt</code> is its printing &amp; formatting package. After this line, the name <code>fmt</code> is available below.` },
+  { key:'blank2', html:``, skip:true },
+  { key:'sig',
+    html:`<span class="nm">main</span> <span class="cc">::</span> <span class="pk">proc</span>() {`,
+    ph:'main :: proc() {',
+    pt:`<code>::</code> binds the name <code>main</code> to a value &mdash; here, a procedure that takes no arguments and returns nothing. When the program starts, the runtime calls this procedure. The braces hold its body.` },
+  { key:'body',
+    html:`    <span class="pp">fmt</span>.<span class="nm">println</span>(<span class="st">"Hellope!"</span>)`,
+    ph:'fmt.println("Hellope!")',
+    pt:`The one statement: call <code>println</code> from the <code>fmt</code> package, handing it the string <code>"Hellope!"</code>. It writes that text to standard output, followed by a newline. This is the only line that actually <i>does</i> something visible.` },
+  { key:'close',
+    html:`}`,
+    ph:'}',
+    pt:`The closing brace ends <code>main</code>'s body. When control reaches here the procedure returns, and because <code>main</code> is the entry point, the program is finished.` },
+];
+let curLine = 'pkg';
+function renderL1(){
+  const cb = document.getElementById('codeblock');
+  cb.innerHTML = LINES.map(l=>{
+    if(l.skip) return `<span class="codeline" style="cursor:default;padding-top:0;padding-bottom:0">${l.html||' '}</span>`;
+    const on = l.key===curLine ? ' on' : '';
+    return `<span class="codeline${on}" data-k="${l.key}">${l.html}</span>`;
+  }).join('');
+  cb.querySelectorAll('.codeline[data-k]').forEach(el=>{
+    el.onclick=()=>{ curLine = el.dataset.k; renderL1(); };
+  });
+  const l = LINES.find(x=>x.key===curLine);
+  document.getElementById('partph').textContent = l.ph;
+  document.getElementById('partpt').innerHTML = l.pt;
+}
+
+/* ---------- LEVEL 2: the two real compile errors ---------- */
+/* Verified error strings (claims break-no-package, break-main-param):
+     remove `package main`  -> Syntax Error: Expected a package declaration at the beginning of the file
+     main :: proc(x: int)   -> Error: Procedure type of 'main' was expected to be 'proc()', got proc(int) */
+const ERR = {
+  nopkg: {
+    code:"[[er]]import \"core:fmt\"[[/er]]   [[cm]]// no `package main` line above this[[/cm]]\n\nmain :: proc() {\n    fmt.println(\"Hellope!\")\n}",
+    err:"main.odin(3:1) Syntax Error: Expected a package declaration at the beginning of the file\n\timport \"core:fmt\"\n\t^",
+    why:`Delete the <code>package main</code> line and the parser hits <code>import</code> first. A file with no package declaration isn't a valid Odin file, so the build stops before it even looks at <code>main</code>. The fix is to put the <code>package</code> line back on top.` },
+  param: {
+    code:"package main\nimport \"core:fmt\"\n\nmain :: proc([[er]]x: int[[/er]]) {   [[cm]]// main may not take parameters[[/cm]]\n    fmt.println(\"Hellope!\")\n}",
+    err:"main.odin(7:1) Error: Procedure type of 'main' was expected to be 'proc()', got proc(int)\n\tmain :: proc(x: int) {\n\t^",
+    why:`Give <code>main</code> a parameter and its type becomes <code>proc(int)</code>, but the runtime calls <code>main</code> with no arguments &mdash; so its type must be <code>proc()</code>. This isn't a &ldquo;you forgot to pass <code>x</code>&rdquo; error; the <i>signature itself</i> is rejected. The fix is to take the parameter back out.` },
+};
+let errKey='nopkg';
+function escHtml(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function renderL2(){
+  document.querySelectorAll('#errnav button').forEach(b=>b.classList.toggle('on',b.dataset.k===errKey));
+  const e=ERR[errKey];
+  let html = escHtml(e.code)
+    .replace(/\[\[er\]\]/g,'<span class="er">').replace(/\[\[\/er\]\]/g,'</span>')
+    .replace(/\[\[cm\]\]/g,'<span class="cm">').replace(/\[\[\/cm\]\]/g,'</span>');
+  document.getElementById('errpre').innerHTML =
+    html + '\n\n<span class="er">' + escHtml(e.err) + '</span>';
+  document.getElementById('errwhy').innerHTML = e.why;
+}
+const errnav=document.getElementById('errnav');
+[['nopkg','remove `package main`'],['param','give main a parameter']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.k=k; b.textContent=t;
+  b.onclick=()=>{errKey=k;renderL2();}; errnav.appendChild(b);
+});
+
+/* ---------- level navigation ---------- */
+const LEVELS=[
+  ['1','Line by line','four lines, four jobs'],
+  ['2','What :: and main mean','one operator, one fixed type'],
+];
+let level='1';
+function setLevel(n){
+  level=n;
+  document.querySelectorAll('.levels button').forEach(b=>b.classList.toggle('on',b.dataset.n===n));
+  for(const [k] of LEVELS){ const el=document.getElementById('s'+k); if(el) el.classList.toggle('on',k===n); }
+  if(n==='1') renderL1();
+  if(n==='2') renderL2();
+}
+const lnav=document.getElementById('levelnav');
+for(const [n,tt,sub] of LEVELS){ const b=document.createElement('button'); b.dataset.n=n;
+  b.innerHTML=`<span class="lv">Level ${n} · ${sub}</span><span class="tt">${tt}</span>`;
+  b.onclick=()=>setLevel(n); lnav.appendChild(b); }
+setLevel('1');
+</script>
+</body>
+</html>

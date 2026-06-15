@@ -1,0 +1,2 @@
+20 / 4 -> q=5 ok=true
+20 / 0 -> q=0 ok=false

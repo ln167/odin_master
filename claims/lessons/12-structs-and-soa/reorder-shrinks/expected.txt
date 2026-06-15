@@ -1,0 +1,5 @@
+size_of  = 24
+offset mass  = 0
+offset pos   = 8
+offset id    = 20
+offset alive = 21

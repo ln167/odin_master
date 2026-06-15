@@ -1,0 +1,3 @@
+memory_size (old code) = 40
+memory_size (new code) = 48
+shape changed?         = true

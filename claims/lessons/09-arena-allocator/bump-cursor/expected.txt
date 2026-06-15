@@ -1,0 +1,7 @@
+start offset=0
+offset after alloc 1=16
+offset after alloc 2=32
+offset after alloc 3=48
+addr advances 1<2<3: true
+addr gap 1->2=16 == offset gap=16: true
+addr gap 2->3=16 == offset gap=16: true

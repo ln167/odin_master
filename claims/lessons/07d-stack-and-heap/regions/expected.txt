@@ -1,0 +1,4 @@
+local addr = <addr>
+heap  addr = <addr>
+same storage: false
+regions far apart (>1MB): true

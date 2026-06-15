@@ -1,0 +1,12 @@
+int(42)       : 2a 00 00 00 00 00 00 00
+Player_Id(42) : 2a 00 00 00 00 00 00 00
+Monster_Id(42): 2a 00 00 00 00 00 00 00
+f32(2)        : 00 00 00 40
+Meters(2)     : 00 00 00 40
+size_of(int)        = 8
+size_of(Player_Id)  = 8
+size_of(Monster_Id) = 8
+size_of(f32)        = 4
+size_of(Meters)     = 4
+align_of(int)       = 8
+align_of(Player_Id) = 8

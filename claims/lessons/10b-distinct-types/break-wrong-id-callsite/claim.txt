@@ -1,0 +1,1 @@
+fails main.odin Cannot assign value 'm1' of type 'Monster_Id' to 'Player_Id' in a procedure argument

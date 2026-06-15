@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Packages, folders, and imports — four levels deep</title>
+<style>
+  :root{
+    --paper:#15130f; --card:#1d1a14; --ink:#ece6d8; --muted:#9a9182;
+    --rule:#332e24; --accent:#5ec8b8; --accent-soft:#1f342f;
+    --tag:#e0875a; --pad:#5a544a; --bad:#e0675a;
+    --mono:"Cascadia Mono","Cascadia Code",Consolas,ui-monospace,"SF Mono",monospace;
+    --serif:-apple-system,"Segoe UI Variable Text","Segoe UI",system-ui,Roboto,"Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper);color:var(--ink)}
+  body{font-family:var(--serif);line-height:1.6;padding:0 20px;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-feature-settings:"kern" 1,"liga" 1}
+  .page{max-width:860px;margin:0 auto;padding:46px 0 90px}
+  .kicker{font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+  h1{font-size:30px;line-height:1.15;margin:0 0 18px;font-weight:600;letter-spacing:-.01em}
+
+  .levels{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+  .levels button{flex:1;min-width:150px;text-align:left;background:var(--card);border:1px solid var(--rule);
+    color:var(--muted);border-radius:10px;padding:11px 14px;cursor:pointer;transition:.12s;font-family:var(--serif)}
+  .levels button:hover{border-color:var(--accent)}
+  .levels button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--ink)}
+  .levels .lv{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);display:block;margin-bottom:3px}
+  .levels .tt{font-size:14px}
+  .rule{height:1px;background:var(--rule);margin:22px 0 26px}
+
+  .deck{color:var(--muted);font-size:17px;margin:0 0 24px;line-height:1.5}
+  .deck b{color:var(--ink)}
+  h2{font-size:21px;margin:30px 0 14px;font-weight:600}
+  p.teach{font-size:16px;line-height:1.62;max-width:46em}
+  p.teach code,.il{font-family:var(--mono);font-size:.86em;background:#2a2519;padding:1px 5px;border-radius:4px}
+  .teach b{color:var(--tag)}
+  .section{display:none}
+  .section.on{display:block}
+
+  nav.sub{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;font-family:var(--mono);font-size:13px}
+  nav.sub button{background:var(--card);border:1px solid var(--rule);color:var(--muted);border-radius:8px;padding:8px 14px;cursor:pointer;transition:.12s}
+  nav.sub button:hover{color:var(--ink);border-color:var(--accent)}
+  nav.sub button.on{color:var(--ink);border-color:var(--accent);background:var(--accent-soft)}
+  .hint{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin:0 0 20px}
+
+  .canvas{background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:30px 28px}
+  .slotlabel{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
+
+  /* folder-as-package diagram */
+  .folder{border:1px solid var(--rule);border-radius:12px;background:#1a1710;padding:0 0 16px;overflow:hidden}
+  .foldertab{display:inline-block;font-family:var(--mono);font-size:12px;color:var(--tag);
+    background:#241f17;border:1px solid var(--rule);border-bottom:none;border-radius:10px 10px 0 0;
+    padding:8px 16px;margin:0 0 0 14px;letter-spacing:.04em}
+  .files{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:16px 16px 0}
+  @media(max-width:640px){.files{grid-template-columns:1fr}}
+  .file{border:1px solid var(--rule);border-radius:9px;background:#15130f;overflow:hidden;transition:.18s}
+  .file.lit{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent-soft)}
+  .file .fname{font-family:var(--mono);font-size:11.5px;color:var(--muted);background:#1d1a14;
+    padding:7px 11px;border-bottom:1px solid var(--rule)}
+  .file .fbody{font-family:var(--mono);font-size:12px;line-height:1.65;padding:11px 12px;white-space:pre-wrap}
+  .file .pkgline{color:var(--tag)}
+  .file .name{color:var(--accent);font-weight:600}
+  .file .name.lit{background:var(--accent-soft);border-radius:3px;padding:0 3px}
+  .file .cm{color:#6f6655}
+  .scopebar{font-family:var(--mono);font-size:11px;color:var(--accent);text-align:center;margin:16px 14px 0;
+    padding-top:11px;border-top:1px dashed #3a6e64;letter-spacing:.03em}
+
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:26px}
+  @media(max-width:680px){.cols{grid-template-columns:1fr}}
+  .panel h3{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 12px;font-weight:600}
+  .sizes{font-family:var(--mono);font-size:13px;line-height:2}
+  .sizes .n{color:var(--accent);font-weight:600}
+  .sizes .big{color:var(--tag);font-weight:600}
+
+  pre{font-family:var(--mono);font-size:12.5px;line-height:1.7;background:#1a1710;border:1px solid var(--rule);border-radius:10px;padding:16px 18px;overflow:auto;margin:22px 0 0;white-space:pre-wrap}
+  pre .cm{color:#6f6655}
+  pre .kw{color:var(--accent)}
+  pre .er{color:var(--bad)}
+  pre .ok{color:var(--accent)}
+  pre .tg{color:var(--tag)}
+
+  /* collection-prefix map */
+  .colmap{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:6px}
+  @media(max-width:640px){.colmap{grid-template-columns:1fr}}
+  .colcard{border:1px solid var(--rule);border-radius:10px;background:#1a1710;padding:14px 15px}
+  .colcard .pfx{font-family:var(--mono);font-size:14px;color:var(--tag);font-weight:600}
+  .colcard .desc{font-size:13.5px;color:var(--muted);margin-top:7px;line-height:1.5}
+  .colcard .ex{font-family:var(--mono);font-size:11.5px;color:var(--accent);margin-top:9px}
+
+  /* break-it cards */
+  .breaks{display:flex;flex-direction:column;gap:10px;margin-top:6px}
+  .brk{border:1px solid var(--rule);border-left:3px solid var(--bad);border-radius:9px;background:#1a1710;
+    padding:13px 16px;cursor:pointer;transition:.14s}
+  .brk:hover{border-left-color:var(--bad);background:#201a14}
+  .brk.on{background:#241813;border-left-color:var(--bad)}
+  .brk .bt{font-size:15px;color:var(--ink);font-weight:600}
+  .brk .bd{font-size:13.5px;color:var(--muted);margin-top:4px;line-height:1.5}
+  .brk .be{font-family:var(--mono);font-size:11.5px;color:var(--bad);margin-top:8px;display:none}
+  .brk.on .be{display:block}
+
+  .note{background:#1a1710;border:1px solid var(--rule);border-left:3px solid var(--tag);
+    border-radius:10px;padding:15px 18px;margin-top:24px;font-size:15px;line-height:1.6;color:var(--muted)}
+  .note b{color:var(--ink)}
+  .note .h{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--tag);display:block;margin-bottom:8px}
+  .note code{font-family:var(--mono);font-size:.88em;background:#2a2519;padding:1px 5px;border-radius:4px}
+  .foot{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;margin-top:34px;line-height:1.7}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="kicker">Odin · packages &amp; imports</div>
+  <h1>Packages, folders, and imports — four levels deep</h1>
+
+  <div class="levels" id="levelnav"></div>
+  <div class="rule"></div>
+
+  <!-- ===================== LEVEL 1 — WHAT IT IS ===================== -->
+  <section class="section" id="s1">
+    <p class="deck">A <b>package</b> is a <b>directory</b> of <code style="font-family:var(--mono);font-size:.92em">.odin</code> files, each starting with the same <code style="font-family:var(--mono);font-size:.92em">package &lt;name&gt;</code> line. Every file in that folder shares <b>one flat scope</b> — a top-level name in one file is just there for the next file, no import between them. Click a name to follow where it's used.</p>
+    <nav class="sub" id="l1nav"></nav>
+    <div class="hint">Both files below build together as one package. Output is real: claim <span style="color:var(--accent)">shared-scope</span>.</div>
+
+    <div class="canvas">
+      <div class="folder">
+        <div class="foldertab">📁 greeter/</div>
+        <div class="files">
+          <div class="file" id="file-main">
+            <div class="fname">main.odin</div>
+            <div class="fbody"><span class="pkgline">package main</span>
+
+<span class="cm">// reads BANNER + calls greet —</span>
+<span class="cm">// both live in the OTHER file,</span>
+<span class="cm">// no import between them.</span>
+main :: proc() {
+  fmt.println(<span class="name" data-name="BANNER">BANNER</span>)
+  fmt.println(<span class="name" data-name="greet">greet</span>("packages"))
+}</div>
+          </div>
+          <div class="file" id="file-greeting">
+            <div class="fname">greeting.odin</div>
+            <div class="fbody"><span class="pkgline">package main</span>
+
+<span class="cm">// same folder, same package line</span>
+<span class="cm">// -> same scope as main.odin.</span>
+<span class="name" data-name="BANNER">BANNER</span> :: "one folder, one package, one scope"
+
+<span class="name" data-name="greet">greet</span> :: proc(name: string) -> string {
+  return fmt.aprintf("hello, %s", name)
+}</div>
+          </div>
+        </div>
+        <div class="scopebar" id="scopebar">two files · one <b>package main</b> · one shared top-level scope</div>
+      </div>
+
+      <pre id="l1out"><span class="cm">$ odin run .   # build the FOLDER as a package</span>
+one folder, one package, one scope
+hello, packages</pre>
+    </div>
+
+    <div class="cols">
+      <div class="panel"><h3>The whole rule</h3>
+        <div class="sizes">
+          directory &rarr; <span class="n">one package</span><br>
+          <span class="n">package main</span> &times; 2 files<br>
+          shared names: <span class="big">BANNER</span>, <span class="big">greet</span><br>
+          imports between them: <span class="n">0</span>
+        </div>
+      </div>
+      <div class="panel"><h3>What you're seeing</h3><p class="teach" id="l1teach"></p></div>
+    </div>
+
+    <div class="note">
+      <span class="h">no per-file privacy by default</span>
+      Every top-level name is visible to the whole package. To narrow that you opt <b>in</b> to <code>@(private="file")</code> (hidden from sibling files too) or <code>@(private)</code> (hidden from other packages). Visibility is something you <i>add</i>, not the default.
+    </div>
+  </section>
+
+  <!-- ============= LEVEL 2 — IMPORTS BRING IN QUALIFIED NAMES ============= -->
+  <section class="section" id="s2">
+    <p class="deck">Sharing scope ends at the folder edge. To reach <b>another</b> package you <code style="font-family:var(--mono);font-size:.92em">import</code> it — that binds a local <b>name</b> you call through (<code style="font-family:var(--mono);font-size:.92em">fmt.println</code>). The string after a colon prefix says <i>where to look</i>; an optional name before the path <b>renames it locally</b>.</p>
+
+    <h2>Three places the compiler looks</h2>
+    <div class="canvas">
+      <div class="colmap">
+        <div class="colcard"><div class="pfx">core:</div><div class="desc">The standard library that ships with the compiler.</div><div class="ex">import "core:fmt"</div></div>
+        <div class="colcard"><div class="pfx">vendor:</div><div class="desc">Bundled bindings to common libraries (sdl3, raylib, glfw…).</div><div class="ex">import "vendor:sdl3"</div></div>
+        <div class="colcard"><div class="pfx">"./path"</div><div class="desc">A relative path to your own folder — no prefix, just the path.</div><div class="ex">import "./mymath"</div></div>
+      </div>
+    </div>
+
+    <h2>The alias renames the package — locally</h2>
+    <p class="teach">A name before the path is a <b>local alias</b>. Inside this file the package answers <i>only</i> to that name. Toggle it:</p>
+    <nav class="sub" id="aliasnav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="aliaslabel"></div>
+      <pre id="aliasout"></pre>
+    </div>
+    <p class="teach" id="aliasteach"></p>
+
+    <div class="note">
+      <span class="h">the alias replaces the name — it doesn't add one</span>
+      Once you write <code>import strs "core:strings"</code>, the bare name <code>strings</code> is undeclared in that file. Reaching for it is a compile error: <span style="color:var(--bad);font-family:var(--mono);font-size:.86em">Undeclared name: strings</span> (claim <span style="color:var(--accent);font-family:var(--mono);font-size:.86em">bare-name-undeclared</span>). Aliasing is per-file; another file in the same package can bind a different name or use the default.
+    </div>
+  </section>
+
+  <!-- ===================== LEVEL 3 — ONE FOLDER IS ONE PACKAGE ===================== -->
+  <section class="section" id="s3">
+    <p class="deck">Level 2 sold you the import. Level 3 is the rulebook the compiler enforces around it — and each rule shows up as a refusal at build time, never a runtime surprise. Click one to see the exact error.</p>
+    <p class="teach">Four ways the package system can bite, four real compiler messages. Every string below is what the compiler actually printed.</p>
+
+    <div class="breaks" id="breaks"></div>
+
+    <p class="teach" style="margin-top:24px"><b>The through-line:</b> the directory boundary is load-bearing, and so is the package name on every file in it. Disagree on the name, point at a folder that isn't there, reach past <code>@(private)</code>, or bind two packages to the same identifier — the compiler stops the build and tells you which one. None of these can survive to run.</p>
+
+    <div class="note">
+      <span class="h">@(private) is name-resolution only — no runtime cost</span>
+      <code>@(private)</code> is a decision the compiler makes once, during name resolution, about whether a name is visible <i>outside</i> its package. There's no check, no flag, no overhead at run time — the symbol is simply absent from what other packages can see, exactly like the four refusals above happen before a program exists.
+    </div>
+  </section>
+
+  <!-- ============= LEVEL 4 — THE WHOLE-FOLDER BUILD & VANISHING PACKAGES ============= -->
+  <section class="section" id="s4">
+    <p class="deck">All of it converges on one command. <code style="font-family:var(--mono);font-size:.92em">odin run .</code> builds the <b>current folder as a package</b> — every <code style="font-family:var(--mono);font-size:.92em">.odin</code> file in it, plus every package those files import. The single-file shortcut (<code style="font-family:var(--mono);font-size:.92em">-file</code>) can't do this; a relative import needs the whole folder in view.</p>
+    <p class="teach">Here is the full lesson program — a <code>package main</code> that aliases <code>core:strings</code>, imports the sibling <code>mymath</code> folder (itself two files sharing scope), and calls across all of it. One <code>odin run .</code>, every name resolved:</p>
+    <pre id="l4out"><span class="cm">$ odin run .</span>
+lesson 01b - packages and imports
+contains 'hello' in 'hello world': true
+length of [3, 4] = 5.0000
+circumference of r=1 circle = 6.2832
+mymath version: 0.1.0
+shouted: HELLOPE
+<span class="ok">PI from constants.odin, used by vectors.odin: 3.14159265358979</span></pre>
+
+    <p class="teach"><b>The emergent payoff:</b> that last line is the whole idea in one print. <code>PI</code> is defined in <code>mymath/constants.odin</code>; it's used by <code>mymath/vectors.odin</code> with <i>no import between them</i> — because they're one package. <code>main</code> reaches the result through a single <code>import "./mymath"</code> and the <code>mymath.</code> qualifier. Folders gave you free intra-package sharing; imports gave you deliberate, named cross-package access. Two keywords, and the scope graph of an entire program falls out of the directory tree.</p>
+
+    <p class="teach"><b>And then they're gone:</b> packages are a compile-time concept only. There's no runtime package object, no reflection over packages, and an <code>import</code> runs no code — it just tells the compiler to also consider those names while resolving this file. By the time the program runs, every name is an address and the boundaries have been erased.</p>
+
+    <p class="teach" style="margin-top:24px;color:var(--muted)">L1 a folder of files sharing one flat scope, no imports between them &rarr; L2 an <span class="il">import</span> binds a name from another package, an alias renaming it locally &rarr; L3 the compiler enforces the boundary with four exact refusals &rarr; L4 <span class="il">odin run .</span> builds the folder, wires every import, then erases the packages at runtime.</p>
+  </section>
+
+  <div class="foot">
+    Every output line and error string on this page is real compiler output, captured by claims under<br>
+    <span style="color:var(--accent)">claims/lessons/01b-packages-and-imports</span> — shared-scope · alias-in-use · bare-name-undeclared · solution · break-package-mismatch · break-missing-import · break-cross-private · break-name-collision.
+  </div>
+</div>
+
+<script>
+/* ---------- LEVEL 1: name-follow highlight ---------- */
+const L1TEACH = {
+  none: "Two files, both <b>package main</b>, both in <span class='il'>greeter/</span>. <code>main.odin</code> names <code>BANNER</code> and <code>greet</code> with no qualifier and no import — they're top-level names in the same package, so they're simply in scope. Click a name to light up its definition and its use.",
+  BANNER: "<b>BANNER</b> is defined in <code>greeting.odin</code> and read in <code>main.odin</code>. No <span class='il'>import</span> line carries it across — the two files <i>are</i> the same scope.",
+  greet: "<b>greet</b> is a proc in <code>greeting.odin</code>, called bare from <code>main.odin</code>. Files inside one package never import each other; the whole folder is one shared scope already."
+};
+let l1cur = 'none';
+function renderL1(){
+  document.querySelectorAll('#l1nav button').forEach(b=>b.classList.toggle('on',b.dataset.n===l1cur));
+  document.querySelectorAll('.file .name').forEach(el=>{
+    el.classList.toggle('lit', l1cur!=='none' && el.dataset.name===l1cur);
+  });
+  document.getElementById('file-main').classList.toggle('lit', l1cur!=='none');
+  document.getElementById('file-greeting').classList.toggle('lit', l1cur!=='none');
+  document.getElementById('l1teach').innerHTML = L1TEACH[l1cur];
+}
+const L1NAV = [['none','both files'],['BANNER','follow BANNER'],['greet','follow greet']];
+const l1nav = document.getElementById('l1nav');
+for(const [n,label] of L1NAV){ const b=document.createElement('button'); b.dataset.n=n; b.textContent=label;
+  b.onclick=()=>{l1cur=n;renderL1();}; l1nav.appendChild(b); }
+document.querySelectorAll('.file .name').forEach(el=>{
+  el.style.cursor='pointer';
+  el.onclick=()=>{ l1cur = el.dataset.name; renderL1(); };
+});
+
+/* ---------- LEVEL 2: alias toggle ---------- */
+/* MEASURED: aliased form -> claim alias-in-use; bare form -> claim bare-name-undeclared */
+const ALIAS = {
+  aliased: {
+    label: 'import strs "core:strings"   —   call through strs.',
+    out: '<span class="cm">$ odin run main.odin -file</span>\nHELLO\nhas prefix: true',
+    teach: 'With <code>import strs "core:strings"</code>, you call <code>strs.to_upper</code> and <code>strs.has_prefix</code>. The package is real, the name is yours. Output is real: claim <span class="il">alias-in-use</span>.'
+  },
+  bare: {
+    label: 'import strs "core:strings"   —   but you typed strings.',
+    out: '<span class="cm">$ odin run main.odin -file</span>\n<span class="er">main.odin(10:14) Error: Undeclared name: strings</span>\n<span class="er">    fmt.println(strings.to_upper("hi"))</span>',
+    teach: 'The package is bound to <code>strs</code>, so the bare name <code>strings</code> resolves to nothing — the alias <i>replaced</i> the default name in this file. Verified: claim <span class="il">bare-name-undeclared</span>.'
+  }
+};
+let aliasCur = 'aliased';
+function renderAlias(){
+  document.querySelectorAll('#aliasnav button').forEach(b=>b.classList.toggle('on',b.dataset.m===aliasCur));
+  const a = ALIAS[aliasCur];
+  document.getElementById('aliaslabel').textContent = a.label;
+  document.getElementById('aliasout').innerHTML = a.out;
+  document.getElementById('aliasteach').innerHTML = a.teach;
+}
+const ALIASNAV = [['aliased','call strs. (works)'],['bare','call strings. (error)']];
+const aliasnav = document.getElementById('aliasnav');
+for(const [m,label] of ALIASNAV){ const b=document.createElement('button'); b.dataset.m=m; b.textContent=label;
+  b.onclick=()=>{aliasCur=m;renderAlias();}; aliasnav.appendChild(b); }
+
+/* ---------- LEVEL 3: break-it cards ---------- */
+/* MEASURED: each error string is a verified `fails` claim substring. */
+const BREAKS = [
+  { t:'Files in one folder disagree on the package name',
+    d:'Change one file in mymath/ to <code style="font-family:monospace">package mymath_constants</code>. One folder is one package — full stop.',
+    e:'Error: Different package name, expected \'mymath\'',
+    c:'break-package-mismatch' },
+  { t:'Import a folder that isn\'t there',
+    d:'Point the relative import at <code style="font-family:monospace">./mymath_typo</code>. The compiler walks the path on disk and finds nothing.',
+    e:'Error: Path does not exist: ./mymath_typo',
+    c:'break-missing-import' },
+  { t:'Reach across packages into a @(private) name',
+    d:'Mark a proc in mymath/ as <code style="font-family:monospace">@(private)</code>, then call it from package main. Package-private means invisible to other packages.',
+    e:'Error: \'secret_seed\' is not exported by \'mymath\'',
+    c:'break-cross-private' },
+  { t:'Two imports bind the same identifier',
+    d:'Import both core:strings and a local ./strings folder. Both want the name <code style="font-family:monospace">strings</code>. Fix by aliasing one of them.',
+    e:'Error: Duplicate declaration of \'package strings\'',
+    c:'break-name-collision' }
+];
+let openBrk = -1;
+const breaksEl = document.getElementById('breaks');
+BREAKS.forEach((b,i)=>{
+  const card=document.createElement('div'); card.className='brk';
+  card.innerHTML = `<div class="bt">${b.t}</div><div class="bd">${b.d}</div>`
+    + `<div class="be">▸ ${b.e}   <span style="color:var(--muted)">(claim ${b.c})</span></div>`;
+  card.onclick=()=>{ openBrk = (openBrk===i?-1:i);
+    document.querySelectorAll('#breaks .brk').forEach((el,j)=>el.classList.toggle('on',j===openBrk)); };
+  breaksEl.appendChild(card);
+});
+
+/* ---------- level navigation ---------- */
+const LEVELS = [
+  ['1','The folder is the package','What it is'],
+  ['2','Imports name another package','Reaching out'],
+  ['3','One folder, one package','The rules'],
+  ['4','odin run .','The payoff']
+];
+let level='1';
+function setLevel(n){
+  level=n;
+  document.querySelectorAll('.levels button').forEach(b=>b.classList.toggle('on',b.dataset.n===n));
+  for(const [k] of LEVELS){ const el=document.getElementById('s'+k); if(el) el.classList.toggle('on',k===n); }
+  if(n==='1') renderL1();
+  if(n==='2') renderAlias();
+}
+const lnav=document.getElementById('levelnav');
+for(const [n,sub,tt] of LEVELS){ const b=document.createElement('button'); b.dataset.n=n;
+  b.innerHTML=`<span class="lv">Level ${n} · ${sub}</span><span class="tt">${tt}</span>`;
+  b.onclick=()=>setLevel(n); lnav.appendChild(b); }
+setLevel('1');
+</script>
+</body>
+</html>

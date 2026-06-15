@@ -8,11 +8,18 @@ Vec3 :: [3]f32
 main :: proc() {
 	// 1. Declare a fixed array of four ints named `a`, initialized
 	//    to the values 10, 20, 30, 40. Use an explicit type annotation
-	//    `[4]int` on the left so you see the syntax once; later you'll
+	//    `[4]int` on the leftso you see the syntax once; later you'll
 	//    let Odin infer it.
-	a: [4]int = {10, 20, 30, 40}
+	my_fixed_array: [4]int
+	my_fixed_array = {1, 32, 12, 5}
 
 
+	fmt.println(my_fixed_array)
+	fmt.println("hahahahaha")
+
+	
+
+	
 	// 2. Print three things on one line: the array's length (use the
 	//    builtin `len`), its first element, and its last element. Use
 	//    `len(a) - 1` for "last" rather than hardcoding 3, so
@@ -45,5 +52,7 @@ main :: proc() {
 
 	// Run with: odin run main.odin -file
 	// Compare your output to expected-output.txt.
+
+
 }
 

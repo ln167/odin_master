@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Odin when — one source, two builds, four levels deep</title>
+<style>
+  :root{
+    --paper:#15130f; --card:#1d1a14; --ink:#ece6d8; --muted:#9a9182;
+    --rule:#332e24; --accent:#5ec8b8; --accent-soft:#1f342f;
+    --tag:#e0875a; --pad:#5a544a; --bad:#e0675a; --bad-soft:#2a1815;
+    --mono:"Cascadia Mono","Cascadia Code",Consolas,ui-monospace,"SF Mono",monospace;
+    --serif:-apple-system,"Segoe UI Variable Text","Segoe UI",system-ui,Roboto,"Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper);color:var(--ink)}
+  body{font-family:var(--serif);line-height:1.6;padding:0 20px;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-feature-settings:"kern" 1,"liga" 1}
+  .page{max-width:860px;margin:0 auto;padding:46px 0 90px}
+  .kicker{font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+  h1{font-size:30px;line-height:1.15;margin:0 0 18px;font-weight:600;letter-spacing:-.01em}
+
+  /* level tabs */
+  .levels{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+  .levels button{flex:1;min-width:150px;text-align:left;background:var(--card);border:1px solid var(--rule);
+    color:var(--muted);border-radius:10px;padding:11px 14px;cursor:pointer;transition:.12s;font-family:var(--serif)}
+  .levels button:hover{border-color:var(--accent)}
+  .levels button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--ink)}
+  .levels .lv{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);display:block;margin-bottom:3px}
+  .levels .tt{font-size:14px}
+  .rule{height:1px;background:var(--rule);margin:22px 0 26px}
+
+  .deck{color:var(--muted);font-size:17px;margin:0 0 24px;line-height:1.5}
+  .deck b{color:var(--ink)}
+  h2{font-size:21px;margin:0 0 14px;font-weight:600}
+  p.teach{font-size:16px;line-height:1.62;max-width:46em}
+  p.teach code,.il{font-family:var(--mono);font-size:.86em;background:#2a2519;padding:1px 5px;border-radius:4px}
+  .teach b{color:var(--tag)}
+  .section{display:none}
+  .section.on{display:block}
+
+  nav.sub{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;font-family:var(--mono);font-size:13px}
+  nav.sub button{background:var(--card);border:1px solid var(--rule);color:var(--muted);border-radius:8px;padding:8px 14px;cursor:pointer;transition:.12s}
+  nav.sub button:hover{color:var(--ink);border-color:var(--accent)}
+  nav.sub button.on{color:var(--ink);border-color:var(--accent);background:var(--accent-soft)}
+  .hint{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin:0 0 20px}
+
+  .canvas{background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:30px 28px}
+  .slotlabel{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
+
+  /* the two-pane "one source, two builds" view */
+  .twoup{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:6px}
+  @media(max-width:640px){.twoup{grid-template-columns:1fr}}
+  .lane{background:#1a1710;border:1px solid var(--rule);border-radius:12px;padding:0 0 14px;overflow:hidden}
+  .lane.live{border-color:var(--accent)}
+  .lane h4{font-family:var(--mono);font-size:12px;margin:0;font-weight:600;padding:12px 14px;border-bottom:1px solid var(--rule);background:#181510}
+  .lane.live h4{color:var(--accent)}
+  .lane.gone h4{color:var(--muted)}
+  /* source line rendering with kept / cut branches */
+  pre.src{font-family:var(--mono);font-size:12px;line-height:1.65;margin:0;padding:12px 14px;background:transparent;border:none;border-radius:0;white-space:pre-wrap;overflow:auto}
+  .ln-kept{color:#cdeee7}
+  .ln-cut{color:#5a544a;text-decoration:line-through;text-decoration-color:#4a342a;opacity:.7}
+  .ln-cut .cutmark{text-decoration:none;display:inline-block;color:var(--bad);font-size:10px;margin-left:6px}
+  .ln-cond{color:var(--accent)}
+  .ln-dim{color:#7a7263}
+  .laneout{font-family:var(--mono);font-size:12px;margin:10px 14px 0;border-top:1px dashed var(--rule);padding-top:10px}
+  .laneout .ol{display:block;color:#cdeee7}
+  .laneout .lbl{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:6px}
+
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:26px}
+  @media(max-width:680px){.cols{grid-template-columns:1fr}}
+  .panel h3{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 12px;font-weight:600}
+  .sizes{font-family:var(--mono);font-size:13px;line-height:2}
+  .sizes .n{color:var(--accent);font-weight:600}
+  .sizes .big{color:var(--tag);font-weight:600}
+
+  pre{font-family:var(--mono);font-size:12.5px;line-height:1.7;background:#1a1710;border:1px solid var(--rule);border-radius:10px;padding:16px 18px;overflow:auto;margin:22px 0 0;white-space:pre-wrap}
+  pre .cm{color:#6f6655}
+  pre .kw{color:var(--accent)}
+  pre .er{color:var(--bad)}
+  pre .ok{color:var(--accent)}
+  pre .wn{color:var(--tag)}
+
+  /* dial cards (Level 3) */
+  .dialrow{display:flex;gap:10px;flex-wrap:wrap;margin:6px 0 4px;font-family:var(--mono);font-size:12px}
+  .dialrow button{background:var(--card);border:1px solid var(--rule);color:var(--muted);border-radius:8px;padding:9px 13px;cursor:pointer;transition:.12s;text-align:left}
+  .dialrow button:hover{color:var(--ink);border-color:var(--accent)}
+  .dialrow button.on{color:var(--ink);border-color:var(--accent);background:var(--accent-soft)}
+  .dialrow .cmd{display:block;font-size:10px;color:var(--tag);margin-top:3px}
+
+  /* the wrong way, drawn (Level 2) */
+  .oopstrip{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}
+  .oopcell{flex:1;min-width:120px;background:#241f17;border:1px dashed #5a4530;border-radius:7px;padding:9px 8px;font-family:var(--mono);font-size:10px;text-align:center;color:#8a7a66}
+  .heaplabel{font-family:var(--mono);font-size:10px;color:var(--bad);text-align:center;margin-top:8px}
+
+  .note{background:#1a1710;border:1px solid var(--rule);border-left:3px solid var(--tag);
+    border-radius:10px;padding:15px 18px;margin-top:24px;font-size:15px;line-height:1.6;color:var(--muted)}
+  .note b{color:var(--ink)}
+  .note .h{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--tag);display:block;margin-bottom:8px}
+  .foot{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;margin-top:34px}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="kicker">Odin · when &amp; build flags</div>
+  <h1>One source, two builds — <span style="color:var(--accent)">when</span>, four levels deep</h1>
+
+  <div class="levels" id="levelnav"></div>
+  <div class="rule"></div>
+
+  <!-- ===================== LEVEL 1 — WHAT IT IS ===================== -->
+  <section class="section" id="s1">
+    <p class="deck"><span class="il" style="color:var(--accent)">when</span> is an <span class="il">if</span> the compiler resolves <b>before it generates code</b>. The condition is a constant, so the compiler already knows the answer — it keeps the winning branch and <b>deletes the other one entirely</b>. The loser isn't compiled, isn't type-checked, isn't in the binary. Below is <b>one</b> source file; flip the build condition and watch one branch become real code while the other is struck out and gone.</p>
+    <nav class="sub" id="nav"></nav>
+    <div class="hint">Same main.odin, two builds. The struck-out lines are removed before code generation — they produce no instructions. Outputs are real program output.</div>
+    <div class="canvas">
+      <div class="slotlabel" id="onelabel"></div>
+      <div class="twoup">
+        <div class="lane live" id="lane-keep">
+          <h4 id="keep-h"></h4>
+          <pre class="src" id="keep-src"></pre>
+          <div class="laneout" id="keep-out"></div>
+        </div>
+        <div class="lane gone" id="lane-cut">
+          <h4 id="cut-h"></h4>
+          <pre class="src" id="cut-src"></pre>
+          <div class="laneout" id="cut-out"></div>
+        </div>
+      </div>
+    </div>
+    <div class="cols">
+      <div class="panel"><h3>The whole system</h3>
+        <div class="sizes">
+          <span class="n">when</span> COND { … }<br><span style="color:var(--muted)">compile-time branch</span><br><br>
+          <span class="n">ODIN_OS</span> · <span class="n">ODIN_ARCH</span><br><span class="n">ODIN_DEBUG</span><br><span style="color:var(--muted)">built-in constants</span><br><br>
+          <span class="n">#config</span>(N, default)<br><span style="color:var(--muted)">read a build-time value</span>
+        </div>
+      </div>
+      <div class="panel"><h3>What you're seeing</h3><p class="teach" id="teach"></p></div>
+    </div>
+  </section>
+
+  <!-- ============= LEVEL 2 — WHY YOU'D REACH FOR IT ============= -->
+  <section class="section" id="s2">
+    <p class="deck">Level 1 was <i>what it is</i>. Level 2 is the case where nothing else will do: <b>the deleted branch's symbols don't have to exist on this target.</b> That single property is why one source tree can compile on every platform.</p>
+    <p class="teach">Take a call that exists only on one platform — <span class="il">windows.GetLastError()</span>. Write it <b>bare</b>, with no guard, and cross-compile to a target that doesn't have it. The build stops before it ever reaches the linker:</p>
+    <pre><span class="kw">import</span> <span class="ok">"core:sys/windows"</span>
+<span class="kw">main</span> :: proc() {
+    _ = <span class="er">windows.GetLastError()</span>   <span class="cm">// no guard, on every target</span>
+}
+<span class="cm">// $ odin build main.odin -file -target:linux_amd64</span>
+<span class="er">main.odin(11:6) Error: 'GetLastError' is not declared by 'windows'</span></pre>
+    <p class="teach"><b>Who refuses, and when:</b> the <b>compiler</b>, not the linker — <span class="il">core:sys/windows</span> itself gates that symbol behind <span class="il">when ODIN_OS == .Windows</span>, so on a Linux target the name is never declared and the type-checker stops you up front. Now wrap the exact same call in a guard and the cross-compile <b>succeeds</b>:</p>
+    <pre><span class="kw">main</span> :: proc() {
+    <span class="kw">when</span> <span class="kw">ODIN_OS</span> == .Windows {
+        _ = windows.GetLastError()   <span class="cm">// only compiled ON Windows</span>
+    }
+}
+<span class="cm">// $ odin build main.odin -file -target:linux_amd64</span>
+<span class="ok">builds clean — the Linux target never compiles the windows branch</span></pre>
+
+    <p class="teach"><b>The counterfactual:</b> the runtime <span class="il">if</span> cannot stand in here. Both arms of an <span class="il">if</span> are compiled, type-checked, and linked — so both arms must reference symbols that <i>exist</i>. An <span class="il">if ODIN_OS == .Windows</span> would still demand that <span class="il">windows.GetLastError</span> be declared on Linux, and the Linux build would fail exactly as the bare call did. <span class="il">if</span> is the right shape for a decision made <i>at runtime</i>; it is the wrong shape for "this platform doesn't have that function."</p>
+
+    <h2 style="margin-top:30px">Why the alternatives are worse</h2>
+    <div class="canvas">
+      <div class="slotlabel" style="color:var(--bad)">trying to ship per-platform code without a compile-time branch</div>
+      <div class="oopstrip">
+        <div class="oopcell">one file per OS,<br>built separately</div>
+        <div class="oopcell">runtime <span class="il" style="background:#241f17">if</span>,<br>both arms linked</div>
+        <div class="oopcell">stub every<br>foreign symbol</div>
+      </div>
+      <div class="heaplabel">all three pay for the symbol to exist on a target that doesn't have it.</div>
+    </div>
+    <p class="teach">
+      <b>A separate source file per platform</b> selected by the build system: now the shared logic is duplicated across files and drifts apart — a fix in one is a bug waiting in the other. <i>More code, same idea, more bugs.</i><br><br>
+      <b>A runtime <span class="il">if ODIN_OS == .Windows</span></b>: both arms compile, so the Linux build still needs the windows symbol declared — it simply <i>won't build</i>. <i>Broken</i> for exactly the platform-fork job.<br><br>
+      <b>Hand-declaring a do-nothing stub</b> of every foreign symbol on the platforms that lack it: real declarations the compiler must accept and the linker must resolve, carried in the binary for nothing. <i>Slower to maintain, dead weight shipped.</i> The compile-time branch removes the loser outright, so there is nothing to stub.
+    </p>
+  </section>
+
+  <!-- ===================== LEVEL 3 — THE DIALS ===================== -->
+  <section class="section" id="s3">
+    <p class="deck">Level 2 was platform forks. Level 3 is the <b>dials you turn from the build command</b>: <span class="il">NAME :: #config(NAME, default)</span> reads a build-time constant, and <span class="il">-define:NAME=value</span> sets it. One source, recompiled, diverges. The default's type fixes the constant's type — until an override supplies its own.</p>
+    <p class="teach">The same <span class="il">main.odin</span> below has a bool flag <span class="il">MY_FEATURE</span> and a string flag <span class="il">GREETING</span>, both read with <span class="il">#config</span>. Pick a build command and watch the compiled output change — the lines that aren't selected simply aren't in this build:</p>
+
+    <div class="dialrow" id="dialnav"></div>
+    <div class="canvas">
+      <div class="slotlabel" id="diallabel"></div>
+      <pre class="src" id="dialsrc" style="border:1px solid var(--rule);border-radius:10px;background:#1a1710"></pre>
+      <div class="laneout" id="dialout" style="margin:14px 0 0;border-top:none;padding-top:0"></div>
+    </div>
+
+    <p class="teach"><b>The two gotchas the dials hand you</b> — both real compiler behavior, neither obvious:</p>
+    <pre><span class="cm"># Typo the key — the value falls through to the default, output unchanged,</span>
+<span class="cm"># but the compiler warns you the define went nowhere:</span>
+$ odin run main.odin -file <span class="kw">-define:MY_FEATUR=true</span>
+<span class="wn">Warning: given -define:MY_FEATUR is unused in the project</span>
+
+<span class="cm"># Override a bool flag with a string — the -define is NOT rejected at the</span>
+<span class="cm"># #config line. It replaces MY_FEATURE with "hello"; the error surfaces</span>
+<span class="cm"># later, at the `when MY_FEATURE` that now has a non-bool condition:</span>
+$ odin run main.odin -file <span class="kw">-define:MY_FEATURE=hello</span>
+<span class="er">main.odin(32:7) Error: Non-boolean condition in 'when' statement</span>
+<span class="er">    when MY_FEATURE {</span></pre>
+    <p class="teach"><b>The fix to internalize:</b> the default's type holds <i>only until</i> an override is supplied; the override then decides the type, and a wrong one breaks <b>at the use site, not the declaration</b>. The lesson is that <span class="il">#config</span> doesn't validate the override against the default's type — your <span class="il">when</span> does, wherever you read it.</p>
+
+    <div class="note">
+      <span class="h">a when condition is a constant, not a variable</span>
+      The thing inside <span class="il">when</span> must be known at compile time. Reach for a runtime value and the build refuses: <span class="il">when some_local_bool { … }</span> gives <b>Error: Undeclared name: some_local_bool</b> — the compile-time branch has no access to runtime storage. If the decision genuinely depends on something only known while the program runs, that's an <span class="il">if</span>, not a <span class="il">when</span>. The split is the point: <span class="il">when</span> decides on constants before codegen; <span class="il">if</span> decides on values during execution.
+    </div>
+  </section>
+
+  <!-- ============= LEVEL 4 — ZERO COST & THE DOUBLE EDGE ============= -->
+  <section class="section" id="s4">
+    <p class="deck">The deleted branch isn't <i>skipped</i> — it's <b>absent</b>. No branch instruction, no jump, no flag check, no extra bytes in the binary. That absence is the feature, and it comes with one sharp edge worth naming.</p>
+    <p class="teach"><b>Zero runtime cost.</b> A <span class="il">when ODIN_DEBUG { … }</span> block in a release build is byte-for-byte as if you'd never written it. This is what makes <span class="il">when</span> the right home for asserts, validators, and heavy logging: you don't apologize for them in release, because they aren't there. And the flag is real — flip it and the same program reports a different build:</p>
+    <pre><span class="cm"># default build: ODIN_DEBUG is false unless you pass -debug</span>
+$ odin run main.odin -file
+<span class="ok">Build: RELEASE</span>
+
+<span class="cm"># add -debug and the same source reports the other label</span>
+$ odin run main.odin -file <span class="kw">-debug</span>
+<span class="ok">Build: DEBUG</span></pre>
+    <p class="teach"><b>The double edge:</b> because the losing branch is removed <i>before</i> type-checking, the compiler never looks inside it. A name that was never declared anywhere in the program sits happily in a branch that isn't taken — and the build still succeeds:</p>
+    <pre><span class="kw">main</span> :: proc() {
+    <span class="kw">when</span> <span class="kw">ODIN_OS</span> == .Windows {
+        _ = 1
+    } <span class="kw">else when</span> <span class="kw">ODIN_OS</span> == .Linux {
+        <span class="cm">this_name_was_never_declared_anywhere()  // never checked on Windows</span>
+    }
+}
+<span class="cm">// on a Windows host: builds clean. the Linux arm is gone before type-checking.</span></pre>
+    <p class="teach"><b>The emergent payoff — and its bill.</b> The same property that lets one source tree compile on every target (Level 2) means a <b>typo in a dead arm hides until somebody builds that target</b>. The compile-time wall that protects you also blinds the compiler to the branch behind it. The remedy isn't a language feature — it's building on every platform you ship to, so every branch becomes a taken branch somewhere and gets its turn through the type-checker.</p>
+    <p class="teach" style="margin-top:24px;color:var(--muted)">That's the arc: <b style="color:var(--ink)">L1</b> <span class="il">when</span> resolves an <span class="il">if</span> before codegen and deletes the loser → <b style="color:var(--ink)">L2</b> so the deleted arm's symbols needn't exist — one source compiles on every target → <b style="color:var(--ink)">L3</b> <span class="il">#config</span> + <span class="il">-define</span> turn that into build-command dials, with type checked at the use site → <b style="color:var(--ink)">L4</b> the loser leaves zero instructions, but is also never type-checked, so build everywhere.</p>
+  </section>
+
+  <div class="foot">probes reproduce with <span style="color:var(--ink)">odin build / odin run</span> · every output, warning &amp; error on this page is real compiler output (claims/lessons/16-when-and-build-flags)</div>
+</div>
+
+<script>
+/* ============================================================
+   Each interactive component = one data object + one render fn.
+   Vanilla JS, inline, no libraries. All embedded outputs/errors
+   come from passing claims under claims/lessons/16-when-and-build-flags/.
+   ============================================================ */
+
+/* ---------- LEVEL 1: one source, two builds ----------
+   The source has a release/debug fork (build_label) plus the OS fork.
+   Measured: solution (Build: RELEASE) and debug-flip (Build: DEBUG) claims. */
+const SRC_LINES = [
+  {t:'when ODIN_DEBUG {', cond:true},
+  {t:'    build_label :: proc() -> string { return "DEBUG" }', branch:'debug'},
+  {t:'} else {', cond:true},
+  {t:'    build_label :: proc() -> string { return "RELEASE" }', branch:'release'},
+  {t:'}', cond:true},
+  {t:'', plain:true},
+  {t:'main :: proc() {', plain:true},
+  {t:'    fmt.println("Build:", build_label())', plain:true},
+  {t:'}', plain:true},
+];
+const L1 = {
+  release: { h:'$ odin run main.odin -file', keepBranch:'release', cutBranch:'debug', out:'Build: RELEASE',
+    teach:`ODIN_DEBUG is <b>false</b> by default, so the compiler keeps the <code>else</code> arm and <b>deletes</b> the debug one. There is only ever <i>one</i> <code>build_label</code> in the binary — the duplicate name is no conflict because the loser never reaches code generation.` },
+  debug:   { h:'$ odin run main.odin -file -debug', keepBranch:'debug', cutBranch:'release', out:'Build: DEBUG',
+    teach:`Passing <code>-debug</code> makes ODIN_DEBUG <b>true</b>, so now the <i>first</i> arm wins and the <code>else</code> is struck out. Same source, same proc name, opposite branch kept — the only thing that changed is a compile-time constant.` },
+};
+let l1mode='release';
+function renderSrc(el, keepBranch, cutBranch){
+  let html='';
+  for(const ln of SRC_LINES){
+    if(ln.plain){ html += `<span class="ln-dim">${escH(ln.t)}</span>\n`; continue; }
+    if(ln.cond){ html += `<span class="ln-cond">${escH(ln.t)}</span>\n`; continue; }
+    if(ln.branch===keepBranch){ html += `<span class="ln-kept">${escH(ln.t)}</span>\n`; }
+    else if(ln.branch===cutBranch){ html += `<span class="ln-cut">${escH(ln.t)}<span class="cutmark">✕ removed</span></span>\n`; }
+  }
+  el.innerHTML = html;
+}
+function escH(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function renderL1(){
+  document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('on',b.dataset.m===l1mode));
+  const m=L1[l1mode];
+  document.getElementById('onelabel').textContent = `one main.odin → two builds (host: Windows / amd64)`;
+  // left lane = the build you picked (live)
+  document.getElementById('keep-h').textContent = m.h;
+  renderSrc(document.getElementById('keep-src'), m.keepBranch, m.cutBranch);
+  document.getElementById('keep-out').innerHTML = `<span class="lbl">this build prints</span><span class="ol">${escH(m.out)}</span>`;
+  document.getElementById('lane-keep').className = 'lane live';
+  // right lane = the OTHER build (shown ghosted to contrast)
+  const other = L1[l1mode==='release'?'debug':'release'];
+  document.getElementById('cut-h').textContent = other.h;
+  renderSrc(document.getElementById('cut-src'), other.keepBranch, other.cutBranch);
+  document.getElementById('cut-out').innerHTML = `<span class="lbl">that build would print</span><span class="ol" style="color:#8a8475">${escH(other.out)}</span>`;
+  document.getElementById('lane-cut').className = 'lane gone';
+  document.getElementById('teach').innerHTML = m.teach;
+}
+const nav=document.getElementById('nav');
+[['release','default build'],['debug','-debug build']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.m=k; b.textContent=t;
+  b.onclick=()=>{l1mode=k;renderL1();}; nav.appendChild(b);
+});
+
+/* ---------- LEVEL 3: the build dials ----------
+   Measured: solution / feature-enabled / greeting-override claims. */
+const DIAL = {
+  def: { label:'odin run main.odin -file', cmd:'(no -define)',
+    feature:false, greeting:'hello',
+    out:['OS: Windows','Arch: amd64','Build: RELEASE','Greeting: hello, world'] },
+  feat:{ label:'-define:MY_FEATURE=true', cmd:'flips the bool flag',
+    feature:true, greeting:'hello',
+    out:['OS: Windows','Arch: amd64','Build: RELEASE','Feature: enabled','Greeting: hello, world'] },
+  greet:{ label:'-define:GREETING=hi', cmd:'sets the string flag',
+    feature:false, greeting:'hi',
+    out:['OS: Windows','Arch: amd64','Build: RELEASE','Greeting: hi, world'] },
+};
+function dialSrc(d){
+  // render the relevant slice of main.odin with the feature line kept/cut
+  const lines = [];
+  lines.push({t:'MY_FEATURE :: #config(MY_FEATURE, false)', cond:true});
+  lines.push({t:`GREETING   :: #config(GREETING, "hello")`, cond:true});
+  lines.push({t:'', plain:true});
+  lines.push({t:'when MY_FEATURE {', cond:true});
+  if(d.feature) lines.push({t:'    fmt.println("Feature: enabled")', kept:true});
+  else          lines.push({t:'    fmt.println("Feature: enabled")', cut:true});
+  lines.push({t:'}', cond:true});
+  lines.push({t:`fmt.printfln("Greeting: %s, world", GREETING)`, plain:true,
+              note: d.greeting!=='hello' ? `  // GREETING = "${d.greeting}"` : '' });
+  let html='';
+  for(const ln of lines){
+    if(ln.cond){ html += `<span class="ln-cond">${escH(ln.t)}</span>\n`; }
+    else if(ln.kept){ html += `<span class="ln-kept">${escH(ln.t)}</span>\n`; }
+    else if(ln.cut){ html += `<span class="ln-cut">${escH(ln.t)}<span class="cutmark">✕ removed (flag is false)</span></span>\n`; }
+    else { html += `<span class="ln-dim">${escH(ln.t)}${ln.note?`<span style="color:var(--tag)">${escH(ln.note)}</span>`:''}</span>\n`; }
+  }
+  return html;
+}
+let dialMode='def';
+function renderL3(){
+  document.querySelectorAll('#dialnav button').forEach(b=>b.classList.toggle('on',b.dataset.m===dialMode));
+  const d=DIAL[dialMode];
+  document.getElementById('diallabel').textContent = d.label + '  —  ' + d.cmd;
+  document.getElementById('dialsrc').innerHTML = dialSrc(d);
+  document.getElementById('dialout').innerHTML =
+    `<span class="lbl">this build prints</span>` + d.out.map(l=>`<span class="ol">${escH(l)}</span>`).join('');
+}
+const dialnav=document.getElementById('dialnav');
+[['def','default'],['feat','-define:MY_FEATURE=true'],['greet','-define:GREETING=hi']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.m=k;
+  b.innerHTML = `${t}<span class="cmd">${DIAL[k].cmd}</span>`;
+  b.onclick=()=>{dialMode=k;renderL3();}; dialnav.appendChild(b);
+});
+
+/* ---------- level navigation ---------- */
+const LEVELS=[
+  ['1','What it is','an if resolved before codegen'],
+  ['2','Why use it','the dead arm needn\'t exist'],
+  ['3','The dials','#config + -define'],
+  ['4','The double edge','zero cost, never checked'],
+];
+let level='1';
+function setLevel(n){
+  level=n;
+  document.querySelectorAll('.levels button').forEach(b=>b.classList.toggle('on',b.dataset.n===n));
+  for(const [k] of LEVELS){ const el=document.getElementById('s'+k); if(el) el.classList.toggle('on',k===n); }
+  if(n==='1') renderL1();
+  if(n==='3') renderL3();
+}
+const lnav=document.getElementById('levelnav');
+for(const [n,tt,sub] of LEVELS){ const b=document.createElement('button'); b.dataset.n=n;
+  b.innerHTML=`<span class="lv">Level ${n} · ${sub}</span><span class="tt">${tt}</span>`;
+  b.onclick=()=>setLevel(n); lnav.appendChild(b); }
+setLevel('1');
+</script>
+</body>
+</html>

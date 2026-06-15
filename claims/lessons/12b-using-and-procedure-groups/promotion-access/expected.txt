@@ -1,0 +1,6 @@
+e.x       = 1
+e.xform.x = 1
+same?       true
+after e.x = 9, e.xform.x = 9
+after e.xform.y = 7, e.y = 7
+e.hp = 100 (declared directly on Entity)

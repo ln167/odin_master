@@ -1,0 +1,4 @@
+"Crim" hash=0xfffa9352  bucket=2
+"Hollis" hash=0xbb2a7768  bucket=0
+"Vandal" hash=0x420168bf  bucket=7
+"Liberty Bell" hash=0x3938b775  bucket=5

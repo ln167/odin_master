@@ -1,0 +1,4 @@
+size_of(cstring) = 8
+size_of(string)  = 16
+len(c) = 6
+as string, len = 6

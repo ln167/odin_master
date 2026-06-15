@@ -1,0 +1,4 @@
+len after 4 inserts: 4
+len after delete_key(Crim): 3
+Crim still in map? false
+Hollis still in map? true

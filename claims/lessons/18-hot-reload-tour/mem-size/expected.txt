@@ -1,0 +1,5 @@
+size_of(Game_Memory) = 40
+size_of(u64)         = 8
+size_of(int)         = 8
+size_of(f64)         = 8
+size_of(mem.Allocator) = 16

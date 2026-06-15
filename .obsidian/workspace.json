@@ -4,11 +4,11 @@
     "type": "split",
     "children": [
       {
-        "id": "b04e73bccd19d56e",
+        "id": "340eebeb99e6b212",
         "type": "tabs",
         "children": [
           {
-            "id": "8a9ddef7dbcc8a84",
+            "id": "e38f34df184b79b4",
             "type": "leaf",
             "state": {
               "type": "markdown",
@@ -184,6 +184,9 @@
       "bases:Create new base": false
     }
   },
-  "active": "8a9ddef7dbcc8a84",
-  "lastOpenFiles": []
+  "active": "e38f34df184b79b4",
+  "lastOpenFiles": [
+    "content/domains/odin/vault/lessons/05-arrays-fixed/README.md",
+    "content/domains/odin/vault/lessons/04-strings-and-runes/README.md"
+  ]
 }

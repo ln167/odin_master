@@ -1,0 +1,3 @@
+offset=1000 peak=1000
+after free_all: offset=0 peak=1000
+smaller frame: offset=100 peak=1000 (peak unchanged)

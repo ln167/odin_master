@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Odin bit_set — one bit per member, four levels deep</title>
+<style>
+  :root{
+    --paper:#15130f; --card:#1d1a14; --ink:#ece6d8; --muted:#9a9182;
+    --rule:#332e24; --accent:#5ec8b8; --accent-soft:#1f342f;
+    --tag:#e0875a; --pad:#5a544a; --bad:#e0675a; --bad-soft:#2a1815;
+    --mono:"Cascadia Mono","Cascadia Code",Consolas,ui-monospace,"SF Mono",monospace;
+    --serif:-apple-system,"Segoe UI Variable Text","Segoe UI",system-ui,Roboto,"Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper);color:var(--ink)}
+  body{font-family:var(--serif);line-height:1.6;padding:0 20px;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-feature-settings:"kern" 1,"liga" 1}
+  .page{max-width:860px;margin:0 auto;padding:46px 0 90px}
+  .kicker{font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+  h1{font-size:30px;line-height:1.15;margin:0 0 18px;font-weight:600;letter-spacing:-.01em}
+
+  /* level tabs */
+  .levels{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+  .levels button{flex:1;min-width:150px;text-align:left;background:var(--card);border:1px solid var(--rule);
+    color:var(--muted);border-radius:10px;padding:11px 14px;cursor:pointer;transition:.12s;font-family:var(--serif)}
+  .levels button:hover{border-color:var(--accent)}
+  .levels button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--ink)}
+  .levels .lv{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);display:block;margin-bottom:3px}
+  .levels .tt{font-size:14px}
+  .rule{height:1px;background:var(--rule);margin:22px 0 26px}
+
+  .deck{color:var(--muted);font-size:17px;margin:0 0 24px;line-height:1.5}
+  .deck b{color:var(--ink)}
+  h2{font-size:21px;margin:0 0 14px;font-weight:600}
+  p.teach{font-size:16px;line-height:1.62;max-width:46em}
+  p.teach code,.il{font-family:var(--mono);font-size:.86em;background:#2a2519;padding:1px 5px;border-radius:4px}
+  .teach b{color:var(--tag)}
+  .section{display:none}
+  .section.on{display:block}
+
+  nav.sub{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;font-family:var(--mono);font-size:13px}
+  nav.sub button{background:var(--card);border:1px solid var(--rule);color:var(--muted);border-radius:8px;padding:8px 14px;cursor:pointer;transition:.12s}
+  nav.sub button:hover{color:var(--ink);border-color:var(--accent)}
+  nav.sub button.on{color:var(--ink);border-color:var(--accent);background:var(--accent-soft)}
+  .hint{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin:0 0 20px}
+
+  .canvas{background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:30px 28px}
+  .slotlabel{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
+
+  /* the bit row: one cell per enum member, lit / unlit */
+  .bitrow{display:flex;gap:10px;flex-wrap:wrap}
+  .bitcell{flex:1;min-width:96px;border-radius:10px;border:1px solid var(--rule);background:#1a1710;
+    padding:14px 10px 12px;text-align:center;cursor:pointer;transition:.14s;position:relative;user-select:none}
+  .bitcell .pos{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:8px}
+  .bitcell .bit{font-family:var(--mono);font-size:30px;font-weight:600;line-height:1;color:#403a30;transition:.14s}
+  .bitcell .nm{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:9px;transition:.14s}
+  .bitcell .wt{font-family:var(--mono);font-size:9.5px;color:#5a544a;margin-top:3px}
+  .bitcell.on{border-color:var(--accent);background:var(--accent-soft)}
+  .bitcell.on .bit{color:var(--accent)}
+  .bitcell.on .nm{color:#cdeee7}
+  .bitcell:hover{border-color:var(--accent)}
+
+  .intbar{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-top:22px;font-family:var(--mono)}
+  .intbar .k{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+  .intbar .bin{font-size:20px;color:var(--accent);font-weight:600;letter-spacing:.12em}
+  .intbar .eq{font-size:14px;color:var(--muted)}
+  .intbar .dec{font-size:20px;color:var(--tag);font-weight:600}
+  .intbar .lit{font-size:13px;color:var(--ink)}
+
+  .legend{display:flex;gap:18px;flex-wrap:wrap;margin-top:18px;font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+  .legend span{display:flex;align-items:center;gap:7px}
+  .chip{width:13px;height:13px;border-radius:3px;border:1px solid}
+  .c-on{background:var(--accent-soft);border-color:var(--accent)}
+  .c-off{background:#1a1710;border-color:var(--rule)}
+
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:26px}
+  @media(max-width:680px){.cols{grid-template-columns:1fr}}
+  .panel h3{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 12px;font-weight:600}
+  .sizes{font-family:var(--mono);font-size:13px;line-height:2}
+  .sizes .n{color:var(--accent);font-weight:600}
+  .sizes .big{color:var(--tag);font-weight:600}
+
+  pre{font-family:var(--mono);font-size:12.5px;line-height:1.7;background:#1a1710;border:1px solid var(--rule);border-radius:10px;padding:16px 18px;overflow:auto;margin:22px 0 0;white-space:pre-wrap}
+  pre .cm{color:#6f6655}
+  pre .kw{color:var(--accent)}
+  pre .er{color:var(--bad)}
+
+  /* set-algebra ledger (Level 2) */
+  .ledger{display:grid;grid-template-columns:auto 1fr auto;gap:10px 16px;align-items:center;font-family:var(--mono);font-size:13px}
+  .ledger .lab{color:var(--muted);white-space:nowrap}
+  .ledger .bits{letter-spacing:.16em;font-size:17px}
+  .ledger .bits .b1{color:var(--accent)}
+  .ledger .bits .b0{color:#3a352b}
+  .ledger .res{color:var(--tag);white-space:nowrap;font-size:12px}
+  .ledger .op{color:var(--tag);font-weight:600}
+  .ledger hr{grid-column:1/-1;border:0;border-top:1px solid var(--rule);margin:2px 0;width:100%}
+
+  /* the inferior alternative, drawn */
+  .boolrow{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+  .boolcell{flex:1;min-width:84px;background:#241f17;border:1px dashed #5a4530;border-radius:7px;padding:9px 8px;font-family:var(--mono);font-size:10px;text-align:center;color:#8a7a66}
+  .badlabel{font-family:var(--mono);font-size:10px;color:var(--bad);text-align:center;margin-top:8px}
+
+  /* proportional / limit bars (Level 3) */
+  .bar{height:30px;border-radius:6px;display:flex;align-items:center;font-family:var(--mono);font-size:12px;padding-left:10px;color:#0e0c08;font-weight:600;margin:6px 0;transition:width .3s,background .2s;white-space:nowrap}
+  .bar.used{background:var(--accent)}
+  .bar.over{background:repeating-linear-gradient(45deg,#7a3327,#7a3327 6px,#5e271e 6px,#5e271e 12px);color:#f3c9bf}
+  .barrow{display:flex;align-items:center;gap:10px}
+  .barrow .lab{font-family:var(--mono);font-size:11px;color:var(--muted);width:150px;flex:none}
+  .rangetape{display:flex;align-items:center;margin:8px 0 2px;height:30px;border-radius:6px;overflow:hidden;border:1px solid var(--rule)}
+  .rangetape .fit{background:var(--accent-soft);color:#cdeee7}
+  .rangetape .gap{background:repeating-linear-gradient(45deg,#201d17,#201d17 5px,#262119 5px,#262119 10px);color:#5a544a}
+  .rangetape > div{height:100%;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:10px}
+
+  .note{background:#1a1710;border:1px solid var(--rule);border-left:3px solid var(--tag);
+    border-radius:10px;padding:15px 18px;margin-top:24px;font-size:15px;line-height:1.6;color:var(--muted)}
+  .note b{color:var(--ink)}
+  .note .h{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--tag);display:block;margin-bottom:8px}
+  .foot{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;margin-top:34px}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="kicker">Odin · enums &amp; bit_sets</div>
+  <h1>A bit_set, four levels deep</h1>
+
+  <div class="levels" id="levelnav"></div>
+  <div class="rule"></div>
+
+  <!-- ===================== LEVEL 1 — WHAT IT IS ===================== -->
+  <section class="section" id="s1">
+    <p class="deck">Start with the <b>enum</b>. <span class="il">Element :: enum { Fire, Ice, Lightning, Physical }</span> defines four named labels — and that's a type with exactly four legal values, not a flavour of integer. A <b>bit_set</b> built on it, <span class="il">bit_set[Element]</span>, is then <b>one small integer where each member is exactly one bit</b>. Click a member to flip its bit and watch the underlying number recompute.</p>
+    <div class="hint">Real bits, measured from a compiled Odin program: each set's backing byte read with transmute(u8). Member N owns bit N; the integer is the sum of its members' bit-values.</div>
+
+    <div class="canvas">
+      <div class="slotlabel" id="bitlabel"></div>
+      <div class="bitrow" id="bitrow"></div>
+      <div class="intbar" id="intbar"></div>
+      <div class="legend">
+        <span><i class="chip c-on"></i> member in the set (bit = 1)</span>
+        <span><i class="chip c-off"></i> member out (bit = 0)</span>
+      </div>
+    </div>
+
+    <div class="cols">
+      <div class="panel"><h3>Sizes (size_of)</h3>
+        <div class="sizes">
+          Element <span style="color:var(--muted)">(enum)</span> = <span class="n">8</span><br>
+          <span style="color:var(--muted)">enum u8</span> = <span class="n">1</span><br>
+          <b style="color:var(--ink)">bit_set[Element]</b> = <span class="big">1</span><br><br>
+          <span style="color:var(--muted)">The enum itself is its backing integer (default <span style="color:var(--ink)">int</span>, 8 bytes; pick <span style="color:var(--ink)">enum u8</span> and it's 1). The bit_set of four members is a single byte — 4 bits live, 4 spare.</span>
+        </div>
+      </div>
+      <div class="panel"><h3>What you're seeing</h3><p class="teach" id="bitteach"></p></div>
+    </div>
+  </section>
+
+  <!-- ============= LEVEL 2 — WHY YOU'D REACH FOR IT ============= -->
+  <section class="section" id="s2">
+    <p class="deck">Level 1 was <i>what it is</i>. Now: <b>why one integer beats a fistful of booleans</b>. Because membership is bits, a question about a whole <i>set</i> — combine these, what's shared, what's left over — is a single operation on the whole integer at once.</p>
+    <p class="teach">Take two sets of resistances: <span class="il">a := {.Fire, .Ice}</span> and <span class="il">b := {.Fire, .Physical}</span>. Each is just a byte (<b>3</b> and <b>9</b>). Every set question below is the matching <b>bitwise op on those bytes</b> — no loop over members, no per-member <span class="il">if</span>. Pick one and read it bit-for-bit:</p>
+
+    <nav class="sub" id="opnav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="oplabel"></div>
+      <div class="ledger" id="ledger"></div>
+      <p class="teach" id="opteach" style="margin-top:20px;margin-bottom:0;color:var(--muted)"></p>
+    </div>
+
+    <p class="teach" style="margin-top:26px"><b>The subset check — the pattern that earns its keep.</b> A door needs some keys; the player carries some keys. "Does the player hold <i>all</i> the keys the door asks for?" is the subset test <span class="il">door &lt;= player</span> — one comparison, whatever the key count. With <span class="il">player = {.Brass, .Silver, .Gold, .Crystal}</span> and <span class="il">door = {.Silver, .Gold}</span>, that's verified <span class="il">true</span>. Permission checks, status-effect cleansing (<span class="il">effects -= debuffs</span>), collision layers — all the same shape.</p>
+
+    <p class="teach"><b>The counterfactual:</b> if you only ever asked about <i>one</i> member at a time — "is Fire set?" — you wouldn't need a set at all; a single <span class="il">bool</span> would do. The set earns its keep the moment you start combining and comparing memberships <i>wholesale</i>.</p>
+
+    <h2 style="margin-top:30px">Why the alternative is worse</h2>
+    <div class="canvas">
+      <div class="slotlabel" style="color:var(--bad)">the loose-booleans version: one named flag per member</div>
+      <div class="boolrow">
+        <div class="boolcell">fire :bool</div><div class="boolcell">ice :bool</div><div class="boolcell">lightning :bool</div><div class="boolcell">physical :bool</div>
+      </div>
+      <div class="badlabel">a union now means touching four separate fields by hand — and adding a member means editing every site.</div>
+    </div>
+    <p class="teach">
+      <b>Four separate <span class="il">bool</span> fields</b> (<span class="il">fire, ice, lightning, physical</span>): a union becomes four assignments, a subset check becomes four <span class="il">&amp;&amp;</span>s, and every one is written out by hand — <i>more code, more places to forget one</i>. The compiler can't tell you that you meant to test all four.<br><br>
+      <b>An array of bools</b> (<span class="il">[Element]bool</span>): tidier, and you <i>can</i> loop — but a "union" is now a loop you write, a byte per member instead of a bit per member, and you've turned a single-instruction question into iteration.<br><br>
+      The bit_set folds all of that into <b>one</b> typed value where the combine <i>is</i> the operator: <span class="il">a | b</span>, <span class="il">a &amp; b</span>, <span class="il">door &lt;= player</span> — the bits do the work, and the type stops you from comparing apples to a different enum's set.
+    </p>
+  </section>
+
+  <!-- ===================== LEVEL 3 — THE COST ===================== -->
+  <section class="section" id="s3">
+    <p class="deck">Level 2 sold you on it. Level 3 is the bill — and it's a sharp one: <b>a bit_set's size is governed by the enum's value RANGE, not its member count.</b> Members written <span class="il">0, 1, 2, …</span> are cheap; members with big explicit values are not.</p>
+    <p class="teach">Bit position <b>is</b> the member's integer value. Declared plainly, the values are <span class="il">0..3</span>, so the bits land in one byte. Push the count up and the range grows with it — toggle the enum size and watch the backing integer widen:</p>
+
+    <nav class="sub" id="sizenav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="sizelabel"></div>
+      <div class="barrow"><div class="lab">members (live bits)</div><div style="flex:1"><div class="bar used" id="bar-bits"></div></div></div>
+      <div class="barrow"><div class="lab">backing integer</div><div style="flex:1"><div class="bar used" id="bar-store" style="background:#3a6e64"></div></div></div>
+      <div class="sizes" id="sizesizes" style="margin-top:16px"></div>
+    </div>
+
+    <p class="teach" style="margin-top:26px"><b>The cliff:</b> the range, not the count, sets the width — and there's a hard ceiling of <b>128 bits</b>. Give an enum sparse explicit values and a bit_set can be <i>impossible to build</i>. Status codes spell out <span class="il">{ OK = 200, Not_Found = 404, Server_Error = 500 }</span> — three members, but the bits would have to reach value 500:</p>
+
+    <div class="canvas">
+      <div class="slotlabel" style="color:var(--bad)">bit_set[Http] — three members, but bits must span 0..500</div>
+      <div class="rangetape">
+        <div class="fit" style="flex:128">bits 0..127 — the most a bit_set can hold</div>
+        <div class="gap" style="flex:200">…still need up to bit 500</div>
+      </div>
+      <pre><span class="kw">Http</span> :: <span class="kw">enum</span> { OK = 200, Not_Found = 404, Server_Error = 500 }
+s: <span class="kw">bit_set</span>[Http]   <span class="cm">// won't build</span>
+
+<span class="er">Error: bit_set range is greater than 128 bits, 301 bits are required</span></pre>
+    </div>
+
+    <p class="teach" style="margin-top:22px"><b>The fix:</b> keep the enum <i>dense from zero</i> — the plain <span class="il">enum { Fire, Ice, … }</span> form — whenever you intend to make sets of it. Explicit values are for protocols and on-the-wire codes, where you want a <i>lookup</i> on the member, not a <i>set</i> of members. The same "your storage is sized for the worst case in the range" rule shows up anywhere a layout is indexed by value rather than by count.</p>
+
+    <div class="note">
+      <span class="h">an enum is not an integer</span>
+      Each enum member is a <b>typed label</b>, and the type refuses to let you treat it as a raw number — <span class="il">e + 1</span> on an <span class="il">Element</span> does not compile:
+      <pre style="margin-top:10px"><span class="er">Error: Cannot convert untyped value '1' to 'Element' from 'untyped integer'</span></pre>
+      The integer is the <i>backing</i> for storage and bit positions; it is not something you do arithmetic on. Cross to and from <span class="il">int</span> only with an explicit cast — <span class="il">int(e)</span> out, <span class="il">Element(2)</span> in — and that inbound cast is <b>unchecked</b>, so <span class="il">Element(99)</span> builds, runs, and prints <span class="il">%!(BAD ENUM VALUE=99)</span>. Validate enum values that come from outside (files, network, input); trust the ones your own code wrote.
+    </div>
+  </section>
+
+  <!-- ============= LEVEL 4 — THE EMERGENT PAYOFF ============= -->
+  <section class="section" id="s4">
+    <p class="deck">The last level isn't bits — it's what happens <b>over the life of a codebase</b>. The enum is a single source of truth, and everything built on it re-derives from it the moment you change it.</p>
+    <p class="teach">Add one member — say <span class="il">.Holy</span> — to <span class="il">Element</span>, and three things move at once, with no edit on your part:</p>
+    <pre><span class="kw">Element</span> :: <span class="kw">enum</span> { Fire, Ice, Lightning, Physical<span class="kw">, Holy</span> }
+
+<span class="cm">// bit_set[Element] gains a 5th bit automatically — still one byte (5 of 8 used)</span>
+<span class="cm">// [Element]f32 lookup tables (lesson 05) grow a 5th slot automatically</span>
+<span class="cm">// every exhaustive switch over Element now FAILS TO BUILD until you handle .Holy:</span>
+
+<span class="er">Error: Unhandled switch case: Physical</span></pre>
+    <p class="teach"><b>The emergent payoff:</b> the set storage and the lookup tables grow <i>silently and correctly</i> — but the <b>decisions</b> you make on the enum don't get to drift. A plain <span class="il">switch</span> over an enum is exhaustive by default, so the compiler turns "did I update every place that branches on Element?" from a runtime bug hunt into a <b>compile-time to-do list</b>. (The verified error above is from dropping a single case; a new member triggers the same check at every dispatch site.) When you genuinely mean to handle only some cases, you say so out loud with <span class="il">#partial switch</span> — the safe behaviour is the default, and being partial is the thing you opt into.</p>
+
+    <p class="teach" style="margin-top:24px;color:var(--muted)">That's the arc: <b style="color:var(--ink)">L1</b> an enum is named labels; a bit_set is one integer, one bit per member → <b style="color:var(--ink)">L2</b> so combining whole memberships is a single bitwise op — union, intersection, subset → <b style="color:var(--ink)">L3</b> but the width is set by the value <i>range</i>, with a 128-bit ceiling, so keep enums dense → <b style="color:var(--ink)">L4</b> the enum is one source of truth: sets and tables grow free, and exhaustive switches make every decision re-check itself.</p>
+  </section>
+
+  <div class="foot">probes reproduce with <span style="color:var(--ink)">odin run</span> · sizes, bit values, set-op results &amp; the L3 errors are real compiler output (claims/lessons/05b-enums-and-bit-sets)</div>
+</div>
+
+<script>
+/* ============================================================
+   Each interactive component = one data object + one render fn.
+   Vanilla JS, inline, no libraries.
+   Every embedded number/bit/error comes from a passing claim under
+   claims/lessons/05b-enums-and-bit-sets/ (html-sizes, html-bits,
+   html-setops, html-bitset-range-fails, html-enum-arith-fails).
+   ============================================================ */
+
+/* ---------- LEVEL 1: the bit row, toggle membership ----------
+   Measured (claim html-bits): member N owns bit N.
+     .Fire=bit0(1) .Ice=bit1(2) .Lightning=bit2(4) .Physical=bit3(8)
+     {} = 0, {.Fire,.Ice} = 3, {all four} = 15. transmute(u8). */
+const MEMBERS = [
+  { name:'Fire',      weight:1 },
+  { name:'Ice',       weight:2 },
+  { name:'Lightning', weight:4 },
+  { name:'Physical',  weight:8 },
+];
+let inSet = [true, true, false, false];   // start at {.Fire, .Ice} = 3
+function renderL1(){
+  const row = document.getElementById('bitrow');
+  row.innerHTML = MEMBERS.map((m,i)=>
+    `<div class="bitcell ${inSet[i]?'on':''}" data-i="${i}">
+       <span class="pos">bit ${i}</span>
+       <span class="bit">${inSet[i]?1:0}</span>
+       <span class="nm">.${m.name}</span>
+       <span class="wt">value ${m.weight}</span>
+     </div>`).join('');
+  row.querySelectorAll('.bitcell').forEach(c=>{
+    c.onclick=()=>{ const i=+c.dataset.i; inSet[i]=!inSet[i]; renderL1(); };
+  });
+  // running integer = sum of lit members' weights; binary is bit3..bit0
+  const dec = MEMBERS.reduce((s,m,i)=> s + (inSet[i]?m.weight:0), 0);
+  let bin=''; for(let b=3;b>=0;b--) bin += (inSet[b]?'1':'0');
+  const lit = MEMBERS.filter((_,i)=>inSet[i]).map(m=>'.'+m.name);
+  const setLit = lit.length ? '{'+lit.join(', ')+'}' : '{}';
+  document.getElementById('bitlabel').textContent =
+    `bit_set[Element] = ${setLit}   —   1 byte`;
+  document.getElementById('intbar').innerHTML =
+    `<span class="k">backing integer</span>
+     <span class="bin">0b${bin}</span>
+     <span class="eq">=</span>
+     <span class="dec">${dec}</span>
+     <span class="lit">&nbsp;&nbsp;${setLit}</span>`;
+  document.getElementById('bitteach').innerHTML = dec===0
+    ? `Nothing is in the set: every bit is <b>0</b>, the integer is <b>0</b>. A fresh <code>bit_set[Element]</code> starts exactly here — the empty set <code>{}</code>.`
+    : `The lit cells are the members <i>in</i> the set; each contributes its one bit. The integer <b>${dec}</b> is just the sum of those bit-values (<code>0b${bin}</code>). Toggling a member flips a single bit — the value jumps by that member's weight, nothing else moves.`;
+}
+
+/* ---------- LEVEL 2: set algebra as bitwise ops ----------
+   Measured (claim html-setops):
+     a={Fire,Ice}=3 (0011), b={Fire,Physical}=9 (1001)
+     a|b = 11 (1011) {Fire,Ice,Physical}
+     a&b = 1  (0001) {Fire}
+     a-b = 2  (0010) {Ice}                                            */
+const A_BITS = [1,1,0,0];   // Fire,Ice           = 3
+const B_BITS = [1,0,0,1];   // Fire,Physical      = 9
+const NAMES  = ['Fire','Ice','Lightning','Physical'];
+function bitsToStr(arr){ // bit3..bit0
+  return [3,2,1,0].map(b=>`<span class="${arr[b]?'b1':'b0'}">${arr[b]}</span>`).join('');
+}
+function decOf(arr){ return arr.reduce((s,v,i)=> s + (v?(1<<i):0), 0); }
+function setOf(arr){ const l=NAMES.filter((_,i)=>arr[i]); return l.length?'{'+l.join(', ')+'}':'{}'; }
+const OPS = {
+  union: { sym:'|', name:'union  a | b',
+    fn:(a,b,i)=> (a[i]||b[i])?1:0,
+    teach:`<b>Union</b> is bitwise OR: a bit is on if it's on in <i>either</i> set. So <code>a | b</code> = <b>11</b> (<code>0b1011</code>) = <code>{Fire, Ice, Physical}</code> — everything from both.` },
+  inter: { sym:'&', name:'intersection  a & b',
+    fn:(a,b,i)=> (a[i]&&b[i])?1:0,
+    teach:`<b>Intersection</b> is bitwise AND: a bit survives only if it's on in <i>both</i>. <code>a & b</code> = <b>1</b> (<code>0b0001</code>) = <code>{Fire}</code> — the one resistance they share.` },
+  diff:  { sym:'-', name:'difference  a - b',
+    fn:(a,b,i)=> (a[i]&&!b[i])?1:0,
+    teach:`<b>Difference</b> clears every bit that's on in <code>b</code>: what's in <code>a</code> but not <code>b</code>. <code>a - b</code> = <b>2</b> (<code>0b0010</code>) = <code>{Ice}</code>.` },
+};
+let opKey='union';
+function renderL2(){
+  document.querySelectorAll('#opnav button').forEach(b=>b.classList.toggle('on',b.dataset.k===opKey));
+  const o=OPS[opKey];
+  const res=[0,1,2,3].map(i=>o.fn(A_BITS,B_BITS,i));
+  document.getElementById('oplabel').textContent = o.name + `   —   result int = ${decOf(res)}`;
+  document.getElementById('ledger').innerHTML =
+    `<div class="lab">a = {Fire, Ice}</div><div class="bits">${bitsToStr(A_BITS)}</div><div class="res">= ${decOf(A_BITS)}</div>
+     <div class="lab"><span class="op">${o.sym}</span> b = {Fire, Physical}</div><div class="bits">${bitsToStr(B_BITS)}</div><div class="res">= ${decOf(B_BITS)}</div>
+     <hr>
+     <div class="lab">${o.name.split('  ')[0]}</div><div class="bits">${bitsToStr(res)}</div><div class="res">= ${decOf(res)} &nbsp;${setOf(res)}</div>`;
+  document.getElementById('opteach').innerHTML = o.teach;
+}
+
+/* ---------- LEVEL 3: width follows value range ----------
+   Measured (claim html-sizes):
+     bit_set[Element]   (4 members, 0..3)  = 1 byte
+     bit_set[Nine]      (9 members, 0..8)  = 2 bytes
+     bit_set[Seventeen] (17 members,0..16) = 4 bytes                  */
+const SIZE = {
+  four:  { label:'enum { 4 members }  (values 0..3)',  bits:4,  bytes:1,
+           note:'4 live bits, <span class="n">1</span> byte. Values 0..3 fit a single byte with room to spare.' },
+  nine:  { label:'enum { 9 members }  (values 0..8)',  bits:9,  bytes:2,
+           note:'9 bits no longer fit a byte, so the backing integer steps up to <span class="n">2</span> bytes (u16).' },
+  seventeen:{ label:'enum { 17 members } (values 0..16)', bits:17, bytes:4,
+           note:'17 bits step up again to <span class="n">4</span> bytes (u32). The width tracks the highest bit position needed.' },
+};
+const SIZE_MAX_BITS = 32;  // 4 bytes, for bar scaling
+let sizeKey='four';
+function renderL3(){
+  document.querySelectorAll('#sizenav button').forEach(b=>b.classList.toggle('on',b.dataset.k===sizeKey));
+  const s=SIZE[sizeKey];
+  document.getElementById('sizelabel').textContent = s.label + `   —   bit_set = ${s.bytes} byte${s.bytes>1?'s':''}`;
+  document.getElementById('bar-bits').style.width = Math.max(8, Math.round(s.bits/SIZE_MAX_BITS*100)) + '%';
+  document.getElementById('bar-bits').textContent = s.bits + ' bits used';
+  document.getElementById('bar-store').style.width = Math.round(s.bytes*8/SIZE_MAX_BITS*100) + '%';
+  document.getElementById('bar-store').textContent = (s.bytes*8) + ' bits (' + s.bytes + ' byte' + (s.bytes>1?'s':'') + ')';
+  document.getElementById('sizesizes').innerHTML = s.note;
+}
+
+/* ---------- Level navigation ---------- */
+const LEVELS=[
+  ['1','What it is','one bit per member'],
+  ['2','Why use it','set ops are bitwise'],
+  ['3','The cost','width follows range'],
+  ['4','Why it stays sound','one source of truth'],
+];
+let level='1';
+function setLevel(n){
+  level=n;
+  document.querySelectorAll('.levels button').forEach(b=>b.classList.toggle('on',b.dataset.n===n));
+  for(const [k] of LEVELS){ const el=document.getElementById('s'+k); if(el) el.classList.toggle('on',k===n); }
+  if(n==='1') renderL1();
+  if(n==='2') renderL2();
+  if(n==='3') renderL3();
+}
+const opnav=document.getElementById('opnav');
+[['union','a | b  union'],['inter','a & b  intersection'],['diff','a - b  difference']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.k=k; b.textContent=t;
+  b.onclick=()=>{opKey=k;renderL2();}; opnav.appendChild(b);
+});
+const sizenav=document.getElementById('sizenav');
+[['four','4 members'],['nine','9 members'],['seventeen','17 members']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.k=k; b.textContent=t;
+  b.onclick=()=>{sizeKey=k;renderL3();}; sizenav.appendChild(b);
+});
+const lnav=document.getElementById('levelnav');
+for(const [n,tt,sub] of LEVELS){ const b=document.createElement('button'); b.dataset.n=n;
+  b.innerHTML=`<span class="lv">Level ${n} · ${sub}</span><span class="tt">${tt}</span>`;
+  b.onclick=()=>setLevel(n); lnav.appendChild(b); }
+setLevel('1');
+</script>
+</body>
+</html>

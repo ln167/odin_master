@@ -1,0 +1,6 @@
+size_of(Transform)   = 12
+size_of(Entity)      = 24
+size_of(PlainEntity) = 24
+Entity == PlainEntity layout? true
+offset_of(Entity, xform) = 0
+offset_of(Entity, hp)    = 16

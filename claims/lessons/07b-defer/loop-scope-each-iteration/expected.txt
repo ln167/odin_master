@@ -1,0 +1,10 @@
+iter 0: top
+iter 0: middle
+iter 0: deferred (end of THIS iteration)
+iter 1: top
+iter 1: middle
+iter 1: deferred (end of THIS iteration)
+iter 2: top
+iter 2: middle
+iter 2: deferred (end of THIS iteration)
+loop done

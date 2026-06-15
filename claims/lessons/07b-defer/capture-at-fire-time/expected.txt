@@ -1,0 +1,3 @@
+body sees y = 50 n = 2
+n at fire time = 3
+y at fire time = 99

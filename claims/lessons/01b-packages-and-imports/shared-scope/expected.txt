@@ -1,0 +1,2 @@
+one folder, one package, one scope
+hello, packages

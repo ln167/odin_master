@@ -1,0 +1,9 @@
+size_of(u8)            = 1
+size_of(Slot(u8))      = 2
+size_of(i32)           = 4
+size_of(Slot(i32))     = 8
+size_of(f64)           = 8
+size_of(Slot(f64))     = 16
+align_of(Slot(u8))     = 1
+align_of(Slot(i32))    = 4
+align_of(Slot(f64))    = 8

@@ -1,0 +1,2 @@
+min=4 max=99 ok=true
+empty: min=0 max=0 ok=false

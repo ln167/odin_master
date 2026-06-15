@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Odin parameters — immutable values, four levels deep</title>
+<style>
+  :root{
+    --paper:#15130f; --card:#1d1a14; --ink:#ece6d8; --muted:#9a9182;
+    --rule:#332e24; --accent:#5ec8b8; --accent-soft:#1f342f;
+    --tag:#e0875a; --pad:#5a544a; --bad:#e0675a; --bad-soft:#2a1815;
+    --mono:"Cascadia Mono","Cascadia Code",Consolas,ui-monospace,"SF Mono",monospace;
+    --serif:-apple-system,"Segoe UI Variable Text","Segoe UI",system-ui,Roboto,"Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper);color:var(--ink)}
+  body{font-family:var(--serif);line-height:1.6;padding:0 20px;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-feature-settings:"kern" 1,"liga" 1}
+  .page{max-width:860px;margin:0 auto;padding:46px 0 90px}
+  .kicker{font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+  h1{font-size:30px;line-height:1.15;margin:0 0 18px;font-weight:600;letter-spacing:-.01em}
+
+  /* level tabs */
+  .levels{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+  .levels button{flex:1;min-width:150px;text-align:left;background:var(--card);border:1px solid var(--rule);
+    color:var(--muted);border-radius:10px;padding:11px 14px;cursor:pointer;transition:.12s;font-family:var(--serif)}
+  .levels button:hover{border-color:var(--accent)}
+  .levels button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--ink)}
+  .levels .lv{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);display:block;margin-bottom:3px}
+  .levels .tt{font-size:14px}
+  .rule{height:1px;background:var(--rule);margin:22px 0 26px}
+
+  .deck{color:var(--muted);font-size:17px;margin:0 0 24px;line-height:1.5}
+  .deck b{color:var(--ink)}
+  h2{font-size:21px;margin:0 0 14px;font-weight:600}
+  p.teach{font-size:16px;line-height:1.62;max-width:46em}
+  p.teach code,.il{font-family:var(--mono);font-size:.86em;background:#2a2519;padding:1px 5px;border-radius:4px}
+  .teach b{color:var(--tag)}
+  .section{display:none}
+  .section.on{display:block}
+
+  nav.sub{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;font-family:var(--mono);font-size:13px}
+  nav.sub button{background:var(--card);border:1px solid var(--rule);color:var(--muted);border-radius:8px;padding:8px 14px;cursor:pointer;transition:.12s}
+  nav.sub button:hover{color:var(--ink);border-color:var(--accent)}
+  nav.sub button.on{color:var(--ink);border-color:var(--accent);background:var(--accent-soft)}
+  .hint{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin:0 0 20px}
+
+  .canvas{background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:30px 28px}
+  .slotlabel{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
+
+  /* the caller -> callee diagram (Level 1) */
+  .callrow{display:flex;align-items:stretch;gap:16px;flex-wrap:wrap}
+  .box{flex:1;min-width:240px;background:#1a1710;border:1px solid var(--rule);border-radius:12px;padding:15px 16px}
+  .box.caller{border-color:var(--accent)}
+  .box.callee{border-color:#4a342a}
+  .box .bx-h{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+  .box.caller .bx-h{color:var(--accent)}
+  .box.callee .bx-h{color:var(--tag)}
+  .cellv{font-family:var(--mono);font-size:13px;border-radius:8px;padding:10px 12px;margin:7px 0;border:1px solid var(--rule)}
+  .cellv.live{background:var(--accent-soft);border-color:var(--accent);color:#cdeee7}
+  .cellv.copy{background:#241f17;border:1px dashed #5a4530;color:#8a7a66}
+  .cellv.dead{background:var(--bad-soft);border-color:#5a3a30;color:#a07268;text-decoration:line-through}
+  .cellv .v{color:var(--tag);font-weight:600}
+  .arrowto{align-self:center;font-family:var(--mono);color:var(--tag);font-size:13px;flex:none;text-align:center;min-width:96px}
+  .arrowto .big{font-size:22px;display:block}
+  @media(max-width:640px){.arrowto{transform:none;margin:6px auto}.arrowto .big{transform:rotate(90deg)}}
+  .verdict{font-family:var(--mono);font-size:12px;margin-top:16px;padding:10px 12px;border-radius:7px}
+  .verdict.good{background:var(--accent-soft);color:#cdeee7;border:1px solid var(--accent)}
+  .verdict.neutral{background:#241f17;color:#cdb89a;border:1px solid #4a342a}
+
+  .legend{display:flex;gap:18px;flex-wrap:wrap;margin-top:18px;font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+  .legend span{display:flex;align-items:center;gap:7px}
+  .chip{width:13px;height:13px;border-radius:3px;border:1px solid}
+  .c-live{background:var(--accent-soft);border-color:var(--accent)}
+  .c-copy{background:#241f17;border-color:#5a4530}
+
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:26px}
+  @media(max-width:680px){.cols{grid-template-columns:1fr}}
+  .panel h3{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 12px;font-weight:600}
+  .sizes{font-family:var(--mono);font-size:13px;line-height:2}
+  .sizes .n{color:var(--accent);font-weight:600}
+  .sizes .big{color:var(--tag);font-weight:600}
+
+  pre{font-family:var(--mono);font-size:12.5px;line-height:1.7;background:#1a1710;border:1px solid var(--rule);border-radius:10px;padding:16px 18px;overflow:auto;margin:22px 0 0;white-space:pre-wrap}
+  pre .cm{color:#6f6655}
+  pre .kw{color:var(--accent)}
+  pre .er{color:var(--bad)}
+  pre .ok{color:var(--accent)}
+
+  /* Level 2: the call-site builder */
+  .sig{font-family:var(--mono);font-size:13px;background:#1a1710;border:1px solid var(--rule);border-radius:10px;padding:13px 15px;margin:4px 0 18px;color:var(--muted)}
+  .sig .pn{color:var(--accent)}
+  .sig .dv{color:var(--tag)}
+  .argrow{display:flex;align-items:center;gap:12px;font-family:var(--mono);font-size:13px;margin:8px 0;flex-wrap:wrap}
+  .argrow .lab{width:96px;flex:none;color:var(--muted)}
+  .argrow .seg{display:flex;gap:6px}
+  .argrow .seg button{background:var(--card);border:1px solid var(--rule);color:var(--muted);border-radius:7px;padding:6px 11px;cursor:pointer;font-family:var(--mono);font-size:12px;transition:.12s}
+  .argrow .seg button.on{color:#cdeee7;border-color:var(--accent);background:var(--accent-soft)}
+  .argrow .seg button:hover{border-color:var(--accent)}
+  .callout{font-family:var(--mono);font-size:14px;background:#1a1710;border:1px solid var(--accent);border-radius:10px;padding:14px 16px;margin-top:18px;color:#cdeee7}
+  .callout .src{color:var(--ink)}
+  .callout .res{color:var(--tag);font-weight:600}
+  .callout .dim{color:var(--muted)}
+
+  /* Level 3: cost toggle */
+  .bigbox{font-family:var(--mono);font-size:12px;border-radius:9px;padding:12px 14px;margin:7px 0;border:1px solid var(--rule);background:#1a1710}
+  .bigbox.same{border-color:var(--bad);background:var(--bad-soft);color:#e0a892}
+  .bigbox.distinct{border-color:var(--accent);background:var(--accent-soft);color:#cdeee7}
+  .bigbox .bh{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:6px}
+  .bigbox.same .bh{color:var(--bad)}
+  .bigbox.distinct .bh{color:var(--accent)}
+  .barrow{display:flex;align-items:center;gap:10px;margin:8px 0}
+  .barrow .lab{font-family:var(--mono);font-size:11px;color:var(--muted);width:140px;flex:none}
+  .bar{height:26px;border-radius:6px;display:flex;align-items:center;font-family:var(--mono);font-size:11px;padding-left:9px;color:#0e0c08;font-weight:600;transition:width .3s}
+  .bar.val{background:var(--accent)}
+  .bar.ptr{background:var(--tag)}
+
+  .note{background:#1a1710;border:1px solid var(--rule);border-left:3px solid var(--tag);
+    border-radius:10px;padding:15px 18px;margin-top:24px;font-size:15px;line-height:1.6;color:var(--muted)}
+  .note b{color:var(--ink)}
+  .note .h{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--tag);display:block;margin-bottom:8px}
+  .foot{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;margin-top:34px}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="kicker">Odin · parameters &amp; passing</div>
+  <h1>A parameter, four levels deep</h1>
+
+  <div class="levels" id="levelnav"></div>
+  <div class="rule"></div>
+
+  <!-- ===================== LEVEL 1 — WHAT IT IS ===================== -->
+  <section class="section" id="s1">
+    <p class="deck">A parameter is <b>an immutable binding welded to the value it arrived with</b>. Inside the procedure you may <i>read</i> it, never <i>reassign</i> it — <span class="il">n += 1</span> on a parameter <span class="il">n</span> is a compile error, for every type. So a procedure can't reach back and change what the caller handed it… unless the caller hands over an <b>address</b>. Pick how the call is made and watch whether the change escapes.</p>
+    <div class="hint">Real outputs &amp; the error below are from compiled Odin programs (claims/lessons/06c-parameters-and-passing).</div>
+
+    <nav class="sub" id="nav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="calllabel"></div>
+      <div class="callrow">
+        <div class="box caller">
+          <div class="bx-h">caller — main()</div>
+          <div id="callerbox"></div>
+        </div>
+        <div class="arrowto"><span id="arrlab"></span><span class="big">&rsaquo;</span><span id="arrsub"></span></div>
+        <div class="box callee">
+          <div class="bx-h" id="calleeh"></div>
+          <div id="calleebox"></div>
+        </div>
+      </div>
+      <div class="verdict" id="callverdict"></div>
+      <div class="legend">
+        <span><i class="chip c-live"></i> the caller's own storage</span>
+        <span><i class="chip c-copy"></i> the callee's separate value, discarded on return</span>
+      </div>
+    </div>
+
+    <div class="cols">
+      <div class="panel"><h3>The one rule</h3>
+        <div class="sizes" style="line-height:1.7">
+          <span style="color:var(--ink)">A parameter cannot be reassigned.</span><br><br>
+          <span style="color:var(--muted)">Want a scratch variable? Ask for one out loud by <b style="color:var(--ink)">shadowing</b>: <span class="il">n := n</span> declares a brand-new local that happens to share the name. The change stays in the callee.</span>
+        </div>
+      </div>
+      <div class="panel"><h3>What you're seeing</h3><p class="teach" id="teach"></p></div>
+    </div>
+
+    <p class="teach" style="margin-top:26px"><b>The rule, enforced.</b> Try to write a value parameter directly and the build stops — and the error names the way out:</p>
+    <pre><span class="kw">increment</span> :: proc(some_int: int) {
+    <span class="er">some_int += 1</span>   <span class="cm">// a parameter is an immutable binding</span>
+}
+
+<span class="er">Error: Cannot assign to 'some_int' which is a procedure parameter</span>
+<span class="er">    Suggestion: Did you mean to pass 'some_int' by pointer?</span></pre>
+    <p class="teach">That suggestion <i>is</i> the whole lesson in one line: the only way to make a write the caller can see is to take a <span class="il">^T</span> and write through it.</p>
+  </section>
+
+  <!-- ============= LEVEL 2 — THE CALL SITE IS A CONTRACT ============= -->
+  <section class="section" id="s2">
+    <p class="deck">Level 1 was the rule. Level 2 is the ergonomics that ride on it: because each parameter is a fixed, named slot, the <b>call site can be expressive</b> — give some parameters <b>defaults</b> so callers can omit them, and <b>name arguments</b> at the call so the call reads itself.</p>
+    <p class="teach"><b>Default values</b> live in the signature: <span class="il">crit: bool = false</span>. Omit that argument and the default is supplied for you. <b>Named arguments</b> let the caller write <span class="il">y = 5, x = 3</span> — in any order — instead of relying on position, and they compose with defaults so you can set a <i>later</i> parameter while leaving the earlier ones alone. Build a call and watch the result:</p>
+
+    <div class="sig" id="sig"></div>
+    <div class="canvas">
+      <div class="slotlabel">choose each argument — omit one to fall back to its default</div>
+      <div id="argstage"></div>
+      <div class="callout" id="callbuilt"></div>
+    </div>
+
+    <p class="teach" style="margin-top:24px"><b>Why this is more than sugar.</b> A positional call like <span class="il">spawn(3, 5, 100)</span> makes the reader memorize the parameter order to know what <span class="il">100</span> <i>means</i>. Naming it — <span class="il">spawn(x = 3, y = 5, hp = 100)</span> — moves that knowledge into the call itself, and a default keeps the common case short. Both are possible only because a parameter is a named slot with a fixed identity, not a free local the body can reshuffle.</p>
+
+    <div class="note">
+      <span class="h">read it as: the caller fills named slots</span>
+      Whether the caller passes by position, by name, or leans on a default, the procedure still receives one immutable value per parameter. The defaults and names are entirely a <b>call-site</b> convenience — they change how the call is <i>written</i>, never what the body is allowed to do with what it gets (Level 1 still holds: it can read, not reassign).
+    </div>
+  </section>
+
+  <!-- ===================== LEVEL 3 — THE BILL ===================== -->
+  <section class="section" id="s3">
+    <p class="deck">Level 2 sold you on the call site. Level 3 is the part that surprises people: <b>even a large aggregate is passed as an immutable value</b> — and to make that cheap, the compiler is allowed to hand the big one over as a <i>hidden</i> pointer. That promotion is invisible, with one exact exception worth seeing once.</p>
+    <p class="teach">A <span class="il">Big :: struct { a, b, c, d: int }</span> is <span class="il">size_of</span> = <b>32</b> bytes. The <span class="il">odin</span> calling convention passes anything over 16 bytes <b>by reference</b> rather than copying every byte — but because Level 1 makes the parameter unwritable, you can't tell whether you got a copy or that hidden pointer. It changes nothing about how you reason… until you pass the <b>same variable</b> as both a big value parameter <i>and</i> an explicit <span class="il">^Big</span>. Toggle the two calls:</p>
+
+    <nav class="sub" id="costnav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="costlabel"></div>
+      <div class="barrow"><div class="lab">passing 32 bytes by value</div><div style="flex:1"><div class="bar val" id="bar-val"></div></div></div>
+      <div class="barrow"><div class="lab">what actually crosses</div><div style="flex:1"><div class="bar ptr" id="bar-ptr"></div></div></div>
+      <div id="coststage" style="margin-top:16px"></div>
+      <div class="verdict" id="costverdict" style="margin-top:14px"></div>
+    </div>
+
+    <p class="teach"><b>The fix:</b> when you genuinely need a guaranteed-independent copy of a big value parameter, force one the same way you make any mutable local — <b>shadow it</b>: <span class="il">v := v</span> as the first line. That makes a fresh value the explicit pointer can't reach. In practice the leak needs that one weird shape — the <i>same</i> object handed in twice, once by value and once by <span class="il">^T</span> — so you almost never meet it; the takeaway is that "passed by value" is a promise about <i>semantics</i> (immutable, can't be changed by the callee), not a promise that 32 bytes were physically copied.</p>
+
+    <div class="note">
+      <span class="h">not the same as the slice element-write</span>
+      A <span class="il">[]int</span>, map, or <span class="il">[dynamic]T</span> is a small header that <i>contains</i> a pointer. Pass one by value and you copy the header, but its inner pointer still aims at the same backing run — so <span class="il">s[0] = 0</span> inside the proc reaches the caller's array with no <span class="il">^</span> in sight. That's not the hidden-pointer promotion above; it's the slice <i>carrying</i> a pointer as part of its value. What you still can't do is reassign the header itself (<span class="il">s = ...</span>) — Level 1 forbids it, exactly as it forbids <span class="il">n += 1</span>.
+    </div>
+  </section>
+
+  <!-- ============= LEVEL 4 — THE EMERGENT PAYOFF ============= -->
+  <section class="section" id="s4">
+    <p class="deck">The last level isn't a mechanism — it's a property that <b>emerges</b> once immutability and the explicit <span class="il">^</span> work together: the call site becomes a <b>readable contract</b>. You can tell what a procedure is allowed to do to your data <i>without reading its body</i>.</p>
+    <p class="teach">Because a procedure can never reassign or mutate a plain value parameter, the only way it changes the caller is through a pointer the caller chose to hand over — and handing it over is spelled with a literal <span class="il">&amp;</span> at the call. So the call site advertises intent: a bare argument means "you only get to read this"; an <span class="il">&amp;</span> means "yes, I'm letting you change this." Reading a block of calls, your eye scans for the carets:</p>
+    <pre><span class="cm">// no &amp; — these can only read what they're given</span>
+    sum    := inspect(world)
+    pretty := format(player)
+
+<span class="cm">// &amp; — these are allowed to write back into the caller's storage</span>
+    add_point(<span class="ok">&amp;</span>score)
+    update_entity(<span class="ok">&amp;</span>player, dt)</pre>
+
+    <p class="teach">And the contract is <b>machine-checked</b>, not a convention. You can't accidentally let a write escape, and you can't accidentally pass-by-pointer — if a proc wants a <span class="il">^int</span> and you forget the <span class="il">&amp;</span>, the build stops you and even spells the fix:</p>
+    <pre><span class="kw">add_point</span> :: proc(score: ^int) { score^ += 1 }
+
+    <span class="er">add_point(score)</span>   <span class="cm">// forgot the &amp;</span>
+
+<span class="er">Error: Cannot assign value 'score' of type 'int' to '^int' in a procedure argument</span>
+<span class="er">    Suggestion: Did you mean `&amp;score`</span></pre>
+
+    <p class="teach"><b>The emergent payoff:</b> in a codebase with hundreds of calls, "which of these can change my state?" stops being a question you answer by reading procedure bodies and becomes one you answer by <b>scanning for <span class="il">&amp;</span></b>. Immutability removes every other channel; the explicit caret is the single, visible, compiler-enforced one. Mutation is opt-in, written at the call, and impossible to do by accident — that's the whole reason a parameter is welded shut by default.</p>
+
+    <p class="teach" style="margin-top:24px;color:var(--muted)">That's the arc: <b style="color:var(--ink)">L1</b> a parameter is an immutable binding — to change the caller you take a <span class="il">^T</span> and write through it → <b style="color:var(--ink)">L2</b> that fixed-slot identity is what lets the call site carry defaults and named arguments → <b style="color:var(--ink)">L3</b> even big aggregates pass as immutable values (a hidden pointer for speed, observable only in the same-object aliasing case) → <b style="color:var(--ink)">L4</b> immutability + the explicit <span class="il">&amp;</span> make the call site a readable, compiler-checked contract.</p>
+  </section>
+
+  <div class="foot">probes reproduce with <span style="color:var(--ink)">odin run … -file</span> · outputs, sizes &amp; the L1/L4 errors are real compiler output (claims/lessons/06c-parameters-and-passing)</div>
+</div>
+
+<script>
+/* ============================================================
+   Each interactive component = one data object + one render fn.
+   Vanilla JS, inline, no libraries.
+   All embedded numbers/outputs/errors come from passing claims
+   under claims/lessons/06c-parameters-and-passing/.
+   ============================================================ */
+
+/* ---------- LEVEL 1: by-value vs by-pointer caller->callee ----------
+   Measured:
+     pass-by-value-unchanged : bump(score) returns 11, caller score stays 10
+     pass-by-pointer-mutates : add_point(&score) x2 -> caller score = 12
+   So a value parameter's change can't escape; a ^T write reaches the caller.  */
+const CALL = {
+  value: {
+    label: 'bump(score)  —  score passed by value',
+    arrlab: 'a copy of 10',
+    arrsub: 'bump(score)',
+    calleeh: 'callee — bump(n: int)',
+    caller: `<div class="cellv live">score : int = <span class="v">10</span></div>`,
+    callee: `<div class="cellv copy">n := n  (shadow) &nbsp; n += 1 &nbsp;&rarr; <span class="v">11</span></div>
+             <div class="cellv dead">the callee's value, discarded on return</div>`,
+    verdict: { cls:'neutral', html:`Returns <b>11</b>, but the caller's <code>score</code> is still <b>10</b> — <i>inside returned: 11 | caller score: 10</i>. The change never escaped: a value parameter is the callee's own thing.` },
+    teach: `<code>score</code> is passed by value, so the callee works on a separate value. The body even mutates a <i>shadow</i> (<code>n := n</code>; <code>n += 1</code>) — but that's a new local, discarded when <code>bump</code> returns. The caller's <code>score</code> is untouched. <b>No &amp;, no escape.</b>`,
+  },
+  pointer: {
+    label: 'add_point(&score)  —  the address is handed over',
+    arrlab: 'the address of score',
+    arrsub: 'add_point(&score)',
+    calleeh: 'callee — add_point(score: ^int)',
+    caller: `<div class="cellv live">score : int = <span class="v">12</span></div>`,
+    callee: `<div class="cellv live">score^ += 1 &nbsp; writes through the address</div>`,
+    verdict: { cls:'good', html:`Called twice, each <code>score^ += 1</code> lands on the caller's storage — <i>after two add_point, caller score: 12</i>. The <code>&amp;</code> at the call is what authorized the write.` },
+    teach: `<code>add_point</code> takes a <code>^int</code>. <code>score^ += 1</code> reaches <i>through</i> the address to the caller's own int — there's <b>one</b> storage location, written in place. The caller said "yes, change this" by writing <code>&amp;score</code>; the parameter itself (the pointer) is still immutable, but what it <i>points at</i> is not.`,
+  },
+};
+let callMode='value';
+function renderL1(){
+  document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('on',b.dataset.m===callMode));
+  const c=CALL[callMode];
+  document.getElementById('calllabel').textContent=c.label;
+  document.getElementById('callerbox').innerHTML=c.caller;
+  document.getElementById('calleebox').innerHTML=c.callee;
+  document.getElementById('calleeh').textContent=c.calleeh;
+  document.getElementById('arrlab').textContent=c.arrlab;
+  document.getElementById('arrsub').textContent=c.arrsub;
+  const v=document.getElementById('callverdict');
+  v.className='verdict '+c.verdict.cls;
+  v.innerHTML=c.verdict.html;
+  document.getElementById('teach').innerHTML=c.teach;
+}
+const nav=document.getElementById('nav');
+[['value','by value: bump(score)'],['pointer','by pointer: add_point(&score)']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.m=k; b.textContent=t;
+  b.onclick=()=>{callMode=k;renderL1();}; nav.appendChild(b);
+});
+
+/* ---------- LEVEL 2: the call-site builder ----------
+   Measured:
+     default-args : attack()=10, attack(25)=25, attack(25,true)=50
+     named-args   : spawn(y=5,x=3)=3 5 100 ; spawn(hp=50)=0 0 50
+   Here we drive a spawn(x:int=0, y:int=0, hp:int=100) builder. Each arg is
+   either "default" (omit) or a chosen value; we render the written call and
+   the resulting (x, y, hp), which is exactly what the probe prints.          */
+const DEFAULTS = { x:0, y:0, hp:100 };
+const CHOICES = {
+  x:  [['def','default (0)', null], ['3','x = 3', 3]],
+  y:  [['def','default (0)', null], ['5','y = 5', 5]],
+  hp: [['def','default (100)', null], ['50','hp = 50', 50]],
+};
+const argSel = { x:'def', y:'def', hp:'def' };
+function chosenVal(p){ const c=CHOICES[p].find(o=>o[0]===argSel[p]); return c[2]; }
+function renderL2(){
+  document.getElementById('sig').innerHTML =
+    `spawn :: proc(<span class="pn">x</span>: int = <span class="dv">0</span>, <span class="pn">y</span>: int = <span class="dv">0</span>, <span class="pn">hp</span>: int = <span class="dv">100</span>) -> (int, int, int)`;
+  let rows='';
+  for(const p of ['x','y','hp']){
+    let segs='';
+    for(const [key,lab] of CHOICES[p].map(o=>[o[0],o[1]]))
+      segs+=`<button class="${argSel[p]===key?'on':''}" data-p="${p}" data-k="${key}">${lab}</button>`;
+    rows+=`<div class="argrow"><div class="lab">${p}</div><div class="seg">${segs}</div></div>`;
+  }
+  document.getElementById('argstage').innerHTML=rows;
+  document.querySelectorAll('#argstage .seg button').forEach(b=>{
+    b.onclick=()=>{ argSel[b.dataset.p]=b.dataset.k; renderL2(); };
+  });
+  // build the written call: named args only for the ones that aren't default
+  const named=[];
+  for(const p of ['x','y','hp']){ const v=chosenVal(p); if(v!==null) named.push(`${p} = ${v}`); }
+  const callsrc = named.length ? `spawn(${named.join(', ')})` : `spawn()`;
+  // resulting values: chosen or the default
+  const rx = chosenVal('x') ?? DEFAULTS.x;
+  const ry = chosenVal('y') ?? DEFAULTS.y;
+  const rhp= chosenVal('hp') ?? DEFAULTS.hp;
+  const omitted = ['x','y','hp'].filter(p=>chosenVal(p)===null);
+  const omitNote = omitted.length ? ` <span class="dim">// ${omitted.join(', ')} fell back to default</span>` : '';
+  document.getElementById('callbuilt').innerHTML =
+    `<span class="src">${callsrc}</span>${omitNote}<br>&nbsp; &rarr; (x, y, hp) = (<span class="res">${rx}, ${ry}, ${rhp}</span>)`;
+}
+
+/* ---------- LEVEL 3: big aggregate, immutable value vs the aliasing leak ----
+   Measured:
+     big-value-immutable    : size_of(Big)=32, inspect sum=10, caller b unchanged
+                              -> Big{a = 1, b = 2, c = 3, d = 4}
+     break-aliasing-footgun : footgun(b, &b) prints 999 (v.a reads 999)         */
+const COST = {
+  safe: {
+    label: 'inspect(b)  —  Big passed by value, read only',
+    valWidth: 100, ptrWidth: 25,
+    stage: `<div class="bigbox distinct"><span class="bh">caller's b — its own storage</span>Big{a = 1, b = 2, c = 3, d = 4}</div>
+            <div class="bigbox"><span class="bh">inspect(v: Big) — reads v.a+v.b+v.c+v.d</span>v is immutable; only read &nbsp;&rarr; sum = <b style="color:var(--accent)">10</b></div>`,
+    verdict: { cls:'good', html:`<i>size_of(Big): 32 · inspect sum: 10 · caller b unchanged: Big{a = 1, b = 2, c = 3, d = 4}</i>. The 32 bytes may have crossed as a hidden immutable pointer — but you can't tell and it doesn't matter: the value is unchangeable from inside, so the caller's <code>b</code> is intact.` },
+  },
+  leak: {
+    label: 'footgun(b, &b)  —  the SAME b passed twice',
+    valWidth: 100, ptrWidth: 25,
+    stage: `<div class="bigbox same"><span class="bh">one storage — b — handed in two ways</span>footgun(b, &b): &nbsp; v is the by-value param &nbsp;·&nbsp; p is &b</div>
+            <div class="bigbox same"><span class="bh">inside: p.a = 999</span>p and the hidden pointer behind v are the <b>same memory</b> &nbsp;&rarr; v.a now reads <b style="color:var(--bad)">999</b></div>`,
+    verdict: { cls:'neutral', html:`Prints <b style="color:var(--bad)">999</b>, not the original 1 — because <code>Big</code> is 32 bytes, the "by value" <code>v</code> is the hidden pointer to <code>b</code>, the very thing <code>p</code> writes. The one place the promotion leaks: the <i>same</i> object passed as both a value and a <code>^Big</code>.` },
+  },
+};
+let costMode='safe';
+function renderL3(){
+  document.querySelectorAll('#costnav button').forEach(b=>b.classList.toggle('on',b.dataset.m===costMode));
+  const c=COST[costMode];
+  document.getElementById('costlabel').textContent=c.label;
+  document.getElementById('bar-val').style.width=c.valWidth+'%';
+  document.getElementById('bar-val').textContent='32 bytes (the value, semantically)';
+  document.getElementById('bar-ptr').style.width=c.ptrWidth+'%';
+  document.getElementById('bar-ptr').textContent='8-byte hidden pointer';
+  document.getElementById('coststage').innerHTML=c.stage;
+  const v=document.getElementById('costverdict');
+  v.className='verdict '+c.verdict.cls;
+  v.innerHTML=c.verdict.html;
+}
+const costnav=document.getElementById('costnav');
+[['safe','by value (caller intact)'],['leak','the same-object leak']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.m=k; b.textContent=t;
+  b.onclick=()=>{costMode=k;renderL3();}; costnav.appendChild(b);
+});
+
+/* ---------- level navigation ---------- */
+const LEVELS=[
+  ['1','What it is','an immutable binding'],
+  ['2','The call site','defaults &amp; named args'],
+  ['3','The bill','big values, hidden pointer'],
+  ['4','Why it stays clear','the call is a contract'],
+];
+let level='1';
+function setLevel(n){
+  level=n;
+  document.querySelectorAll('.levels button').forEach(b=>b.classList.toggle('on',b.dataset.n===n));
+  for(const [k] of LEVELS){ const el=document.getElementById('s'+k); if(el) el.classList.toggle('on',k===n); }
+  if(n==='1') renderL1();
+  if(n==='2') renderL2();
+  if(n==='3') renderL3();
+}
+const lnav=document.getElementById('levelnav');
+for(const [n,tt,sub] of LEVELS){ const b=document.createElement('button'); b.dataset.n=n;
+  b.innerHTML=`<span class="lv">Level ${n} · ${sub}</span><span class="tt">${tt}</span>`;
+  b.onclick=()=>setLevel(n); lnav.appendChild(b); }
+setLevel('1');
+</script>
+</body>
+</html>

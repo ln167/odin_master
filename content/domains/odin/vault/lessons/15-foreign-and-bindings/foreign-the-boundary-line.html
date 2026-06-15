@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Odin foreign — declaring across the boundary line</title>
+<style>
+  :root{
+    --paper:#15130f; --card:#1d1a14; --ink:#ece6d8; --muted:#9a9182;
+    --rule:#332e24; --accent:#5ec8b8; --accent-soft:#1f342f;
+    --tag:#e0875a; --pad:#5a544a; --bad:#e0675a; --bad-soft:#2a1815;
+    --mono:"Cascadia Mono","Cascadia Code",Consolas,ui-monospace,"SF Mono",monospace;
+    --serif:-apple-system,"Segoe UI Variable Text","Segoe UI",system-ui,Roboto,"Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper);color:var(--ink)}
+  body{font-family:var(--serif);line-height:1.6;padding:0 20px;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-feature-settings:"kern" 1,"liga" 1}
+  .page{max-width:860px;margin:0 auto;padding:46px 0 90px}
+  .kicker{font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+  h1{font-size:30px;line-height:1.15;margin:0 0 18px;font-weight:600;letter-spacing:-.01em}
+
+  /* level tabs */
+  .levels{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+  .levels button{flex:1;min-width:150px;text-align:left;background:var(--card);border:1px solid var(--rule);
+    color:var(--muted);border-radius:10px;padding:11px 14px;cursor:pointer;transition:.12s;font-family:var(--serif)}
+  .levels button:hover{border-color:var(--accent)}
+  .levels button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--ink)}
+  .levels .lv{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);display:block;margin-bottom:3px}
+  .levels .tt{font-size:14px}
+  .rule{height:1px;background:var(--rule);margin:22px 0 26px}
+
+  .deck{color:var(--muted);font-size:17px;margin:0 0 24px;line-height:1.5}
+  .deck b{color:var(--ink)}
+  h2{font-size:21px;margin:0 0 14px;font-weight:600}
+  p.teach{font-size:16px;line-height:1.62;max-width:46em}
+  p.teach code,.il{font-family:var(--mono);font-size:.86em;background:#2a2519;padding:1px 5px;border-radius:4px}
+  .teach b{color:var(--tag)}
+  .section{display:none}
+  .section.on{display:block}
+
+  nav.sub{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;font-family:var(--mono);font-size:13px}
+  nav.sub button{background:var(--card);border:1px solid var(--rule);color:var(--muted);border-radius:8px;padding:8px 14px;cursor:pointer;transition:.12s}
+  nav.sub button:hover{color:var(--ink);border-color:var(--accent)}
+  nav.sub button.on{color:var(--ink);border-color:var(--accent);background:var(--accent-soft)}
+  .hint{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin:0 0 20px}
+
+  .canvas{background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:30px 28px}
+  .slotlabel{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
+
+  /* the boundary-line device (Level 1) */
+  .boundary{display:grid;grid-template-columns:1fr 64px 1fr;align-items:stretch;gap:0}
+  @media(max-width:640px){.boundary{grid-template-columns:1fr}}
+  .side{background:#1a1710;border:1px solid var(--rule);border-radius:12px;padding:16px 16px 14px}
+  .side.odin{border-color:var(--accent)}
+  .side.ext{border-color:var(--tag)}
+  .side .nm{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:12px}
+  .side.odin .nm{color:var(--accent)}
+  .side.ext .nm{color:var(--tag)}
+  .decl{font-family:var(--mono);font-size:12.5px;line-height:1.7;white-space:pre-wrap;color:var(--ink)}
+  .decl .kw{color:var(--accent)}
+  .decl .cm{color:#6f6655}
+  .decl .sym{color:var(--tag);font-weight:600}
+  .gap{display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative}
+  .gap .wire{font-family:var(--mono);font-size:22px;color:var(--tag)}
+  .gap .lbl{font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);writing-mode:vertical-rl;transform:rotate(180deg);margin-top:6px}
+  @media(max-width:640px){.gap{height:40px;flex-direction:row;gap:10px}.gap .wire{transform:rotate(90deg)}.gap .lbl{writing-mode:horizontal-tb;transform:none;margin:0}}
+  .extbody{font-family:var(--mono);font-size:12px;color:#8a7a66;line-height:1.7}
+  .extbody .sym{color:var(--tag);font-weight:600}
+  .extnote{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-top:10px;line-height:1.6}
+
+  /* byte strip (cstring vs string layout, Level 2) */
+  .strip{display:grid;grid-template-columns:repeat(16,1fr);gap:6px}
+  .byte{aspect-ratio:1/1.15;border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:var(--mono);position:relative;border:1px solid transparent}
+  .byte .hx{font-size:12px;font-weight:600}
+  .byte .ix{position:absolute;top:2px;left:4px;font-size:8px;color:var(--muted);opacity:.7}
+  .b-data{background:var(--accent-soft);border-color:var(--accent);color:#cdeee7}
+  .b-term{background:#3a2417;border-color:var(--tag);color:#f0b48a}
+  .b-len{background:#241f17;border-color:#5a4530;color:#c9a37e}
+  .b-ptr{background:#201d2a;border-color:#5a5070;color:#a89cc4}
+  .striplabel{font-family:var(--mono);font-size:11px;color:var(--muted);margin:14px 0 6px}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;margin-top:18px;font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+  .legend span{display:flex;align-items:center;gap:7px}
+  .chip{width:13px;height:13px;border-radius:3px;border:1px solid}
+  .c-data{background:var(--accent-soft);border-color:var(--accent)}
+  .c-term{background:#3a2417;border-color:var(--tag)}
+  .c-ptr{background:#201d2a;border-color:#5a5070}
+  .c-len{background:#241f17;border-color:#5a4530}
+
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:26px}
+  @media(max-width:680px){.cols{grid-template-columns:1fr}}
+  .panel h3{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 12px;font-weight:600}
+  .sizes{font-family:var(--mono);font-size:13px;line-height:2}
+  .sizes .n{color:var(--accent);font-weight:600}
+  .sizes .big{color:var(--tag);font-weight:600}
+
+  pre{font-family:var(--mono);font-size:12.5px;line-height:1.7;background:#1a1710;border:1px solid var(--rule);border-radius:10px;padding:16px 18px;overflow:auto;margin:22px 0 0;white-space:pre-wrap}
+  pre .cm{color:#6f6655}
+  pre .kw{color:var(--accent)}
+  pre .er{color:var(--bad)}
+  pre .ok{color:var(--accent)}
+  pre .sym{color:var(--tag)}
+  pre .term{font-family:var(--mono);font-size:10px;color:var(--muted)}
+
+  /* convert lane (Level 2) */
+  .twoup{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:6px}
+  @media(max-width:640px){.twoup{grid-template-columns:1fr}}
+  .lane{background:#1a1710;border:1px solid var(--rule);border-radius:12px;padding:16px}
+  .lane.good{border-color:var(--accent)}
+  .lane.bad{border-color:#4a342a}
+  .lane h4{font-family:var(--mono);font-size:12px;margin:0 0 10px;font-weight:600}
+  .lane.good h4{color:var(--accent)}
+  .lane.bad h4{color:var(--tag)}
+  .obj{font-family:var(--mono);font-size:11.5px;border-radius:8px;padding:9px 11px;margin:6px 0;border:1px solid var(--rule)}
+  .obj.ok{background:var(--accent-soft);border-color:var(--accent);color:#cdeee7}
+  .obj.no{background:var(--bad-soft);border:1px solid #5a3a30;color:#f0a892}
+  .laneflow{font-family:var(--mono);font-size:11px;color:var(--muted);margin:8px 0 2px;text-align:center}
+  .verdict{font-family:var(--mono);font-size:12px;margin-top:10px;padding:8px 10px;border-radius:7px}
+  .verdict.good{background:var(--accent-soft);color:#cdeee7;border:1px solid var(--accent)}
+  .verdict.bad{background:var(--bad-soft);color:#f0a892;border:1px solid #5a3a30}
+
+  /* alternatives, drawn (Level 3) */
+  .oopstrip{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}
+  .oopcell{flex:1;min-width:120px;background:#241f17;border:1px dashed #5a4530;border-radius:7px;padding:9px 8px;font-family:var(--mono);font-size:10.5px;text-align:center;color:#8a7a66}
+  .heaplabel{font-family:var(--mono);font-size:10px;color:var(--bad);text-align:center;margin-top:10px}
+
+  .note{background:#1a1710;border:1px solid var(--rule);border-left:3px solid var(--tag);
+    border-radius:10px;padding:15px 18px;margin-top:24px;font-size:15px;line-height:1.6;color:var(--muted)}
+  .note b{color:var(--ink)}
+  .note .h{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--tag);display:block;margin-bottom:8px}
+  .foot{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;margin-top:34px}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="kicker">Odin · foreign &amp; bindings</div>
+  <h1>foreign, across the boundary line</h1>
+
+  <div class="levels" id="levelnav"></div>
+  <div class="rule"></div>
+
+  <!-- ===================== LEVEL 1 — WHAT IT IS ===================== -->
+  <section class="section" id="s1">
+    <p class="deck">A <span class="il">foreign</span> block is <b>a declaration with no body</b>. You write the Odin <i>shape</i> of a procedure — its name, arguments, return, calling convention — and end it with <span class="il">---</span> instead of <span class="il">{ ... }</span>. There is no code to generate; the body already exists, compiled, inside a precompiled library across the C ABI. At link time the symbol you named gets wired to that real code. Pick a procedure and watch the declaration map across the line.</p>
+    <div class="hint">The declarations below link and run on this toolchain — the program at the bottom of Level 4 is their real captured output (claims/lessons/15-foreign-and-bindings).</div>
+
+    <nav class="sub" id="nav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="bsublabel"></div>
+      <div class="boundary">
+        <div class="side odin">
+          <div class="nm">your Odin side — the shape</div>
+          <div class="decl" id="declbox"></div>
+        </div>
+        <div class="gap">
+          <div class="wire">&rsaquo;</div>
+          <div class="lbl">linker wires it</div>
+        </div>
+        <div class="side ext">
+          <div class="nm">the library side — the body</div>
+          <div class="extbody" id="extbox"></div>
+          <div class="extnote" id="extnote"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="cols">
+      <div class="panel"><h3>The three moving parts</h3><p class="teach" id="teach"></p></div>
+      <div class="panel"><h3>The import line</h3>
+        <div class="sizes">
+          <span style="color:var(--muted)">names the library file the linker searches:</span><br>
+          <span class="n">foreign import</span> my_libc<br>
+          &nbsp;&nbsp;<span class="big">"system:libucrt.lib"</span><br><br>
+          <span style="color:var(--muted)"><span class="n">system:</span> = "ask the system linker to find it." A library you ship instead takes a relative path, e.g. <span class="il">"vendor/SDL3/SDL3.lib"</span>.</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============= LEVEL 2 — THE cstring BOUNDARY ============= -->
+  <section class="section" id="s2">
+    <p class="deck">Level 1 wired the call. Level 2 is what travels across it: <b>strings change shape at the boundary.</b> An Odin <span class="il">string</span> and a <span class="il">cstring</span> are two different memory layouts — and only one of them is what a C-ABI procedure can read.</p>
+    <p class="teach">An Odin <span class="il">string</span> is <b>two machine words</b>: a pointer to bytes plus a stored length. It carries its own size and needs no terminator. A <span class="il">cstring</span> is <b>one pointer</b>; its length is not stored anywhere — it is found by scanning forward until a zero byte. The strip shows the same six letters under each layout:</p>
+
+    <nav class="sub" id="strnav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="strlabel"></div>
+      <div class="striplabel" id="strdesc"></div>
+      <div class="strip" id="strstrip"></div>
+      <div class="legend">
+        <span><i class="chip c-data"></i> the bytes "abcdef"</span>
+        <span><i class="chip c-term"></i> the terminating zero</span>
+        <span><i class="chip c-ptr"></i> pointer word (where)</span>
+        <span><i class="chip c-len"></i> length word (how many)</span>
+      </div>
+      <div class="cols" style="margin-top:22px">
+        <div class="panel"><h3>Widths (size_of)</h3>
+          <div class="sizes">
+            <span class="il">string</span>&nbsp;&nbsp;= <span class="big">16</span> <span style="color:var(--muted)">(pointer + length)</span><br>
+            <span class="il">cstring</span> = <span class="n">8</span> <span style="color:var(--muted)">(one pointer)</span><br>
+            <span class="il">rawptr</span>&nbsp;&nbsp;= <span class="n">8</span><br>
+          </div>
+        </div>
+        <div class="panel"><h3>What you're seeing</h3><p class="teach" id="strteach"></p></div>
+      </div>
+    </div>
+
+    <p class="teach" style="margin-top:26px">Because the layouts differ, the type system keeps them apart: a <span class="il">string</span> handed to a <span class="il">cstring</span> parameter is rejected at <b>compile time</b> — one of the few foreign mistakes Odin can catch before the program runs:</p>
+    <pre><span class="kw">libc</span>.puts(s)   <span class="cm">// s : string</span>
+
+<span class="er">Error: Cannot assign value 's' of type 'string' to 'cstring' in a procedure argument</span></pre>
+
+    <p class="teach"><b>The fix:</b> convert at the boundary. A bare <span class="il">"hello"</span> literal aimed at a <span class="il">cstring</span> parameter is special — the compiler emits a null-terminated byte buffer for you, so <span class="il">cstring("hello")</span> Just Works. A string built at runtime (from <span class="il">fmt.tprintf</span>, slicing, a file read) is <b>not</b> terminated, so you allocate a terminated copy with <span class="il">strings.clone_to_cstring(s, context.temp_allocator)</span> and pass that:</p>
+    <div class="twoup">
+      <div class="lane bad">
+        <h4>runtime string, passed raw</h4>
+        <div class="obj">greeting := fmt.tprintf("hello, %s", name)</div>
+        <div class="laneflow">it's a string — no trailing zero</div>
+        <div class="obj no">libc.puts(greeting) ✕</div>
+        <div class="verdict bad">rejected: string is not cstring</div>
+      </div>
+      <div class="lane good">
+        <h4>convert, then pass</h4>
+        <div class="obj">greeting := fmt.tprintf("hello, %s", name)</div>
+        <div class="laneflow">clone_to_cstring → terminated copy</div>
+        <div class="obj ok">libc.puts(c_greeting) ✓</div>
+        <div class="verdict good">prints: hello, Ada</div>
+      </div>
+    </div>
+
+    <p class="teach" style="margin-top:24px"><b>The terminator is the length.</b> Calling a hand-bound <span class="il">strlen</span> shows it directly: <span class="il">strlen</span> walks the bytes until it hits the zero, and returns the count <i>not including</i> it. So a six-glyph literal returns <b>6</b>, never 7 — the terminator is the signal to stop, not a counted byte:</p>
+    <pre>my_strlen(<span class="sym">cstring</span>(<span class="ok">"abcdef"</span>)) <span class="cm">// →</span> 6
+my_strlen(<span class="sym">cstring</span>(<span class="ok">"hi"</span>))     <span class="cm">// →</span> 2</pre>
+  </section>
+
+  <!-- ===================== LEVEL 3 — THE BILL ===================== -->
+  <section class="section" id="s3">
+    <p class="deck">Level 2 marshalled the data. Level 3 is the bill: <b>a foreign declaration is a promise the compiler cannot check.</b> It emits no code — only a reference for the linker to resolve — so it has nothing on the other side to verify your shape against.</p>
+    <p class="teach">A foreign block generates not one instruction of a body. It produces a <i>reference</i>: "at this call site, jump to wherever the linker decides this symbol lives." That hands you two failure modes the ordinary compiler errors don't cover — and they surface at different times. Pick one:</p>
+
+    <nav class="sub" id="failnav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="faillabel"></div>
+      <pre id="failpre"></pre>
+      <p class="teach" id="failwhy" style="margin:18px 0 0"></p>
+    </div>
+
+    <p class="teach" style="margin-top:26px"><b>Why the renamed symbol needs <span class="il">@(link_name)</span>.</b> When you give the Odin proc a different name than the C symbol — <span class="il">my_puts</span> for the library's <span class="il">puts</span> — the <i>link name</i> changes with it. Without an explicit <span class="il">@(link_name="puts")</span>, the linker hunts for a symbol literally called <span class="il">my_puts</span>, which nothing exports, and the build dies with an unresolved external. The attribute is the wire: Odin-side name on the left, real C symbol on the right.</p>
+    <div class="canvas" style="margin-top:8px">
+      <div class="boundary">
+        <div class="side odin">
+          <div class="nm">the wiring</div>
+          <div class="decl"><span class="cm">@(link_name=</span><span class="sym">"puts"</span><span class="cm">)</span>
+<span class="sym">my_puts</span> :: <span class="kw">proc</span>(s: cstring) -> i32 <span class="kw">---</span></div>
+        </div>
+        <div class="gap"><div class="wire">&rsaquo;</div><div class="lbl">link_name pins it</div></div>
+        <div class="side ext">
+          <div class="nm">resolves to</div>
+          <div class="extbody">the C symbol <span class="sym">puts</span><br><span style="color:var(--muted)">(not "my_puts")</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="note">
+      <span class="h">the part with no guardrail at all: the signature</span>
+      The two errors above are the <b>kind ones</b> — they stop the build. The dangerous case is a declaration that compiles, links, and runs while being <b>wrong about the shape</b>. Declare <span class="il">puts :: proc(s: cstring) -> [4]f64 ---</span> and Odin accepts it without complaint; at runtime the real <span class="il">puts</span> returns one integer, your code reads four floats out of registers holding garbage, and nothing crashes and nothing warns. An ABI mismatch is <b>silently wrong, not loudly wrong</b>. The compiler has no view of the library's true signature, so verifying your declaration against the real interface is your job, not the toolchain's.
+    </div>
+  </section>
+
+  <!-- ============= LEVEL 4 — THE EMERGENT PAYOFF ============= -->
+  <section class="section" id="s4">
+    <p class="deck">The last level is what the mechanism unlocks at scale: <b>every precompiled library in the world becomes callable through the same four pieces.</b> A <span class="il">vendor:</span> package is not a different feature — it is exactly this <span class="il">foreign</span> block, already written for you.</p>
+    <p class="teach">Once you can name a library, name a calling convention, declare a shape, and marshal a <span class="il">cstring</span> across, the door opens onto every existing C-ABI library — operating-system calls, audio, physics, the graphics stack. Most of them already have the block written: <span class="il">core:c/libc</span> wraps the C standard library, and Odin's <span class="il">vendor:</span> tree ships ready-made bindings of this kind for the big libraries. Calling <span class="il">libc.puts</span> and calling your own hand-bound <span class="il">my_puts</span> produce <b>indistinguishable</b> output — because they are the same four pieces, one just typed by someone else.</p>
+
+    <h2 style="margin-top:30px">Why the alternatives lose</h2>
+    <div class="canvas">
+      <div class="slotlabel" style="color:var(--bad)">refusing the boundary</div>
+      <div class="oopstrip">
+        <div class="oopcell">reimplement the library in Odin</div>
+        <div class="oopcell">shell out to a separate process</div>
+        <div class="oopcell">hand-marshal bytes through a generic buffer</div>
+      </div>
+      <div class="heaplabel">each one is more code, slower, or a fresh source of bugs — to avoid four declarations.</div>
+    </div>
+    <p class="teach">
+      <b>Reimplementing the library</b> means rewriting decades of someone else's audited, optimized code — for OpenGL or SQLite that is not a weekend, it is a career, and your copy starts out buggier than the original.<br><br>
+      <b>Shelling out to a separate process</b> and parsing its text output pays a process-launch and serialization cost on every call, loses every typed return value to string-scraping, and turns a direct register-level call into inter-process plumbing.<br><br>
+      <b>Hand-marshalling bytes through a generic buffer</b> rebuilds, by hand and without checks, exactly what the <span class="il">foreign</span> declaration + <span class="il">cstring</span> conversion already do — more code, the same idea, more bugs. The <span class="il">foreign</span> block <i>is</i> the marshalling, written once and type-checked on the Odin side.
+    </p>
+
+    <p class="teach" style="margin-top:30px">Here is the real program — the four steps end to end, its output captured from a compiled run:</p>
+    <pre><span class="cm">--- step 1: pre-made libc binding ---</span>
+<span class="cm">--- step 2: convert Odin string -> cstring ---</span>
+<span class="cm">--- step 3: hand-written foreign import ---</span>
+<span class="cm">--- step 4: my_strlen round-trip ---</span>
+strlen of abcdef = 6
+<span class="ok">from the bundled binding</span>
+<span class="ok">hello, Ada</span>
+<span class="ok">from my own foreign import</span></pre>
+    <p class="teach"><b>Why the order looks scrambled.</b> All four <span class="il">fmt.println</span> headers and the <span class="il">strlen</span> result print first, then the three <span class="il">puts</span> lines. That is not a bug — Odin's <span class="il">fmt</span> writes to its own stdout buffer and the library's <span class="il">puts</span> writes to the C runtime's separate buffer, and the two flush on their own schedules. The instant two runtimes write to one terminal, ordering between them is no longer guaranteed; you'd flush explicitly or route every line through one side if you needed it strict.</p>
+
+    <p class="teach" style="margin-top:24px;color:var(--muted)">That's the arc: <b style="color:var(--ink)">L1</b> a bodyless declaration the linker wires to a real library symbol → <b style="color:var(--ink)">L2</b> data changes shape at the boundary, so <span class="il">cstring</span> and conversion live there → <b style="color:var(--ink)">L3</b> the bill is that the shape is an unchecked promise — a missing symbol stops the build, a wrong signature does not → <b style="color:var(--ink)">L4</b> get those four pieces right and every precompiled library, including all of <span class="il">vendor:</span>, is callable.</p>
+  </section>
+
+  <div class="foot">probes reproduce with <span style="color:var(--ink)">odin run / odin build</span> · sizes, strlen counts, the program output &amp; both error strings are real compiler output (claims/lessons/15-foreign-and-bindings)</div>
+</div>
+
+<script>
+/* ============================================================
+   Each interactive component = one data object + one render fn.
+   Vanilla JS, inline, no libraries.
+   Every embedded number / output line / error string comes from a
+   passing claim under claims/lessons/15-foreign-and-bindings/.
+   ============================================================ */
+
+/* ---------- LEVEL 1: the boundary-line declaration ----------
+   Backed by the `solution` output claim: this exact foreign block links and
+   runs on this toolchain. */
+const DECL = {
+  puts: {
+    label:'puts — a C string in, an int out',
+    decl:`<span class="cm">@(default_calling_convention="c")</span>
+<span class="kw">foreign</span> my_libc {
+  <span class="cm">@(link_name=</span><span class="sym">"puts"</span><span class="cm">)</span>
+  my_puts :: <span class="kw">proc</span>(s: cstring) -> i32 <span class="kw">---</span>
+}`,
+    ext:`symbol <span class="sym">puts</span>(s) — prints the<br>NUL-terminated bytes at s,<br>returns an int.`,
+    note:`No source, no header — just a name and a shape. The body is the compiled puts already inside libucrt.lib.`,
+    teach:`<b>One —</b> the calling convention <code>proc "c"</code> (set once by the attribute) names the ABI: which registers carry the argument and the return. <b>Two —</b> <code>cstring</code> is the boundary type the argument crosses as. <b>Three —</b> the trailing <code>---</code> says "no body; the linker finds one."`,
+  },
+  strlen: {
+    label:'strlen — a C string in, a length out',
+    decl:`<span class="cm">@(default_calling_convention="c")</span>
+<span class="kw">foreign</span> my_libc {
+  <span class="cm">@(link_name=</span><span class="sym">"strlen"</span><span class="cm">)</span>
+  my_strlen :: <span class="kw">proc</span>(s: cstring) -> uint <span class="kw">---</span>
+}`,
+    ext:`symbol <span class="sym">strlen</span>(s) — walks s to<br>the first zero byte,<br>returns how many came before.`,
+    note:`Same four pieces, a different return type. The C size_t is declared here as Odin's uint — match the width the header means.`,
+    teach:`The shape differs only in the return: <code>-> uint</code> for the count. The convention, the <code>cstring</code> argument, and the bodyless <code>---</code> are identical — that sameness is why one mechanism reaches every C-ABI procedure.`,
+  },
+};
+let declKey='puts';
+function renderL1(){
+  document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('on',b.dataset.k===declKey));
+  const d=DECL[declKey];
+  document.getElementById('bsublabel').textContent=d.label;
+  document.getElementById('declbox').innerHTML=d.decl;
+  document.getElementById('extbox').innerHTML=d.ext;
+  document.getElementById('extnote').innerHTML=d.note;
+  document.getElementById('teach').innerHTML=d.teach;
+}
+const nav=document.getElementById('nav');
+[['puts','puts'],['strlen','strlen']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.k=k; b.textContent=t;
+  b.onclick=()=>{declKey=k;renderL1();}; nav.appendChild(b);
+});
+
+/* ---------- LEVEL 2: cstring vs string byte layout ----------
+   Widths from the `string-sizes` output claim: string=16, cstring=8.
+   The 6 "abcdef" bytes are 0x61..0x66; the terminator is 0x00.            */
+const ABC=[0x61,0x62,0x63,0x64,0x65,0x66];   // 'a'..'f'
+const STR = {
+  cstring: {
+    label:'cstring("abcdef") — one pointer, terminator marks the end',
+    desc:'the bytes in memory: six data bytes, then a zero. length is NOT stored — strlen finds it by scanning to the 00.',
+    teach:`A <code>cstring</code> value is just the 8-byte pointer to byte 0. The size lives nowhere; the <b>00 at index 6</b> is the only "stop here" signal. Lose that zero and a reader runs off the end.`,
+    build(){
+      let s='';
+      for(let i=0;i<7;i++){
+        const term = i===6;
+        const hx = (term?0:ABC[i]).toString(16).padStart(2,'0');
+        const gl  = term?'\\0':String.fromCharCode(ABC[i]);
+        s+=`<div class="byte ${term?'b-term':'b-data'}"><span class="ix">${i}</span><span class="hx">${hx}</span><span class="term">${gl}</span></div>`;
+      }
+      return s;
+    },
+  },
+  string: {
+    label:'string "abcdef" — two words: a pointer and a length, no terminator',
+    desc:'the value itself is 16 bytes: a pointer word (where the bytes are) + a length word (= 6). the data has no trailing zero.',
+    teach:`A <code>string</code> stores its own length, so it needs no terminator and can name a slice of a bigger buffer. That's exactly why it can't be handed to C unchanged: a C-ABI procedure expects the pointer-and-terminator layout, not pointer-and-length.`,
+    build(){
+      let s='';
+      // 8 bytes: pointer word (where the data lives)
+      for(let i=0;i<8;i++){
+        s+=`<div class="byte b-ptr"><span class="ix">${i}</span><span class="hx">ptr</span><span class="term">where</span></div>`;
+      }
+      // 8 bytes: length word, value 6
+      for(let i=8;i<16;i++){
+        const hx=(i===8?6:0).toString(16).padStart(2,'0');
+        s+=`<div class="byte b-len"><span class="ix">${i}</span><span class="hx">${hx}</span><span class="term">${i===8?'len=6':''}</span></div>`;
+      }
+      return s;
+    },
+  },
+};
+let strKey='cstring';
+function renderL2(){
+  document.querySelectorAll('#strnav button').forEach(b=>b.classList.toggle('on',b.dataset.k===strKey));
+  const d=STR[strKey];
+  document.getElementById('strlabel').textContent=d.label;
+  document.getElementById('strdesc').textContent=d.desc;
+  document.getElementById('strstrip').innerHTML=d.build();
+  document.getElementById('strteach').innerHTML=d.teach;
+}
+const strnav=document.getElementById('strnav');
+[['cstring','cstring (8B + terminator)'],['string','string (16B, len stored)']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.k=k; b.textContent=t;
+  b.onclick=()=>{strKey=k;renderL2();}; strnav.appendChild(b);
+});
+
+/* ---------- LEVEL 3: the two build-stopping failure modes ----------
+   Verified error strings (claims):
+     break-misspell-symbol  (linker)  : unresolved external symbol putz ...
+     break-string-not-cstring (compile): Cannot assign value 's' ... to 'cstring' */
+const FAIL = {
+  symbol: {
+    label:'misspell the symbol — the linker objects, at the very end',
+    code:`<span class="kw">foreign</span> my_libc {\n  <span class="er">putz</span> :: <span class="kw">proc</span>(s: cstring) -> i32 <span class="kw">---</span>   <span class="cm">// no @(link_name); nothing exports "putz"</span>\n}`,
+    err:`error LNK2019: unresolved external symbol putz referenced in function main::main`,
+    why:`The Odin side compiles fine — the shape is valid. The failure is the <b>linker's</b>, surfacing after everything else succeeded: there is no symbol by that name in any library you imported. This is the error you hit most when binding a new library and getting the C name slightly wrong.`,
+  },
+  type: {
+    label:'pass a string where cstring is required — the compiler catches it',
+    code:`s: <span class="er">string</span> = "hello"\nlibc.puts(<span class="er">s</span>)            <span class="cm">// string is {ptr,len}, not the C layout</span>`,
+    err:`Error: Cannot assign value 's' of type 'string' to 'cstring' in a procedure argument`,
+    why:`This one Odin <b>can</b> see, because <code>string</code> and <code>cstring</code> are genuinely different types in its system — the two layouts can't be confused. It's a compile error, caught before the program ever runs. Convert with <code>strings.clone_to_cstring</code> and it builds.`,
+  },
+};
+let failKey='symbol';
+function renderL3(){
+  document.querySelectorAll('#failnav button').forEach(b=>b.classList.toggle('on',b.dataset.k===failKey));
+  const f=FAIL[failKey];
+  document.getElementById('faillabel').textContent=f.label;
+  document.getElementById('failpre').innerHTML = f.code + '\n\n<span class="er">' + f.err + '</span>';
+  document.getElementById('failwhy').innerHTML = f.why;
+}
+const failnav=document.getElementById('failnav');
+[['symbol','wrong symbol → linker'],['type','string≠cstring → compiler']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.k=k; b.textContent=t;
+  b.onclick=()=>{failKey=k;renderL3();}; failnav.appendChild(b);
+});
+
+/* ---------- level navigation ---------- */
+const LEVELS=[
+  ['1','What it is','a bodyless declaration'],
+  ['2','The boundary','cstring & conversion'],
+  ['3','The bill','an unchecked promise'],
+  ['4','The payoff','every library, callable'],
+];
+let level='1';
+function setLevel(n){
+  level=n;
+  document.querySelectorAll('.levels button').forEach(b=>b.classList.toggle('on',b.dataset.n===n));
+  for(const [k] of LEVELS){ const el=document.getElementById('s'+k); if(el) el.classList.toggle('on',k===n); }
+  if(n==='1') renderL1();
+  if(n==='2') renderL2();
+  if(n==='3') renderL3();
+}
+const lnav=document.getElementById('levelnav');
+for(const [n,tt,sub] of LEVELS){ const b=document.createElement('button'); b.dataset.n=n;
+  b.innerHTML=`<span class="lv">Level ${n} · ${sub}</span><span class="tt">${tt}</span>`;
+  b.onclick=()=>setLevel(n); lnav.appendChild(b); }
+setLevel('1');
+</script>
+</body>
+</html>

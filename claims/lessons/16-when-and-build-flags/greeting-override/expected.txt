@@ -1,0 +1,4 @@
+OS: Windows
+Arch: amd64
+Build: RELEASE
+Greeting: hi, world

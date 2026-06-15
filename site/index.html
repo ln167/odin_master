@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Learn Odin — interactive lesson explainers</title>
+<style>
+  :root{
+    --paper:#15130f; --card:#1d1a14; --ink:#ece6d8; --muted:#9a9182;
+    --rule:#332e24; --accent:#5ec8b8; --accent-soft:#1f342f; --tag:#e0875a;
+    --mono:"Cascadia Mono","Cascadia Code",Consolas,ui-monospace,"SF Mono",monospace;
+    --serif:-apple-system,"Segoe UI Variable Text","Segoe UI",system-ui,Roboto,"Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper);color:var(--ink)}
+  body{font-family:var(--serif);line-height:1.6;padding:0 20px;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  .page{max-width:720px;margin:0 auto;padding:54px 0 96px}
+  .kicker{font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+  h1{font-size:32px;line-height:1.12;margin:0 0 12px;font-weight:600;letter-spacing:-.01em}
+  .deck{color:var(--muted);font-size:16.5px;margin:0 0 14px;line-height:1.5;max-width:48em}
+  .deck b{color:var(--ink)}
+
+  .chap{font-family:var(--mono);font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--accent);
+    margin:36px 0 6px;display:flex;align-items:center;gap:14px}
+  .chap::after{content:"";flex:1;height:1px;background:var(--rule)}
+
+  .row{display:grid;grid-template-columns:30px 14em 1fr;column-gap:14px;align-items:baseline;
+    padding:9px 12px;border-radius:9px;text-decoration:none;color:var(--ink);transition:background .12s}
+  .row:hover{background:var(--card)}
+  .row:hover .name{color:var(--accent)}
+  .num{grid-row:1;font-family:var(--mono);font-size:13px;color:var(--accent);text-align:right;opacity:.85}
+  .name{font-weight:600;font-size:15.5px;line-height:1.3;transition:color .12s}
+  .desc{color:var(--muted);font-size:14px;line-height:1.4}
+
+  footer{margin-top:46px;padding-top:18px;border-top:1px solid var(--rule);
+    font-family:var(--mono);font-size:11.5px;color:var(--muted);line-height:1.7}
+
+  @media(max-width:560px){
+    .page{padding:36px 0 72px}
+    h1{font-size:26px}
+    .row{grid-template-columns:28px 1fr;row-gap:2px;padding:10px 10px}
+    .desc{grid-column:2}
+  }
+</style>
+</head>
+<body>
+  <div class="page">
+    <div class="kicker">Odin · interactive explainers</div>
+    <h1>Learn Odin</h1>
+    <p class="deck">29 interactive lessons. Each opens at <b>level 1</b> — what happens —
+      and climbs to the payoff. Every byte, size, and output on the page is verified
+      against a real Odin compile. Pick any lesson to start.</p>
+    <div class="chap">Getting started</div>
+    <div class="rows">
+      <a class="row" href="00-setup-check.html"><span class="num">1</span><span class="name">Setup check</span><span class="desc">Is your toolchain healthy?</span></a>
+      <a class="row" href="01-hellope.html"><span class="num">2</span><span class="name">Hellope!</span><span class="desc">The smallest program, taken apart</span></a>
+      <a class="row" href="01b-packages-and-imports.html"><span class="num">3</span><span class="name">Packages & imports</span><span class="desc">How folders become a program</span></a>
+    </div>
+    <div class="chap">Core types</div>
+    <div class="rows">
+      <a class="row" href="02-types-and-printing.html"><span class="num">4</span><span class="name">Types & printing</span><span class="desc">Bit-widths and the print verbs</span></a>
+      <a class="row" href="03-procedures-and-multiple-returns.html"><span class="num">5</span><span class="name">Procedures</span><span class="desc">One call, many return values</span></a>
+      <a class="row" href="04-strings-and-runes.html"><span class="num">6</span><span class="name">Strings & runes</span><span class="desc">A view over UTF-8 bytes</span></a>
+      <a class="row" href="05-arrays-fixed.html"><span class="num">7</span><span class="name">Fixed arrays</span><span class="desc">[N]T laid out flat in memory</span></a>
+      <a class="row" href="05b-enums-and-bit-sets.html"><span class="num">8</span><span class="name">Enums & bit sets</span><span class="desc">One bit per member</span></a>
+    </div>
+    <div class="chap">Slices & pointers</div>
+    <div class="rows">
+      <a class="row" href="06-slices.html"><span class="num">9</span><span class="name">Slices</span><span class="desc">A 16-byte window onto memory</span></a>
+      <a class="row" href="06b-pointers.html"><span class="num">10</span><span class="name">Pointers</span><span class="desc">Addresses, aliasing, and ^T</span></a>
+      <a class="row" href="06c-parameters-and-passing.html"><span class="num">11</span><span class="name">Parameters & passing</span><span class="desc">What a proc can and can't change</span></a>
+    </div>
+    <div class="chap">Dynamic data & scope</div>
+    <div class="rows">
+      <a class="row" href="07-dynamic-arrays.html"><span class="num">12</span><span class="name">Dynamic arrays</span><span class="desc">Growth, capacity, and ownership</span></a>
+      <a class="row" href="07b-defer.html"><span class="num">13</span><span class="name">defer</span><span class="desc">Cleanup that fires at scope exit</span></a>
+      <a class="row" href="07c-maps.html"><span class="num">14</span><span class="name">Maps</span><span class="desc">Keys, and the silent zero value</span></a>
+      <a class="row" href="07d-stack-and-heap.html"><span class="num">15</span><span class="name">Stack & heap</span><span class="desc">Where your values actually live</span></a>
+    </div>
+    <div class="chap">Memory & allocators</div>
+    <div class="rows">
+      <a class="row" href="08-context-and-allocators.html"><span class="num">16</span><span class="name">Context & allocators</span><span class="desc">The implicit allocator, threaded in</span></a>
+      <a class="row" href="09-arena-allocator.html"><span class="num">17</span><span class="name">Arena allocator</span><span class="desc">One bump cursor, freed all at once</span></a>
+    </div>
+    <div class="chap">The type system</div>
+    <div class="rows">
+      <a class="row" href="10-tagged-unions.html"><span class="num">18</span><span class="name">Tagged unions</span><span class="desc">One slot, many shapes, a tag</span></a>
+      <a class="row" href="10b-distinct-types.html"><span class="num">19</span><span class="name">Distinct types</span><span class="desc">Same bytes, a brand-new name</span></a>
+      <a class="row" href="11-error-handling-or-return.html"><span class="num">20</span><span class="name">Errors & or_return</span><span class="desc">Errors as values, desugared</span></a>
+      <a class="row" href="12-structs-and-soa.html"><span class="num">21</span><span class="name">Structs & SoA</span><span class="desc">Array-of-structs vs struct-of-arrays</span></a>
+      <a class="row" href="12b-using-and-procedure-groups.html"><span class="num">22</span><span class="name">using & proc groups</span><span class="desc">Flattening names; overload sets</span></a>
+      <a class="row" href="13-procedures-as-values.html"><span class="num">23</span><span class="name">Procedures as values</span><span class="desc">A proc held in a variable slot</span></a>
+      <a class="row" href="14-parametric-polymorphism.html"><span class="num">24</span><span class="name">Parametric polymorphism</span><span class="desc">One source, many type stamps</span></a>
+    </div>
+    <div class="chap">Systems & workflow</div>
+    <div class="rows">
+      <a class="row" href="15-foreign-and-bindings.html"><span class="num">25</span><span class="name">Foreign bindings</span><span class="desc">Calling across the C ABI line</span></a>
+      <a class="row" href="16-when-and-build-flags.html"><span class="num">26</span><span class="name">when & build flags</span><span class="desc">Branches the compiler resolves</span></a>
+      <a class="row" href="17-testing-with-core-testing.html"><span class="num">27</span><span class="name">Testing</span><span class="desc">core:testing, pass and fail</span></a>
+      <a class="row" href="18-hot-reload-tour.html"><span class="num">28</span><span class="name">Hot reload</span><span class="desc">Swap code while it runs</span></a>
+      <a class="row" href="19-search-driven-learning.html"><span class="num">29</span><span class="name">Search-driven learning</span><span class="desc">Look it up instead of guessing</span></a>
+    </div>
+    <footer>Built from the odin_master curriculum · numbers verified via the claim harness.</footer>
+  </div>
+</body>
+</html>

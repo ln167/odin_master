@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Odin — where a value lives, four levels deep</title>
+<style>
+  :root{
+    --paper:#15130f; --card:#1d1a14; --ink:#ece6d8; --muted:#9a9182;
+    --rule:#332e24; --accent:#5ec8b8; --accent-soft:#1f342f;
+    --tag:#e0875a; --pad:#5a544a; --bad:#e0675a; --bad-soft:#2a1815;
+    --mono:"Cascadia Mono","Cascadia Code",Consolas,ui-monospace,"SF Mono",monospace;
+    --serif:-apple-system,"Segoe UI Variable Text","Segoe UI",system-ui,Roboto,"Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper);color:var(--ink)}
+  body{font-family:var(--serif);line-height:1.6;padding:0 20px;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-feature-settings:"kern" 1,"liga" 1}
+  .page{max-width:860px;margin:0 auto;padding:46px 0 90px}
+  .kicker{font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+  h1{font-size:30px;line-height:1.15;margin:0 0 18px;font-weight:600;letter-spacing:-.01em}
+
+  /* level tabs */
+  .levels{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+  .levels button{flex:1;min-width:150px;text-align:left;background:var(--card);border:1px solid var(--rule);
+    color:var(--muted);border-radius:10px;padding:11px 14px;cursor:pointer;transition:.12s;font-family:var(--serif)}
+  .levels button:hover{border-color:var(--accent)}
+  .levels button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--ink)}
+  .levels .lv{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);display:block;margin-bottom:3px}
+  .levels .tt{font-size:14px}
+  .rule{height:1px;background:var(--rule);margin:22px 0 26px}
+
+  .deck{color:var(--muted);font-size:17px;margin:0 0 24px;line-height:1.5}
+  .deck b{color:var(--ink)}
+  h2{font-size:21px;margin:0 0 14px;font-weight:600}
+  p.teach{font-size:16px;line-height:1.62;max-width:46em}
+  p.teach code,.il{font-family:var(--mono);font-size:.86em;background:#2a2519;padding:1px 5px;border-radius:4px}
+  .teach b{color:var(--tag)}
+  .section{display:none}
+  .section.on{display:block}
+
+  nav.sub{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;font-family:var(--mono);font-size:13px}
+  nav.sub button{background:var(--card);border:1px solid var(--rule);color:var(--muted);border-radius:8px;padding:8px 14px;cursor:pointer;transition:.12s}
+  nav.sub button:hover{color:var(--ink);border-color:var(--accent)}
+  nav.sub button.on{color:var(--ink);border-color:var(--accent);background:var(--accent-soft)}
+  .hint{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin:0 0 20px}
+
+  .canvas{background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:30px 28px}
+  .slotlabel{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
+
+  /* the two-region view (Level 1) */
+  .regionrow{display:flex;align-items:stretch;gap:18px;flex-wrap:wrap}
+  .region{flex:1;min-width:250px;background:#1a1710;border:1px solid var(--rule);border-radius:12px;padding:16px 16px 14px;position:relative}
+  .region.stack{border-color:var(--accent)}
+  .region.heap{border-color:var(--tag)}
+  .region .rh{font-family:var(--mono);font-size:13px;margin-bottom:2px}
+  .region.stack .rh{color:var(--accent)}
+  .region.heap .rh{color:var(--tag)}
+  .region .rsub{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-bottom:14px}
+  .cell{font-family:var(--mono);font-size:12px;border-radius:8px;padding:9px 11px;margin:6px 0;border:1px solid var(--rule);background:#241f17;color:#cbc3b2}
+  .cell.live{background:var(--accent-soft);border-color:var(--accent);color:#cdeee7}
+  .cell.heaplive{background:#2a1d12;border-color:var(--tag);color:#f0b48a}
+  .cell.gone{border:1px dashed #5a4530;color:#6f6655;text-decoration:line-through;background:#1d1a14}
+  .cell .ad{display:block;font-size:10px;color:var(--muted);margin-top:4px}
+  .regnote{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:12px;line-height:1.5}
+  .regnote b{color:var(--ink)}
+  .gap{text-align:center;font-family:var(--mono);font-size:10px;color:var(--muted);margin:10px 0;letter-spacing:.1em}
+
+  .legend{display:flex;gap:18px;flex-wrap:wrap;margin-top:18px;font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+  .legend span{display:flex;align-items:center;gap:7px}
+  .chip{width:13px;height:13px;border-radius:3px;border:1px solid}
+  .c-stack{background:var(--accent-soft);border-color:var(--accent)}
+  .c-heap{background:#2a1d12;border-color:var(--tag)}
+  .c-gone{background:#1d1a14;border:1px dashed #5a4530}
+
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:26px}
+  @media(max-width:680px){.cols{grid-template-columns:1fr}}
+  .panel h3{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 12px;font-weight:600}
+  .sizes{font-family:var(--mono);font-size:13px;line-height:2}
+  .sizes .n{color:var(--accent);font-weight:600}
+  .sizes .big{color:var(--tag);font-weight:600}
+
+  pre{font-family:var(--mono);font-size:12.5px;line-height:1.7;background:#1a1710;border:1px solid var(--rule);border-radius:10px;padding:16px 18px;overflow:auto;margin:22px 0 0;white-space:pre-wrap}
+  pre .cm{color:#6f6655}
+  pre .kw{color:var(--accent)}
+  pre .er{color:var(--bad)}
+  pre .ok{color:var(--accent)}
+
+  /* by-value vs ^heap (Level 2) */
+  .twoup{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:6px}
+  @media(max-width:640px){.twoup{grid-template-columns:1fr}}
+  .lane{background:#1a1710;border:1px solid var(--rule);border-radius:12px;padding:16px}
+  .lane.good{border-color:var(--accent)}
+  .lane.bad{border-color:#4a342a}
+  .lane h4{font-family:var(--mono);font-size:12px;margin:0 0 10px;font-weight:600}
+  .lane.good h4{color:var(--accent)}
+  .lane.bad h4{color:var(--tag)}
+  .obj{font-family:var(--mono);font-size:12px;border-radius:8px;padding:9px 11px;margin:6px 0;border:1px solid var(--rule)}
+  .obj.caller{background:var(--accent-soft);border-color:var(--accent);color:#cdeee7}
+  .obj.heap{background:#2a1d12;border-color:var(--tag);color:#f0b48a}
+  .obj.copy{background:#241f17;border:1px dashed #5a4530;color:#8a7a66}
+  .laneflow{font-family:var(--mono);font-size:11px;color:var(--muted);margin:8px 0 2px;text-align:center}
+  .verdict{font-family:var(--mono);font-size:12px;margin-top:10px;padding:8px 10px;border-radius:7px}
+  .verdict.good{background:var(--accent-soft);color:#cdeee7;border:1px solid var(--accent)}
+  .verdict.bad{background:var(--bad-soft);color:#f0a892;border:1px solid #5a3a30}
+
+  .oopstrip{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}
+  .oopcell{flex:1;min-width:84px;background:#241f17;border:1px dashed #5a4530;border-radius:7px;padding:9px 8px;font-family:var(--mono);font-size:10px;text-align:center;color:#8a7a66}
+  .heaplabel{font-family:var(--mono);font-size:10px;color:var(--bad);text-align:center;margin-top:8px}
+
+  /* Level 3: defer pairing + the dangling frame */
+  .pairing{font-family:var(--mono);font-size:12.5px;line-height:1.9}
+  .pairing .ask{color:var(--accent)}
+  .pairing .back{color:var(--tag)}
+  .frame{background:#1a1710;border:1px solid var(--rule);border-radius:10px;padding:14px 16px;font-family:var(--mono);font-size:12px;margin:6px 0;transition:.3s}
+  .frame.dead{border-color:var(--bad);background:var(--bad-soft);color:#a07268}
+  .frame .lbl{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:6px}
+  .frame.dead .lbl{color:var(--bad)}
+  .ptrline{font-family:var(--mono);font-size:12px;color:var(--tag);margin:10px 0;text-align:center}
+  .ptrline .stale{color:var(--bad)}
+
+  .note{background:#1a1710;border:1px solid var(--rule);border-left:3px solid var(--tag);
+    border-radius:10px;padding:15px 18px;margin-top:24px;font-size:15px;line-height:1.6;color:var(--muted)}
+  .note b{color:var(--ink)}
+  .note .h{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--tag);display:block;margin-bottom:8px}
+  .foot{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;margin-top:34px}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="kicker">Odin · stack &amp; heap</div>
+  <h1>Where a value lives, four levels deep</h1>
+
+  <div class="levels" id="levelnav"></div>
+  <div class="rule"></div>
+
+  <!-- ===================== LEVEL 1 — WHAT IT IS ===================== -->
+  <section class="section" id="s1">
+    <p class="deck">Every value sits in one of two regions, and the region decides <b>how long it lives</b>. A <b>local</b> lives in the current call's frame — it appears when the proc is entered and vanishes the instant the proc returns. A value from <span class="il">new(T)</span> lives in a separate pool whose lifetime <b>you</b> control; it stays until you hand it back. Pick a moment and watch which storage is alive.</p>
+    <div class="hint">Real addresses, captured from a compiled Odin program. The exact numbers differ every run, so one representative run is shown; the comparisons (reused / not-equal / far-apart) are deterministic and verified.</div>
+
+    <nav class="sub" id="nav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="regionlabel"></div>
+      <div class="regionrow">
+        <div class="region stack">
+          <div class="rh">the current call frame</div>
+          <div class="rsub">a local — appears on entry, gone on return</div>
+          <div id="stackslot"></div>
+          <div class="regnote" id="stacknote"></div>
+        </div>
+        <div class="region heap">
+          <div class="rh">the heap pool</div>
+          <div class="rsub">new(T) — stays until you free it</div>
+          <div id="heapslot"></div>
+          <div class="regnote" id="heapnote"></div>
+        </div>
+      </div>
+      <div class="gap" id="gapnote"></div>
+      <div class="legend">
+        <span><i class="chip c-stack"></i> alive in the frame</span>
+        <span><i class="chip c-heap"></i> alive on the heap</span>
+        <span><i class="chip c-gone"></i> reclaimed / reused</span>
+      </div>
+    </div>
+
+    <div class="cols">
+      <div class="panel"><h3>Two comparisons (verified)</h3>
+        <div class="sizes">
+          stack slot reused<br>across two calls&nbsp;&nbsp;= <span class="n">true</span><br><br>
+          two new(int) give<br>the same address&nbsp;= <span class="big">false</span><br><br>
+          <span style="color:var(--muted)">same storage&nbsp;&nbsp;&nbsp;&nbsp;= <b style="color:var(--bad)">false</b><br>far apart (&gt;1MB) = <b style="color:var(--ink)">true</b></span>
+        </div>
+      </div>
+      <div class="panel"><h3>What you're seeing</h3><p class="teach" id="teach"></p></div>
+    </div>
+  </section>
+
+  <!-- ============= LEVEL 2 — WHY YOU'D REACH FOR IT ============= -->
+  <section class="section" id="s2">
+    <p class="deck">Level 1 was <i>where things live</i>. Level 2 is <i>why you'd ever want the heap</i>: <b>some data has to outlive the procedure that made it.</b> The stack can't do that — its values die at the closing brace. The heap is the only region where a value can survive the return.</p>
+    <p class="teach">A <span class="il">make_counter</span> proc allocates a <span class="il">Counter</span> and returns it. The only question is <i>where</i> the Counter lives — in the proc's frame, or on the heap. One choice means the caller gets something real; the other means the caller gets a handle to storage that no longer exists. Step through both:</p>
+
+    <nav class="sub" id="survnav"></nav>
+    <div class="twoup">
+      <div class="lane good">
+        <h4>make_counter :: proc() -&gt; ^Counter  (new)</h4>
+        <div id="lane-heap"></div>
+      </div>
+      <div class="lane bad">
+        <h4>...returning &amp;local instead  (the frame)</h4>
+        <div id="lane-stack"></div>
+      </div>
+    </div>
+
+    <p class="teach"><b>The mechanism:</b> <span class="il">c := new(Counter)</span> puts the <span class="il">Counter</span> on the heap, then returns the <span class="il">^Counter</span> that names it. When the frame pops, the <i>pointer variable</i> is gone but the <i>Counter it pointed at is not</i> — it lives in the heap, untouched by the pop. So the caller reads it back, and can still <b>write</b> through the pointer after the maker returned: the survived value isn't a frozen copy, it's live storage you now own.</p>
+
+    <p class="teach"><b>The counterfactual:</b> if the value never needs to escape — you compute it, use it, and you're done before the proc returns — <b>don't</b> reach for the heap. A plain local is faster (no allocation, no free) and cleans itself up for free. You allocate <i>precisely</i> when the data must outlive the scope that created it: returned to a caller, stored somewhere longer-lived, or handed off. No outliving needed, no heap needed.</p>
+
+    <h2 style="margin-top:30px">Why the alternatives are worse</h2>
+    <div class="canvas">
+      <div class="slotlabel" style="color:var(--bad)">return the address of a local — point into a frame that's about to vanish</div>
+      <div class="oopstrip">
+        <div class="oopcell">local := 7</div><div class="oopcell">return &amp;local</div><div class="oopcell">frame pops ✕</div><div class="oopcell">caller holds → ?</div>
+      </div>
+      <div class="heaplabel">the address survives; the storage it names does not. a dangling pointer.</div>
+    </div>
+    <p class="teach">
+      <b>Keep it on the stack and return its address</b> — the value dies at the closing brace, so the caller is left holding an address into reclaimed storage. Odin <i>catches this exact shape</i> at compile time (Level 3), because it's never what you want.<br><br>
+      <b>Return the value by copy</b> (<span class="il">proc() -&gt; Counter</span>, no pointer) — this is fine when the caller only needs the <i>contents</i>, but it hands back a <b>snapshot</b>: a fresh, independent Counter. If two parts of the program must see and mutate the <i>same</i> Counter, copies give each its own — the writes never meet. When you need one shared, long-lived object, the copy is the wrong tool.<br><br>
+      <b>Make the value a package-level global</b> so it never goes out of scope — now its lifetime is the whole program, there's exactly one of it forever, and every proc can touch it. That's not "long-lived," it's "eternal and singular." The heap gives you <i>many</i>, each living <i>exactly as long as you decide</i> — which is the actual requirement.
+    </p>
+  </section>
+
+  <!-- ===================== LEVEL 3 — THE BILL ===================== -->
+  <section class="section" id="s3">
+    <p class="deck">Level 2 sold you on the heap. Level 3 is the bill: <b>the lifetime is now yours.</b> The stack freed itself; the heap won't. Odin has no garbage collector — every <span class="il">new</span> is a promise to <span class="il">free</span>, and every <span class="il">make</span> a promise to <span class="il">delete</span>.</p>
+    <p class="teach"><b>The idiom that keeps the promise:</b> <span class="il">defer</span>. Write the hand-back on the line right after the ask, and <span class="il">defer</span> runs it at scope exit — so the two read as a pair and the <span class="il">free</span> can't get lost in a long body:</p>
+
+    <div class="canvas">
+      <div class="slotlabel">ask and hand-back, paired</div>
+      <div class="pairing">
+        <span class="ask">c := new(Counter)</span>   <span style="color:var(--muted)">// ask</span><br>
+        <span class="back">defer free(c)</span>       <span style="color:var(--muted)">// hand back at scope exit</span><br>
+        <span style="color:#cbc3b2">c.n = 42</span>            <span style="color:var(--muted)">// ...use it for the whole scope...</span><br><br>
+        <span class="ask">buf := make([]int, 4)</span> <span style="color:var(--muted)">// ask (slice-backed storage)</span><br>
+        <span class="back">defer delete(buf)</span>   <span style="color:var(--muted)">// hand back at scope exit</span>
+      </div>
+      <div class="regnote" style="margin-top:14px">Verified output of that scope: <span style="color:var(--accent)">counter (heap, will be freed on exit): 42</span> · <span style="color:var(--accent)">slice (heap, will be deleted on exit): 0 1 4 9</span> · <span style="color:var(--accent)">reached end of scope; both defers fire now</span></div>
+    </div>
+
+    <p class="teach"><b>Forget the hand-back, and nothing tells you.</b> Drop the <span class="il">free</span> and the program still runs and prints correctly — the OS reclaims the whole address space when the process exits, so a leak is <b>silent</b>:</p>
+    <pre><span class="kw">c</span> := new(Counter)
+c.n = 99
+fmt.println(<span class="ok">"ran fine, n ="</span>, c.n)   <span class="cm">// prints: ran fine, n = 99</span>
+<span class="cm">// ...never freed. no crash, no warning. leaked until the process exits.</span></pre>
+    <p class="teach">That silence is the danger. Run that allocation once per frame for ten hours and the process bloats with nothing pointing at the culprit. (Lesson 08's tracking allocator is what turns this silence into a <span class="il">file:line</span> report.)</p>
+
+    <p class="teach" style="margin-top:26px"><b>The sharper bill — a lifetime that ends too early.</b> A leak wastes memory; the opposite mistake corrupts it. The classic is the <b>dangling pointer into a popped frame</b>: a local's storage is reclaimed the moment its proc returns, so any pointer that escaped it now names storage that belongs to someone else. Odin guards the most obvious shape — returning <span class="il">&amp;local</span> directly — at <b>compile time</b>:</p>
+    <pre><span class="kw">broken</span> :: proc() -&gt; ^int {
+    local := 7
+    <span class="kw">return</span> &local   <span class="cm">// address of a local — its frame is about to pop</span>
+}
+
+<span class="er">Error: It is unsafe to return the address of a local variable ('&local')</span>
+<span class="er">from a procedure, as it uses the current stack frame's memory</span></pre>
+    <p class="teach">But that guard catches <b>one shape</b>, not lifetimes in general. Let the address escape <i>indirectly</i> — written through an out-pointer — and it <b>compiles with no error and no warning</b>:</p>
+    <pre><span class="kw">escape</span> :: proc(out: ^^int) {
+    local := 7
+    out^ = &local   <span class="cm">// the address escapes upward; the frame still pops</span>
+}                   <span class="ok">// builds clean — the targeted check doesn't see this</span></pre>
+    <p class="teach">After <span class="il">escape(&amp;p)</span> returns, <span class="il">p</span> points into a frame that's gone — a dangling pointer the language let through. The heap exists precisely so escaping data has somewhere to live that <i>survives the pop</i>; reach for <span class="il">new</span>, not a clever way to keep a local's address.</p>
+
+    <div class="note">
+      <span class="h">a pointer carries no "stack or heap" flag</span>
+      An address is <b>just a number</b> — there's no bit on it saying which region it points at, and no way to ask whether the thing at the other end is still alive. The compiler's escape check is a <i>targeted</i> static guard on one syntactic shape, not a runtime tag and not a general lifetime tracker. Whether a pointer still names live storage is knowledge <b>you</b> have to keep — which is the whole reason "the lifetime is yours" is the bill, and why <span class="il">defer free</span> pays it on time.
+    </div>
+  </section>
+
+  <!-- ============= LEVEL 4 — THE EMERGENT PAYOFF ============= -->
+  <section class="section" id="s4">
+    <p class="deck">The last level isn't a new mechanism — it's what "survives the return" turns into once a program has depth. The stack's discipline and the heap's freedom compose into the way data and ownership <b>move through a whole codebase</b>.</p>
+    <p class="teach"><b>The emergent payoff — data flows up, lifetime stays pinned.</b> Because a heap value is untouched by frame pops, a deep proc can build something and hand it all the way up the call chain: <span class="il">make_counter</span> returns to its caller, which returns to <i>its</i> caller, and the <span class="il">Counter</span> rides along intact the whole way. The stack is the LIFO scaffold that calls rise and fall on; the heap is the off-scaffold storage that doesn't fall with them. Every "build it here, use it there" — a parser returning a syntax tree, a loader returning loaded assets, a frame returning its command list — is exactly this shape, and it only works because the heap value's lifetime is decoupled from the frame that created it.</p>
+
+    <p class="teach"><b>And ownership stays legible.</b> The flip side of "the lifetime is yours" is that you can put the <span class="il">free</span> wherever the lifetime actually ends — and <span class="il">defer</span> lets you write it <i>next to the allocation</i> while it still <i>runs at the right scope exit</i>. So even as values flow far from where they were born, the question "who frees this, and when?" stays answerable by reading one scope, not by tracing the value across the program. The discipline is local even when the data isn't.</p>
+
+    <div class="note">
+      <span class="h">the frontier this opens onto</span>
+      The heap's freedom costs a per-allocation tax (bookkeeping, and a <span class="il">free</span> you owe) and the dangling/leak footguns above. So the next lessons chase "heap flexibility at stack-like cost": lesson 08's <span class="il">context</span> lets you <b>swap which allocator</b> <span class="il">new</span> and <span class="il">make</span> use for a whole region without touching a single call site, and lesson 09's <b>arena</b> hands back a big run of allocations in one stroke — a free that's as cheap as a frame pop. This level is the floor they're built on.
+    </div>
+
+    <p class="teach" style="margin-top:24px;color:var(--muted)">That's the arc: <b style="color:var(--ink)">L1</b> two regions, two lifetimes — a local dies at the return, a <span class="il">new(T)</span> value persists in a separate pool → <b style="color:var(--ink)">L2</b> that persistence is the whole point: data that must outlive its maker has to be on the heap → <b style="color:var(--ink)">L3</b> the bill is that the lifetime is yours — <span class="il">defer free</span> to pay it, or leak silently / dangle when it ends too early → <b style="color:var(--ink)">L4</b> "survives the return" composes into data flowing up the call chain with ownership you can still read off one scope.</p>
+  </section>
+
+  <div class="foot">probes reproduce with <span style="color:var(--ink)">odin run</span> · addresses, comparisons, outputs &amp; the L3 error are real compiler output (claims/lessons/07d-stack-and-heap)</div>
+</div>
+
+<script>
+/* ============================================================
+   Each interactive component = one data object + one render fn.
+   Vanilla JS, inline, no libraries.
+   All embedded numbers/addresses/errors come from passing claims
+   under claims/lessons/07d-stack-and-heap/.
+   ============================================================ */
+
+/* ---------- LEVEL 1: the two regions across calls ----------
+   Verified (claims regions, stack-reuse):
+     - a local and a new(int) land in different storage, far apart (>1MB).
+     - two calls reuse the SAME stack slot (a1 == a2 -> true).
+     - two new(int) are NEVER the same address (false).
+   Addresses are nondeterministic; we show ONE representative run and label it. */
+const STACK_A = '0xD56A39C0F8';   // representative stack address (differs every run)
+const HEAP_A1 = '0x2147C8B40C8';  // representative heap address, call 1
+const HEAP_A2 = '0x2147C8B4108';  // representative heap address, call 2 (different!)
+const STEP = {
+  call1: {
+    label:'frame_local() — call 1 is running; new(int) handed back its first chunk',
+    stackLive:true, stackGone:false,
+    heap:[{a:HEAP_A1, gone:false}],
+    stacknote:`<b>local</b> lives in this frame, at <span style="color:var(--accent)">${STACK_A}</span>.`,
+    heapnote:`<b>new(int)</b> #1 lives at <span style="color:var(--tag)">${HEAP_A1}</span> — a different region entirely.`,
+    teach:`A local and a <code>new(int)</code> are in two different storages: <b>same storage = false</b>, and they sit <b>more than a megabyte apart</b>. The frame holds the local; the heap holds the allocated int.`
+  },
+  popped: {
+    label:'frame_local() returned — its frame popped; the heap chunk is untouched',
+    stackLive:false, stackGone:true,
+    heap:[{a:HEAP_A1, gone:false}],
+    stacknote:`the frame <b>popped</b> — <span style="color:var(--bad)">local's slot is reclaimed</span>. The address is now free for the next call to reuse.`,
+    heapnote:`the heap int at <span style="color:var(--tag)">${HEAP_A1}</span> is <b>still alive</b> — a frame pop doesn't touch the heap.`,
+    teach:`The return popped the frame: the local's storage is gone (and will be reused). The heap allocation didn't notice — it stays until <i>you</i> free it. That asymmetry is the whole lesson.`
+  },
+  call2: {
+    label:'frame_local() — call 2 reuses the SAME slot; a second new(int) is FRESH',
+    stackLive:true, stackGone:false,
+    heap:[{a:HEAP_A1, gone:false},{a:HEAP_A2, gone:false}],
+    stacknote:`call 2's <b>local</b> lands at <span style="color:var(--accent)">${STACK_A}</span> — the <b>same address</b> call 1 used. The slot was reused: <b style="color:var(--accent)">a1 == a2 → true</b>.`,
+    heapnote:`a second <b>new(int)</b> gives a <b>different</b> address (<span style="color:var(--tag)">${HEAP_A2}</span>): <b style="color:var(--bad)">two new(int) same address → false</b>.`,
+    teach:`The stack <b>reuses</b> one slot — each call builds its frame at the same spot, so the local's address repeats. The heap <b>never</b> reuses: every <code>new</code> hands back fresh storage. Reuse vs fresh is the mechanical difference between the regions.`
+  },
+};
+let step='call1';
+function renderL1(){
+  document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('on',b.dataset.s===step));
+  const s=STEP[step];
+  document.getElementById('regionlabel').textContent=s.label;
+  // stack cell
+  let sc;
+  if(s.stackGone){
+    sc=`<div class="cell gone">local : int<span class="ad">${STACK_A} — reclaimed</span></div>`;
+  } else {
+    sc=`<div class="cell live">local : int = 7<span class="ad">${STACK_A}</span></div>`;
+  }
+  document.getElementById('stackslot').innerHTML=sc;
+  document.getElementById('stacknote').innerHTML=s.stacknote;
+  // heap cells
+  document.getElementById('heapslot').innerHTML =
+    s.heap.map((h,i)=>`<div class="cell heaplive">new(int) #${i+1} = 7<span class="ad">${h.a}</span></div>`).join('');
+  document.getElementById('heapnote').innerHTML=s.heapnote;
+  document.getElementById('gapnote').textContent='— far apart in the address space (more than a megabyte between the two regions) —';
+  document.getElementById('teach').innerHTML=s.teach;
+}
+const nav=document.getElementById('nav');
+[['call1','1 · call + new'],['popped','2 · proc returns'],['call2','3 · call again']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.s=k; b.textContent=t;
+  b.onclick=()=>{step=k;renderL1();}; nav.appendChild(b);
+});
+
+/* ---------- LEVEL 2: heap-survives vs stack-dies ----------
+   Verified (claim heap-survives-return):
+     survived the return, n = 1   then   mutated after return, n = 2
+   The stack lane illustrates WHY &local is rejected (claim break-return-local-addr). */
+const SURV = {
+  before: {
+    heap:`<div class="obj heap">make_counter: c := new(Counter)<span style="display:block;color:var(--muted)">the Counter lives on the heap</span></div>
+          <div class="laneflow">return c — the ^Counter goes up</div>
+          <div class="obj caller">caller holds c : ^Counter</div>`,
+    stack:`<div class="obj copy">a proc: local := 7<span style="display:block">lives in the frame</span></div>
+          <div class="laneflow">return &amp;local — the address goes up</div>
+          <div class="obj caller">caller holds p : ^int</div>`,
+  },
+  after: {
+    heap:`<div class="obj heap">Counter on the heap — n = 1<span style="display:block;color:var(--muted)">maker's frame popped; this didn't</span></div>
+          <div class="laneflow">read c.n → 1, then c.n += 1 → 2 (still writable!)</div>
+          <div class="verdict good">survived the return: n = 1 → 2</div>`,
+    stack:`<div class="obj copy" style="text-decoration:line-through">local's storage — reclaimed ✕</div>
+          <div class="laneflow">the frame popped; p now dangles</div>
+          <div class="verdict bad">rejected at compile time — you can't even build it</div>`,
+  },
+};
+let survPhase='before';
+function renderL2(){
+  document.querySelectorAll('#survnav button').forEach(b=>b.classList.toggle('on',b.dataset.p===survPhase));
+  document.getElementById('lane-heap').innerHTML=SURV[survPhase].heap;
+  document.getElementById('lane-stack').innerHTML=SURV[survPhase].stack;
+}
+const survnav=document.getElementById('survnav');
+[['before','set up the return'],['after','▸ the maker returns']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.p=k; b.textContent=t;
+  b.onclick=()=>{survPhase=k;renderL2();}; survnav.appendChild(b);
+});
+
+/* ---------- level navigation ---------- */
+const LEVELS=[
+  ['1','What it is','two regions, two lifetimes'],
+  ['2','Why use it','data that outlives its maker'],
+  ['3','The bill','the lifetime is yours'],
+  ['4','Why it composes','data flows, ownership stays local'],
+];
+let level='1';
+function setLevel(n){
+  level=n;
+  document.querySelectorAll('.levels button').forEach(b=>b.classList.toggle('on',b.dataset.n===n));
+  for(const [k] of LEVELS){ const el=document.getElementById('s'+k); if(el) el.classList.toggle('on',k===n); }
+  if(n==='1') renderL1();
+  if(n==='2') renderL2();
+}
+const lnav=document.getElementById('levelnav');
+for(const [n,tt,sub] of LEVELS){ const b=document.createElement('button'); b.dataset.n=n;
+  b.innerHTML=`<span class="lv">Level ${n} · ${sub}</span><span class="tt">${tt}</span>`;
+  b.onclick=()=>setLevel(n); lnav.appendChild(b); }
+setLevel('1');
+</script>
+</body>
+</html>

@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Odin or_return — errors as values, four levels deep</title>
+<style>
+  :root{
+    --paper:#15130f; --card:#1d1a14; --ink:#ece6d8; --muted:#9a9182;
+    --rule:#332e24; --accent:#5ec8b8; --accent-soft:#1f342f;
+    --tag:#e0875a; --pad:#5a544a; --bad:#e0675a; --bad-soft:#2a1815;
+    --mono:"Cascadia Mono","Cascadia Code",Consolas,ui-monospace,"SF Mono",monospace;
+    --serif:-apple-system,"Segoe UI Variable Text","Segoe UI",system-ui,Roboto,"Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper);color:var(--ink)}
+  body{font-family:var(--serif);line-height:1.6;padding:0 20px;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-feature-settings:"kern" 1,"liga" 1}
+  .page{max-width:860px;margin:0 auto;padding:46px 0 90px}
+  .kicker{font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+  h1{font-size:30px;line-height:1.15;margin:0 0 18px;font-weight:600;letter-spacing:-.01em}
+
+  /* level tabs */
+  .levels{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+  .levels button{flex:1;min-width:150px;text-align:left;background:var(--card);border:1px solid var(--rule);
+    color:var(--muted);border-radius:10px;padding:11px 14px;cursor:pointer;transition:.12s;font-family:var(--serif)}
+  .levels button:hover{border-color:var(--accent)}
+  .levels button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--ink)}
+  .levels .lv{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);display:block;margin-bottom:3px}
+  .levels .tt{font-size:14px}
+  .rule{height:1px;background:var(--rule);margin:22px 0 26px}
+
+  .deck{color:var(--muted);font-size:17px;margin:0 0 24px;line-height:1.5}
+  .deck b{color:var(--ink)}
+  h2{font-size:21px;margin:0 0 14px;font-weight:600}
+  p.teach{font-size:16px;line-height:1.62;max-width:46em}
+  p.teach code,.il{font-family:var(--mono);font-size:.86em;background:#2a2519;padding:1px 5px;border-radius:4px}
+  .teach b{color:var(--tag)}
+  .section{display:none}
+  .section.on{display:block}
+
+  nav.sub{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;font-family:var(--mono);font-size:13px}
+  nav.sub button{background:var(--card);border:1px solid var(--rule);color:var(--muted);border-radius:8px;padding:8px 14px;cursor:pointer;transition:.12s}
+  nav.sub button:hover{color:var(--ink);border-color:var(--accent)}
+  nav.sub button.on{color:var(--ink);border-color:var(--accent);background:var(--accent-soft)}
+  .hint{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin:0 0 20px}
+
+  .canvas{background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:30px 28px}
+  .slotlabel{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
+
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:26px}
+  @media(max-width:680px){.cols{grid-template-columns:1fr}}
+  .panel h3{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 12px;font-weight:600}
+  .sizes{font-family:var(--mono);font-size:13px;line-height:2}
+  .sizes .n{color:var(--accent);font-weight:600}
+  .sizes .big{color:var(--tag);font-weight:600}
+
+  pre{font-family:var(--mono);font-size:12.5px;line-height:1.7;background:#1a1710;border:1px solid var(--rule);border-radius:10px;padding:16px 18px;overflow:auto;margin:22px 0 0;white-space:pre-wrap}
+  pre .cm{color:#6f6655}
+  pre .kw{color:var(--accent)}
+  pre .er{color:var(--bad)}
+  pre .tg{color:var(--tag)}
+  pre .ok{color:var(--accent)}
+
+  /* the (result, err) return pair — two-slot view (L1) */
+  .retrow{display:flex;gap:14px;flex-wrap:wrap;margin-top:4px}
+  .retslot{flex:1;min-width:200px;background:#1a1710;border:1px solid var(--rule);border-radius:12px;padding:15px 16px}
+  .retslot .nm{font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:8px}
+  .retslot .vv{font-family:var(--mono);font-size:22px;font-weight:600}
+  .retslot.value{border-color:var(--accent)} .retslot.value .vv{color:var(--accent)}
+  .retslot.errok{border-color:var(--rule)} .retslot.errok .vv{color:var(--muted)}
+  .retslot.errbad{border-color:var(--bad)} .retslot.errbad .vv{color:var(--bad)}
+  .retslot .sub{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-top:7px}
+  .branchline{font-family:var(--mono);font-size:12.5px;margin-top:16px;padding:10px 12px;border-radius:8px}
+  .branchline.ok{background:var(--accent-soft);color:#cdeee7;border:1px solid var(--accent)}
+  .branchline.bad{background:var(--bad-soft);color:#f0a892;border:1px solid #5a3a30}
+
+  /* desugaring: two side-by-side code panes (L2) */
+  .twoup{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:6px;align-items:start}
+  @media(max-width:680px){.twoup{grid-template-columns:1fr}}
+  .lane{background:#1a1710;border:1px solid var(--rule);border-radius:12px;padding:0;overflow:hidden}
+  .lane.sugar{border-color:var(--accent)}
+  .lane.expanded{border-color:var(--tag)}
+  .lane h4{font-family:var(--mono);font-size:11.5px;margin:0;padding:11px 16px;font-weight:600;border-bottom:1px solid var(--rule)}
+  .lane.sugar h4{color:var(--accent);background:var(--accent-soft)}
+  .lane.expanded h4{color:var(--tag);background:#2a1d14}
+  .lane pre{margin:0;border:none;border-radius:0;background:transparent}
+  .eqsign{text-align:center;font-family:var(--mono);font-size:13px;color:var(--muted);margin:18px 0 0}
+  .eqsign b{color:var(--accent)}
+
+  /* the chain trace (L3) */
+  .trace{display:flex;flex-direction:column;gap:0}
+  .tstep{display:flex;align-items:stretch;gap:0;border:1px solid var(--rule);border-radius:10px;margin:7px 0;overflow:hidden;transition:.25s}
+  .tstep .call{flex:1;font-family:var(--mono);font-size:12.5px;padding:13px 15px;display:flex;align-items:center}
+  .tstep .verdict{flex:none;width:190px;font-family:var(--mono);font-size:11px;padding:13px 15px;display:flex;align-items:center;border-left:1px solid var(--rule)}
+  .tstep.pending{opacity:.4}
+  .tstep.pass{border-color:var(--accent)} .tstep.pass .verdict{background:var(--accent-soft);color:#cdeee7}
+  .tstep.fail{border-color:var(--bad);background:var(--bad-soft)} .tstep.fail .verdict{background:#3a1f18;color:#f0a892}
+  .tstep.skip{border-style:dashed} .tstep.skip .call{color:#6f6655}
+  .tstep.skip .verdict{color:#6f6655}
+  .tstep .tk{color:var(--accent)}
+  .tstep.fail .tk{color:var(--bad)}
+  .traceout{font-family:var(--mono);font-size:13px;margin-top:16px;padding:12px 14px;border-radius:8px;border:1px solid var(--rule);background:#1a1710}
+  .traceout .lab{color:var(--muted)}
+  .traceout .v{color:var(--accent);font-weight:600}
+  .traceout .e{color:var(--tag);font-weight:600}
+  .traceout.failrow .e{color:var(--bad)}
+
+  /* the two operators, contrasted (L4) */
+  .opcards{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:6px}
+  @media(max-width:680px){.opcards{grid-template-columns:1fr}}
+  .opcard{background:#1a1710;border:1px solid var(--rule);border-radius:12px;padding:16px 18px}
+  .opcard .ot{font-family:var(--mono);font-size:14px;font-weight:600;color:var(--accent);margin-bottom:4px}
+  .opcard .od{font-size:14px;color:var(--muted);line-height:1.5}
+  .opcard .od b{color:var(--ink)}
+
+  .note{background:#1a1710;border:1px solid var(--rule);border-left:3px solid var(--tag);
+    border-radius:10px;padding:15px 18px;margin-top:24px;font-size:15px;line-height:1.6;color:var(--muted)}
+  .note b{color:var(--ink)}
+  .note .h{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--tag);display:block;margin-bottom:8px}
+  .foot{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;margin-top:34px}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="kicker">Odin · error handling</div>
+  <h1>or_return, four levels deep</h1>
+
+  <div class="levels" id="levelnav"></div>
+  <div class="rule"></div>
+
+  <!-- ===================== LEVEL 1 — WHAT IT IS ===================== -->
+  <section class="section" id="s1">
+    <p class="deck">An error in Odin is <b>an ordinary value handed back out the front door of a procedure</b> — not a thing that jumps out sideways. A proc that can fail widens its return from <span class="il">-&gt; f64</span> to <span class="il">-&gt; (f64, Math_Error)</span>: a second slot riding alongside the result, holding a plain enum. The caller reads that slot and branches. Pick an input and watch the second slot fill.</p>
+    <div class="hint">Outputs below are real, captured from a compiled Odin program (claim explicit-branch).</div>
+
+    <nav class="sub" id="exnav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="exlabel"></div>
+      <div class="retrow">
+        <div class="retslot value">
+          <div class="nm">return slot 0 &nbsp;—&nbsp; the result</div>
+          <div class="vv" id="ex-val"></div>
+          <div class="sub">type f64</div>
+        </div>
+        <div class="retslot" id="ex-errslot">
+          <div class="nm">return slot 1 &nbsp;—&nbsp; the error</div>
+          <div class="vv" id="ex-err"></div>
+          <div class="sub">type Math_Error (an enum; .None == "no error")</div>
+        </div>
+      </div>
+      <div class="branchline" id="ex-branch"></div>
+    </div>
+
+    <div class="cols">
+      <div class="panel"><h3>The error type</h3>
+        <div class="sizes">
+          <span style="color:var(--ink)">Math_Error</span> :: <span class="kw" style="color:var(--accent)">enum</span> {<br>
+          &nbsp;&nbsp;<span class="n">None</span>,<br>
+          &nbsp;&nbsp;Divide_By_Zero,<br>
+          &nbsp;&nbsp;Negative_Sqrt,<br>
+          }<br><br>
+          <span style="color:var(--muted)">The first variant, <span class="n">None</span>, is the zero value and means <b style="color:var(--ink)">"no error."</b> A fresh <span class="il">Math_Error</span> starts at <span class="n">.None</span> — success is the default state.</span>
+        </div>
+      </div>
+      <div class="panel"><h3>What you're seeing</h3><p class="teach" id="exteach"></p></div>
+    </div>
+
+    <div class="note">
+      <span class="h">errors travel the same path as results</span>
+      There is no second, invisible exit from <span class="il">divide</span>. A failure leaves through the very same <span class="il">return</span> the success does — only the second slot differs. To know every way a proc can exit, you read its return signature: <span class="il">(f64, Math_Error)</span> says <b>"this returns an f64 and may report a Math_Error,"</b> full stop. The failure modes are written into the type.
+    </div>
+  </section>
+
+  <!-- ============= LEVEL 2 — THE DESUGARING ============= -->
+  <section class="section" id="s2">
+    <p class="deck">Level 1 was the shape: <span class="il">(result, err)</span>. The friction is at the call site — every single call to a fallible proc tempts the same five-line ritual: take both values, test the error, return it if set. <b>or_return is that ritual, collapsed into one token.</b> And it is <i>only</i> sugar — toggle to see exactly what the compiler expands it into.</p>
+
+    <nav class="sub" id="sugarnav"></nav>
+    <div class="twoup">
+      <div class="lane sugar">
+        <h4>what you write &nbsp;·&nbsp; or_return</h4>
+        <pre id="pane-sugar"></pre>
+      </div>
+      <div class="lane expanded">
+        <h4>what the compiler expands it to</h4>
+        <pre id="pane-expanded"></pre>
+      </div>
+    </div>
+    <div class="eqsign">these two procedures are <b>behavior-identical</b> — proven equal output by claim or-return-desugars-equiv</div>
+
+    <p class="teach" style="margin-top:26px"><b>What it really is:</b> <span class="il">or_return</span> evaluates the call, grabs the trailing error, and — if that error is not <span class="il">.None</span> — assigns it to the enclosing proc's own error slot and does a bare <span class="il">return</span>. No value escapes, no special path runs. It is a <span class="il">return</span> statement the compiler typed for you. Hold both pictures at once: the one-token form you read, and the branch it stands for. When something refuses to compile, drop back to the expanded form and the reason is usually staring at you.</p>
+
+    <p class="teach"><b>The counterfactual:</b> if a proc never fails — its signature is just <span class="il">-&gt; f64</span>, no error slot — there is nothing for <span class="il">or_return</span> to propagate, and you would never reach for it. The operator earns its keep precisely on the chains where <i>every</i> step can fail and you would otherwise write that five-line block over and over.</p>
+  </section>
+
+  <!-- ===================== LEVEL 3 — THE TRACE ===================== -->
+  <section class="section" id="s3">
+    <p class="deck">Level 2 showed one <span class="il">or_return</span> in isolation. Its real power shows in a <b>chain</b>: <span class="il">safe_chain</span> calls <span class="il">divide</span>, then feeds the quotient into <span class="il">safe_sqrt</span>, each guarded by <span class="il">or_return</span>. Whichever step fails first is where the proc <b>exits early</b>, carrying that step's error straight to the caller. Step through three inputs and watch where the chain bails.</p>
+
+    <nav class="sub" id="tracenav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="tracelabel"></div>
+      <div class="trace" id="tracestage"></div>
+      <div class="traceout" id="traceout"></div>
+    </div>
+    <div class="hint" style="margin-top:14px">The three result lines are real program output (claim chain-trace).</div>
+
+    <p class="teach" style="margin-top:24px"><b>The emergent property:</b> the happy path reads as a <i>straight line</i> — <span class="il">divide</span> then <span class="il">safe_sqrt</span> then <span class="il">return</span>, with no error-handling noise wedged between the steps. Yet a failure in <i>any</i> step still short-circuits cleanly to the caller, carrying the right error. One enum, written once into the signature, ferries information from two different failure sites upward — and the code that does it has no visible <span class="il">if err</span> at all. The boring case stopped crowding the page; the interesting case still can't slip past you.</p>
+
+    <pre id="chainsrc"></pre>
+  </section>
+
+  <!-- ============= LEVEL 4 — THE RULES IT FORCES ============= -->
+  <section class="section" id="s4">
+    <p class="deck">Because <span class="il">or_return</span> is <i>literally a bare</i> <span class="il">return</span> (Level 2), two rules fall straight out of that fact — and a second operator, <span class="il">or_else</span>, fills the other half of the design. This is where errors-as-values pays off: the things you must not do are <b>caught at build time</b>, not discovered in a running frame.</p>
+
+    <h2>The two operators</h2>
+    <div class="opcards">
+      <div class="opcard">
+        <div class="ot">x := f() or_return</div>
+        <div class="od"><b>Propagate upward.</b> On failure, bail out of <i>this</i> proc, sending the error to <i>my</i> caller. The recover-it-later move. Needs the enclosing proc to have an error return.</div>
+      </div>
+      <div class="opcard">
+        <div class="ot">x := f() or_else d</div>
+        <div class="od"><b>Recover locally.</b> On failure, substitute the default <b>d</b> and carry on right here — the error never leaves this line. You get back a single value; the error tail is consumed.</div>
+      </div>
+    </div>
+
+    <p class="teach" style="margin-top:24px"><span class="il">or_else</span> in action — the default lands <b>only</b> when the call failed:</p>
+    <pre id="orelse-out"></pre>
+
+    <h2 style="margin-top:34px">Three things the compiler refuses</h2>
+    <p class="teach">Each of these is a real build error — pick one:</p>
+    <nav class="sub" id="errnav"></nav>
+    <pre id="errpre"></pre>
+    <p class="teach" id="errwhy" style="margin-top:16px"></p>
+
+    <div class="note">
+      <span class="h">or_return needs named returns — here's why, exactly</span>
+      <span class="il">or_return</span> expands to a <b>bare</b> <span class="il">return</span> — a <span class="il">return</span> with no values listed. A bare <span class="il">return</span> only knows what to send back when the return slots <b>have names</b> to send back: <span class="il">-&gt; (result: f64, err: Math_Error)</span>. Drop the names to <span class="il">-&gt; (f64, Math_Error)</span> and the bare <span class="il">return</span> has nothing to refer to, so the build stops. Single-return procs are fine unnamed; the rule bites only with two or more returns. The desugaring isn't a metaphor — this restriction <i>is</i> the desugaring showing through.
+    </div>
+
+    <p class="teach" style="margin-top:30px;color:var(--muted)">That's the arc: <b style="color:var(--ink)">L1</b> an error is a plain value in a second return slot, read and branched on → <b style="color:var(--ink)">L2</b> <span class="il">or_return</span> is one token for the test-and-bail branch, nothing more → <b style="color:var(--ink)">L3</b> chained, it makes the happy path a straight line while still short-circuiting any failure → <b style="color:var(--ink)">L4</b> being a bare <span class="il">return</span> forces named slots, forbids silently dropping the error, and pairs with <span class="il">or_else</span> for local recovery — all checked at build time.</p>
+  </section>
+
+  <div class="foot">probes reproduce with <span style="color:var(--ink)">odin run</span> · outputs, the desugaring equivalence &amp; the L4 errors are real compiler output (claims/lessons/11-error-handling-or-return)</div>
+</div>
+
+<script>
+/* ============================================================
+   Each interactive component = one data object + one render fn.
+   Vanilla JS, inline, no libraries.
+   All embedded outputs/errors come from passing claims under
+   claims/lessons/11-error-handling-or-return/.
+   ============================================================ */
+
+/* ---------- LEVEL 1: the (result, err) pair ----------
+   Measured (claim explicit-branch):
+     divide 10 2 -> ok: 5
+     divide 10 0 -> err: Divide_By_Zero                                   */
+const EX = {
+  ok:  { label:'divide(10, 2) — b is nonzero', val:'5', err:'.None', bad:false,
+         branch:`<b>err != .None</b> is <b>false</b> → take the success branch → "ok: 5"`,
+         teach:`<code>divide(10, 2)</code> succeeds: slot 0 holds the quotient <b>5</b>, slot 1 holds <code>.None</code>. The caller tests <code>err != .None</code>, finds it false, and uses the result.` },
+  fail:{ label:'divide(10, 0) — dividing by zero', val:'0', err:'.Divide_By_Zero', bad:true,
+         branch:`<b>err != .None</b> is <b>true</b> → take the failure branch → "err: Divide_By_Zero"`,
+         teach:`<code>divide(10, 0)</code> fails: the proc returns <b>0</b> in slot 0 and <code>.Divide_By_Zero</code> in slot 1. That <b>0</b> is a sentinel you must not trust — the error slot is the real signal, and the caller branches on it.` },
+};
+let exCur='ok';
+function renderL1(){
+  document.querySelectorAll('#exnav button').forEach(b=>b.classList.toggle('on',b.dataset.k===exCur));
+  const e=EX[exCur];
+  document.getElementById('exlabel').textContent=e.label;
+  document.getElementById('ex-val').textContent=e.val;
+  document.getElementById('ex-err').textContent=e.err;
+  const slot=document.getElementById('ex-errslot');
+  slot.className='retslot '+(e.bad?'errbad':'errok');
+  const br=document.getElementById('ex-branch');
+  br.className='branchline '+(e.bad?'bad':'ok');
+  br.innerHTML=e.branch;
+  document.getElementById('exteach').innerHTML=e.teach;
+}
+const exnav=document.getElementById('exnav');
+[['ok','divide(10, 2) — ok'],['fail','divide(10, 0) — fails']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.k=k; b.textContent=t;
+  b.onclick=()=>{exCur=k;renderL1();}; exnav.appendChild(b);
+});
+
+/* ---------- LEVEL 2: sugar vs expanded ----------
+   The two panes are the two procedures in claim or-return-desugars-equiv,
+   which PASSES (identical output) — so the right pane IS the left pane.       */
+const SUGAR = `<span class="kw">safe_chain</span> :: proc(a, b: f64) -> (result: f64, err: Math_Error) {
+    quotient := divide(a, b) <span class="tg">or_return</span>
+    root     := safe_sqrt(quotient) <span class="tg">or_return</span>
+    <span class="kw">return</span> root, .None
+}`;
+const EXPANDED = `<span class="kw">safe_chain</span> :: proc(a, b: f64) -> (result: f64, err: Math_Error) {
+    quotient: f64
+    {
+        tmp_v, tmp_e := divide(a, b)
+        <span class="kw">if</span> tmp_e != .None {
+            err = tmp_e      <span class="cm">// fill the named error slot</span>
+            <span class="kw">return</span>           <span class="cm">// bare return — uses the named slots</span>
+        }
+        quotient = tmp_v
+    }
+    root: f64
+    {
+        tmp_v, tmp_e := safe_sqrt(quotient)
+        <span class="kw">if</span> tmp_e != .None {
+            err = tmp_e
+            <span class="kw">return</span>
+        }
+        root = tmp_v
+    }
+    <span class="kw">return</span> root, .None
+}`;
+const SUGAR_SINGLE = `q := divide(a, b) <span class="tg">or_return</span>`;
+const EXPANDED_SINGLE = `tmp_v, tmp_e := divide(a, b)
+<span class="kw">if</span> tmp_e != .None {
+    err = tmp_e   <span class="cm">// the enclosing proc's named error return</span>
+    <span class="kw">return</span>        <span class="cm">// bare return</span>
+}
+q := tmp_v`;
+let sugarMode='single';
+function renderL2(){
+  document.querySelectorAll('#sugarnav button').forEach(b=>b.classList.toggle('on',b.dataset.m===sugarMode));
+  if(sugarMode==='single'){
+    document.getElementById('pane-sugar').innerHTML=SUGAR_SINGLE;
+    document.getElementById('pane-expanded').innerHTML=EXPANDED_SINGLE;
+  } else {
+    document.getElementById('pane-sugar').innerHTML=SUGAR;
+    document.getElementById('pane-expanded').innerHTML=EXPANDED;
+  }
+}
+const sugarnav=document.getElementById('sugarnav');
+[['single','one or_return'],['chain','the full chain']].forEach(([m,t])=>{
+  const b=document.createElement('button'); b.dataset.m=m; b.textContent=t;
+  b.onclick=()=>{sugarMode=m;renderL2();}; sugarnav.appendChild(b);
+});
+
+/* ---------- LEVEL 3: the chain trace ----------
+   Measured (claim chain-trace):
+     chain(16, 4) -> 2 err: None
+     chain(10, 0) -> 0 err: Divide_By_Zero
+     chain(-4, 1) -> 0 err: Negative_Sqrt                                      */
+const TRACE = {
+  happy: { label:'safe_chain(16, 4) — both steps succeed',
+    steps:[
+      {call:`divide(16, 4) <span class="tk">or_return</span>`, state:'pass', verdict:`→ 4, .None &nbsp;✓ continue`},
+      {call:`safe_sqrt(4) <span class="tk">or_return</span>`,  state:'pass', verdict:`→ 2, .None &nbsp;✓ continue`},
+      {call:`return root, .None`, state:'pass', verdict:`→ 2, .None`},
+    ],
+    out:{cls:'', v:'2', e:'None'} },
+  divfail: { label:'safe_chain(10, 0) — divide fails first',
+    steps:[
+      {call:`divide(10, 0) <span class="tk">or_return</span>`, state:'fail', verdict:`✕ .Divide_By_Zero → bail`},
+      {call:`safe_sqrt(…) <span class="tk">or_return</span>`,  state:'skip', verdict:`never reached`},
+      {call:`return root, .None`, state:'skip', verdict:`never reached`},
+    ],
+    out:{cls:'failrow', v:'0', e:'Divide_By_Zero'} },
+  sqrtfail: { label:'safe_chain(-4, 1) — divide ok, sqrt fails',
+    steps:[
+      {call:`divide(-4, 1) <span class="tk">or_return</span>`, state:'pass', verdict:`→ -4, .None &nbsp;✓ continue`},
+      {call:`safe_sqrt(-4) <span class="tk">or_return</span>`,  state:'fail', verdict:`✕ .Negative_Sqrt → bail`},
+      {call:`return root, .None`, state:'skip', verdict:`never reached`},
+    ],
+    out:{cls:'failrow', v:'0', e:'Negative_Sqrt'} },
+};
+let traceCur='happy';
+function renderL3(){
+  document.querySelectorAll('#tracenav button').forEach(b=>b.classList.toggle('on',b.dataset.k===traceCur));
+  const t=TRACE[traceCur];
+  document.getElementById('tracelabel').textContent=t.label;
+  document.getElementById('tracestage').innerHTML = t.steps.map(s=>
+    `<div class="tstep ${s.state}"><div class="call">${s.call}</div><div class="verdict">${s.verdict}</div></div>`).join('');
+  const o=t.out;
+  const argline = traceCur==='happy'?'chain(16, 4)':traceCur==='divfail'?'chain(10, 0)':'chain(-4, 1)';
+  document.getElementById('traceout').className='traceout '+o.cls;
+  document.getElementById('traceout').innerHTML =
+    `<span class="lab">${argline} -&gt;</span> <span class="v">${o.v}</span> <span class="lab">err:</span> <span class="e">${o.e}</span>`;
+}
+const tracenav=document.getElementById('tracenav');
+[['happy','(16, 4) happy path'],['divfail','(10, 0) divide fails'],['sqrtfail','(-4, 1) sqrt fails']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.k=k; b.textContent=t;
+  b.onclick=()=>{traceCur=k;renderL3();}; tracenav.appendChild(b);
+});
+document.getElementById('chainsrc').innerHTML =
+`<span class="cm">// the happy path reads as a straight line — no if err in sight</span>
+<span class="kw">safe_chain</span> :: proc(a, b: f64) -> (result: f64, err: Math_Error) {
+    quotient := divide(a, b) <span class="tg">or_return</span>
+    root     := safe_sqrt(quotient) <span class="tg">or_return</span>
+    <span class="kw">return</span> root, .None
+}`;
+
+/* ---------- LEVEL 4: or_else output + the three refused programs ----------
+   or_else output measured (claim or-else-default):
+     divide(10, 0) or_else 0 -> 0
+     divide(20, 4) or_else 0 -> 5
+   Error strings verified verbatim from the claims' compiler output:
+     break-or-return-needs-named, break-forget-second-return, break-or-else-wrong-type */
+document.getElementById('orelse-out').innerHTML =
+`failed := divide(10, 0) <span class="tg">or_else</span> 0   <span class="cm">// call fails → default 0 used</span>
+ok     := divide(20, 4) <span class="tg">or_else</span> 0   <span class="cm">// call succeeds → 5, default ignored</span>
+
+<span class="ok">divide(10, 0) or_else 0 -> 0</span>
+<span class="ok">divide(20, 4) or_else 0 -> 5</span>`;
+
+const ERR = {
+  named: {
+    code:`<span class="kw">safe_chain</span> :: proc(a, b: f64) -> (f64, Math_Error) {  <span class="cm">// unnamed!</span>
+    quotient := divide(a, b) <span class="er">or_return</span>
+    <span class="kw">return</span> quotient, .None
+}`,
+    err:`main.odin(18:14) Error: 'or_return' within a procedure with more than 1 return value requires that the return values are named, allowing for early return`,
+    why:`<span class="il">or_return</span> expands to a bare <span class="il">return</span>, which needs <b>named</b> return slots to know what to send back. Name them — <span class="il">-> (result: f64, err: Math_Error)</span> — and it builds.` },
+  forget: {
+    code:`r := divide(10, 2)   <span class="er">// took one name for a two-value return</span>
+fmt.println(r)`,
+    err:`main.odin(20:2) Error: Assignment count mismatch '1' = '2'`,
+    why:`<span class="il">divide</span> returns <b>two</b> values; you bound <b>one</b> name. Odin won't silently drop the trailing error. Consume both (<span class="il">r, err := …</span>) or discard one out loud with <span class="il">_</span>.` },
+  ortype: {
+    code:`n := divide(10, 0) <span class="er">or_else "nope"</span>   <span class="cm">// f64 slot, string default</span>
+fmt.println(n)`,
+    err:`Error: Cannot convert '"nope"' to 'f64'`,
+    why:`The <span class="il">or_else</span> default has to be assignment-compatible with the value slot. The result is an <span class="il">f64</span>, so the default must be a number — a string can't stand in for it.` },
+};
+let errKey='named';
+function renderL4(){
+  document.querySelectorAll('#errnav button').forEach(b=>b.classList.toggle('on',b.dataset.k===errKey));
+  const e=ERR[errKey];
+  document.getElementById('errpre').innerHTML = e.code + '\n\n<span class="er">' + e.err + '</span>';
+  document.getElementById('errwhy').innerHTML = e.why;
+}
+const errnav=document.getElementById('errnav');
+[['named','drop the named returns'],['forget','forget the error'],['ortype','or_else wrong type']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.k=k; b.textContent=t;
+  b.onclick=()=>{errKey=k;renderL4();}; errnav.appendChild(b);
+});
+
+/* ---------- level navigation ---------- */
+const LEVELS=[
+  ['1','What it is','an error is a returned value'],
+  ['2','The desugaring','or_return is one token'],
+  ['3','The trace','straight line, still safe'],
+  ['4','The rules it forces','named slots & or_else'],
+];
+let level='1';
+function setLevel(n){
+  level=n;
+  document.querySelectorAll('.levels button').forEach(b=>b.classList.toggle('on',b.dataset.n===n));
+  for(const [k] of LEVELS){ const el=document.getElementById('s'+k); if(el) el.classList.toggle('on',k===n); }
+  if(n==='1') renderL1();
+  if(n==='2') renderL2();
+  if(n==='3') renderL3();
+  if(n==='4') renderL4();
+}
+const lnav=document.getElementById('levelnav');
+for(const [n,tt,sub] of LEVELS){ const b=document.createElement('button'); b.dataset.n=n;
+  b.innerHTML=`<span class="lv">Level ${n} · ${sub}</span><span class="tt">${tt}</span>`;
+  b.onclick=()=>setLevel(n); lnav.appendChild(b); }
+setLevel('1');
+</script>
+</body>
+</html>

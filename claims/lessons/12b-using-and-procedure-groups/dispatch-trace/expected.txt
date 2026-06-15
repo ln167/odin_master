@@ -1,0 +1,10 @@
+area(c):
+  -> dispatched to area_circle
+area(s):
+  -> dispatched to area_square
+area(t):
+  -> dispatched to area_triangle
+results: 3.14159 9 10
+area_circle(c) directly:
+  -> dispatched to area_circle
+group result == direct result? true

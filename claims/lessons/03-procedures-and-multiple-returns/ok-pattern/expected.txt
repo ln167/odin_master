@@ -1,0 +1,2 @@
+index 1 -> 0 (a real score)
+index 9 -> missing (value was 0, ok was false)

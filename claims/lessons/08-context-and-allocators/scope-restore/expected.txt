@@ -1,0 +1,2 @@
+OUTER count (a before + d after block): 2
+INNER count (b + c, inside block only) : 2

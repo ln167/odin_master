@@ -77,6 +77,7 @@ main :: proc() {
 	fmt.println(typeid_of(type_of(dmg_mult)))
 	// fmt.println(type_of(dmg_mult))
 
+	// ALSO EASY MODE - instead of typid_of(type_of() just %T in the printf to output the type
 	enum_as_argument(.Fire)
 
 	// Here is a bit set (?)
@@ -84,9 +85,8 @@ main :: proc() {
 
 	resistances: Element_Set = {.Fire, .Ice} // set literal
 
-	if .Fire in resistances {/* immune to fire */}
-	
-	1
+	if .Fire in resistances { /* immune to fire */}
+
 
 }
 

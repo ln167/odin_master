@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Odin defer — scope, order, and firing time, four levels deep</title>
+<style>
+  :root{
+    --paper:#15130f; --card:#1d1a14; --ink:#ece6d8; --muted:#9a9182;
+    --rule:#332e24; --accent:#5ec8b8; --accent-soft:#1f342f;
+    --tag:#e0875a; --pad:#5a544a; --bad:#e0675a; --bad-soft:#2a1815;
+    --mono:"Cascadia Mono","Cascadia Code",Consolas,ui-monospace,"SF Mono",monospace;
+    --serif:-apple-system,"Segoe UI Variable Text","Segoe UI",system-ui,Roboto,"Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper);color:var(--ink)}
+  body{font-family:var(--serif);line-height:1.6;padding:0 20px;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-feature-settings:"kern" 1,"liga" 1}
+  .page{max-width:860px;margin:0 auto;padding:46px 0 90px}
+  .kicker{font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+  h1{font-size:30px;line-height:1.15;margin:0 0 18px;font-weight:600;letter-spacing:-.01em}
+
+  /* level tabs */
+  .levels{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+  .levels button{flex:1;min-width:150px;text-align:left;background:var(--card);border:1px solid var(--rule);
+    color:var(--muted);border-radius:10px;padding:11px 14px;cursor:pointer;transition:.12s;font-family:var(--serif)}
+  .levels button:hover{border-color:var(--accent)}
+  .levels button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--ink)}
+  .levels .lv{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);display:block;margin-bottom:3px}
+  .levels .tt{font-size:14px}
+  .rule{height:1px;background:var(--rule);margin:22px 0 26px}
+
+  .deck{color:var(--muted);font-size:17px;margin:0 0 24px;line-height:1.5}
+  .deck b{color:var(--ink)}
+  h2{font-size:21px;margin:0 0 14px;font-weight:600}
+  p.teach{font-size:16px;line-height:1.62;max-width:46em}
+  p.teach code,.il{font-family:var(--mono);font-size:.86em;background:#2a2519;padding:1px 5px;border-radius:4px}
+  .teach b{color:var(--tag)}
+  .section{display:none}
+  .section.on{display:block}
+
+  nav.sub{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;font-family:var(--mono);font-size:13px}
+  nav.sub button{background:var(--card);border:1px solid var(--rule);color:var(--muted);border-radius:8px;padding:8px 14px;cursor:pointer;transition:.12s}
+  nav.sub button:hover{color:var(--ink);border-color:var(--accent)}
+  nav.sub button.on{color:var(--ink);border-color:var(--accent);background:var(--accent-soft)}
+  .hint{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin:0 0 20px}
+
+  .canvas{background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:30px 28px}
+  .slotlabel{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:16px}
+
+  /* ---- the timeline device (registration column vs firing column) ---- */
+  .timeline{display:grid;grid-template-columns:1fr 44px 1fr;gap:0;align-items:stretch}
+  @media(max-width:640px){.timeline{grid-template-columns:1fr;gap:18px}}
+  .col{display:flex;flex-direction:column;gap:8px}
+  .colhd{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:6px;text-align:center}
+  .colhd .ar{color:var(--accent)}
+  .step{font-family:var(--mono);font-size:12.5px;border:1px solid var(--rule);border-radius:9px;padding:10px 12px;display:flex;align-items:center;gap:10px;transition:.18s;background:#1a1710;opacity:.35}
+  .step.shown{opacity:1}
+  .step .ord{flex:none;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600}
+  .step.reg .ord{background:var(--accent-soft);border:1px solid var(--accent);color:#cdeee7}
+  .step.fire .ord{background:#3a2417;border:1px solid var(--tag);color:#f0b48a}
+  .step.reg{border-color:#2c3b37}
+  .step.fire{border-color:#43342a}
+  .step.norm{border-style:dashed;border-color:#4a4436;color:var(--muted)}
+  .step.norm .ord{background:#241f17;border:1px solid #4a4436;color:#8a7a66}
+  .step .tx{color:var(--ink)}
+  .step.norm .tx{color:var(--muted)}
+  .mid{display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--muted);font-family:var(--mono);font-size:11px}
+  .mid .flip{font-size:22px;color:var(--tag);line-height:1}
+  .mid .flipword{writing-mode:vertical-rl;letter-spacing:.18em;text-transform:uppercase;margin-top:8px;color:var(--tag)}
+  @media(max-width:640px){.mid{flex-direction:row;gap:12px}.mid .flip{transform:rotate(90deg)}.mid .flipword{writing-mode:horizontal-tb;margin:0}}
+  .scopeline{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;margin-top:18px;border-top:1px dashed var(--rule);padding-top:12px}
+  .scopeline b{color:var(--tag)}
+
+  /* exit-paths device (Level 2) */
+  .paths{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:6px}
+  @media(max-width:640px){.paths{grid-template-columns:1fr}}
+  .path{background:#1a1710;border:1px solid var(--rule);border-radius:11px;padding:14px;font-family:var(--mono);font-size:11.5px}
+  .path h4{font-family:var(--mono);font-size:11px;margin:0 0 10px;color:var(--accent);font-weight:600;letter-spacing:.06em;text-transform:uppercase}
+  .path .row{padding:5px 0;color:var(--muted);border-bottom:1px solid #241f17}
+  .path .row:last-child{border-bottom:0}
+  .path .row.exit{color:var(--ink)}
+  .path .defrow{margin-top:8px;padding:7px 9px;border-radius:7px;background:#3a2417;border:1px solid var(--tag);color:#f0b48a}
+  .path .defrow b{color:#ffd9bd}
+
+  pre{font-family:var(--mono);font-size:12.5px;line-height:1.7;background:#1a1710;border:1px solid var(--rule);border-radius:10px;padding:16px 18px;overflow:auto;margin:22px 0 0;white-space:pre-wrap}
+  pre .cm{color:#6f6655}
+  pre .kw{color:var(--accent)}
+  pre .er{color:var(--bad)}
+  pre .tg{color:var(--tag)}
+
+  /* output terminal block */
+  .term{font-family:var(--mono);font-size:12.5px;line-height:1.7;background:#120f0b;border:1px solid var(--rule);border-radius:10px;padding:16px 18px;overflow:auto;margin:6px 0 0;white-space:pre-wrap}
+  .term .reg{color:#cdeee7}
+  .term .fire{color:var(--tag)}
+  .term .dim{color:#6f6655}
+
+  /* capture device (Level 3): one var, a line of timestamps */
+  .vartrack{display:flex;gap:8px;align-items:stretch;margin-top:10px;flex-wrap:wrap}
+  .vbox{flex:1;min-width:110px;background:#1a1710;border:1px solid var(--rule);border-radius:9px;padding:11px 10px;text-align:center;font-family:var(--mono);transition:.18s}
+  .vbox .when{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+  .vbox .val{font-size:20px;font-weight:600;color:var(--ink)}
+  .vbox.reg{border-color:var(--accent);background:var(--accent-soft)}
+  .vbox.reg .val{color:#cdeee7}
+  .vbox.fire{border-color:var(--tag);background:#2a1c12}
+  .vbox.fire .val{color:#f0b48a}
+  .vbox .arrow{font-size:10px;color:var(--muted);margin-top:5px}
+  .crossout{text-decoration:line-through;color:var(--bad);opacity:.7}
+
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:26px}
+  @media(max-width:680px){.cols{grid-template-columns:1fr}}
+  .panel h3{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 12px;font-weight:600}
+
+  .note{background:#1a1710;border:1px solid var(--rule);border-left:3px solid var(--tag);
+    border-radius:10px;padding:15px 18px;margin-top:24px;font-size:15px;line-height:1.6;color:var(--muted)}
+  .note b{color:var(--ink)}
+  .note .h{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--tag);display:block;margin-bottom:8px}
+  .foot{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;margin-top:34px}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="kicker">Odin · defer</div>
+  <h1>A defer, four levels deep</h1>
+
+  <div class="levels" id="levelnav"></div>
+  <div class="rule"></div>
+
+  <!-- ===================== LEVEL 1 — WHAT IT IS ===================== -->
+  <section class="section" id="s1">
+    <p class="deck"><span class="il">defer</span> takes one statement and <b>moves its execution to the end of the enclosing scope</b>. You read several defers top-to-bottom as you write them; at scope exit they fire <b>bottom-to-top</b>. Step through it and watch the order flip.</p>
+    <div class="hint">Every printed line on this page is captured from a compiled Odin program (claims/lessons/07b-defer).</div>
+
+    <nav class="sub" id="tlnav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="tllabel"></div>
+      <div class="timeline">
+        <div class="col">
+          <div class="colhd">source order <span class="ar">(register ↓)</span></div>
+          <div id="regcol"></div>
+        </div>
+        <div class="mid">
+          <div class="flip">⟲</div>
+          <div class="flipword">order flips</div>
+        </div>
+        <div class="col">
+          <div class="colhd">runtime order <span class="ar">(fire ↑)</span></div>
+          <div id="firecol"></div>
+        </div>
+      </div>
+      <div class="scopeline">All three defers fire at the <b>same instant</b> — the moment <span class="il">main</span>'s scope exits — in <b>LIFO</b> order: last registered, first to fire.</div>
+    </div>
+
+    <div class="cols">
+      <div class="panel"><h3>The program</h3>
+        <pre style="margin:0"><span class="kw">defer</span> println(<span class="tg">"defer A"</span>)
+<span class="kw">defer</span> println(<span class="tg">"defer B"</span>)
+<span class="kw">defer</span> println(<span class="tg">"defer C"</span>)
+println(<span class="tg">"after defers"</span>)</pre>
+      </div>
+      <div class="panel"><h3>Real output</h3>
+        <div class="term"><span class="dim">after defers</span>
+<span class="fire">defer C</span>
+<span class="fire">defer B</span>
+<span class="fire">defer A</span></div>
+      </div>
+    </div>
+    <p class="teach" style="margin-top:22px"><b>Why bottom-to-top is the right default:</b> registration order is usually <i>acquire</i> order — you grab A, then B (which leans on A), then C (which leans on B). The matching teardown has to run <b>inside-out</b>: release C first, then B, then A. LIFO firing is exactly that inside-out unwind, for free, just from the order you wrote the defers in. <span class="il">after defers</span> prints first because it is ordinary flow that runs while the scope is still open — the deferred lines are held back until the scope closes.</p>
+
+    <div class="note">
+      <span class="h">end of its OWN scope — not "end of the function"</span>
+      A scope is any brace-block, and a defer is pinned to whichever one it is lexically inside. A defer at the top of a proc fires when the proc returns; a defer inside an <span class="il">{ }</span> block fires when <i>that block</i> closes — possibly long before the proc ends. In <span class="il">x := 123; defer fmt.println(x)</span>, then an inner block <span class="il">{ defer x = 4; x = 2 }</span>: the inner <span class="il">defer x = 4</span> fires the instant the inner brace closes, so the very next line already sees <b>x = 4</b>. The outer defer waits for the proc and prints <b>x = 234</b> after a later reassignment. Two defers, two scopes, two different firing moments.
+    </div>
+  </section>
+
+  <!-- ============= LEVEL 2 — WHY YOU'D REACH FOR IT ============= -->
+  <section class="section" id="s2">
+    <p class="deck">Level 1 was <i>what it is</i>. Level 2 is <i>why it earns a keyword</i>: a defer fires on <b>every exit path</b>, so the teardown gets written <b>once</b>, right next to the setup — and cannot be forgotten on any branch out.</p>
+    <p class="teach">Take a proc with three ways out: two early <span class="il">return</span>s and falling off the bottom. You want a cleanup — close a handle, release a lock, print a timing report — to run on <b>all three</b>. Write it once as a defer at the top, next to where the work begins. Pick a path and watch the same deferred line run no matter how you leave:</p>
+
+    <nav class="sub" id="pathnav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="pathlabel"></div>
+      <div class="paths" id="pathstage"></div>
+      <div class="scopeline">The <span style="color:var(--tag)">end</span> line is written <b>once</b>, at the top next to <span class="il">start</span> — yet it runs last on whichever path you took. Real output of all three calls, in order:</div>
+      <div class="term" style="margin-top:14px"><span class="dim">attempt(1) start</span>
+  <span class="dim">early return A</span>
+<span class="fire">attempt(1) end</span>
+<span class="dim">attempt(2) start</span>
+  <span class="dim">early return B</span>
+<span class="fire">attempt(2) end</span>
+<span class="dim">attempt(0) start</span>
+  <span class="dim">fell through to the bottom</span>
+<span class="fire">attempt(0) end</span></div>
+    </div>
+
+    <p class="teach"><b>The point — cleanup lives next to acquisition.</b> The whole reason to spend a keyword here is <i>where the teardown sits in the source</i>. You write <span class="il">acquire</span>, then <span class="il">defer release</span> on the very next line, and the pair sits together at the top of the scope. The release <i>executes</i> at the bottom, on every path, but the <i>code</i> for it never drifts away from the thing it tears down.</p>
+
+    <p class="teach"><b>The counterfactual:</b> if a proc had exactly <i>one</i> way out — a single straight-line body with no early returns — you wouldn't need a defer for it; you'd just write the cleanup as the last line. Defer earns its keep precisely when there are <b>multiple exit paths</b>, because that's when "put the cleanup before every return" turns into N copies of the same teardown that all have to stay in sync.</p>
+
+    <h2 style="margin-top:30px">Why the hand-placed alternative is worse</h2>
+    <div class="canvas">
+      <div class="slotlabel" style="color:var(--bad)">cleanup copied before each exit — N copies, kept in sync by hand</div>
+      <pre style="margin:0"><span class="kw">if</span> path == 1 {
+    release()        <span class="cm">// copy 1</span>
+    <span class="kw">return</span> <span class="kw">false</span>
+}
+<span class="kw">if</span> path == 2 {
+    release()        <span class="cm">// copy 2 — easy to forget</span>
+    <span class="kw">return</span> <span class="kw">false</span>
+}
+release()            <span class="cm">// copy 3</span>
+<span class="kw">return</span> <span class="kw">true</span></pre>
+    </div>
+    <p class="teach">Three copies of the same teardown, one per exit. Add a fourth early return later and you must remember the fourth <span class="il">release()</span> — miss it and a handle leaks or a lock is held forever. The defer collapses all of it to one line that the compiler emits at <i>every</i> exit for you, so "did I clean up on this branch?" stops being a question you can get wrong.</p>
+  </section>
+
+  <!-- ===================== LEVEL 3 — THE SHARP EDGE ===================== -->
+  <section class="section" id="s3">
+    <p class="deck">Level 2 sold you on the defer. Level 3 is the catch that surprises people: a defer is a <b>recipe to run later, not a snapshot taken now</b>. It reads the <b>current</b> value of every variable it names at the moment it <i>fires</i> — which is scope exit, not where you wrote it.</p>
+    <p class="teach">Register <span class="il">defer fmt.println(y)</span> while <span class="il">y == 10</span>, then reassign <span class="il">y</span> twice. When the defer fires at scope exit, which <span class="il">y</span> does it print — 10, or the latest? Step it:</p>
+
+    <nav class="sub" id="capnav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="caplabel"></div>
+      <div class="vartrack" id="captrack"></div>
+      <pre style="margin-top:18px"><span class="cm">// y registered at 10, reassigned to 50 then 99</span>
+y := 10
+<span class="kw">defer</span> fmt.println(<span class="tg">"y at fire time ="</span>, y)
+y = 50
+y = 99
+<span class="cm">// scope exits here — the deferred print runs NOW and reads y</span></pre>
+      <div class="scopeline">Real output — the deferred print reads <span style="color:var(--tag)">y == 99</span>, the value at fire time, not the 10 it was registered with:</div>
+      <div class="term" style="margin-top:14px"><span class="dim">body sees y = 50 n = 2</span>
+<span class="fire">n at fire time = 3</span>
+<span class="fire">y at fire time = 99</span></div>
+    </div>
+
+    <p class="teach"><b>What is actually frozen:</b> the <i>statement</i> — the recipe "go read <span class="il">y</span> and print it." The values it touches are read when the recipe runs. So the defer observes whatever those variables hold at scope exit, after every reassignment the body made. (The two defers in that output, for <span class="il">n</span> and <span class="il">y</span>, also fire LIFO: <span class="il">n</span>'s defer was registered second, so it prints first.)</p>
+
+    <p class="teach"><b>The fix when you need the old value:</b> if you want the value <i>as of registration</i>, capture it yourself — save it into a fresh variable first and let the defer name <i>that</i>. The restore-a-global pattern leans on exactly this: <span class="il">old := g_flag; g_flag = true; defer g_flag = old</span>. The defer reads <span class="il">old</span> at fire time, but <span class="il">old</span> never changed after you saved it, so you get the snapshot — and you rewind to the value that was actually there, not a hardcoded default.</p>
+
+    <div class="note">
+      <span class="h">recipe, not closure-over-a-copy</span>
+      The deferred statement isn't a frozen copy of its variables and it isn't deferred until some far-off function exit — it's the literal statement, run at the end of <b>this</b> scope, reading <b>this</b> scope's live variables. That's why a defer inside a loop body (Level 4) sees that iteration's values, and why the restore-a-global trick works: same single rule — <i>run the statement at scope exit</i> — with no value-capture machinery hiding underneath.
+    </div>
+  </section>
+
+  <!-- ============= LEVEL 4 — THE EMERGENT GUARANTEES ============= -->
+  <section class="section" id="s4">
+    <p class="deck">The last level is what <b>emerges</b> from one tight definition — "<i>run this statement at the end of its own scope, after the value is handed back</i>." Two guarantees fall out of it that you never had to ask for.</p>
+
+    <p class="teach"><b>Guarantee one — the loop body is a scope, so a defer in it fires <i>per iteration</i>.</b> Not queued up to fire all at once later: the loop body opens and closes its scope on every pass, so the deferred line runs at the end of <i>each</i> iteration, interleaved with the work. If you defer a "close this" inside a loop over many handles, each handle is closed before the next one opens — only one is ever live at a time.</p>
+    <div class="term"><span class="dim">iter 0: top</span>
+<span class="dim">iter 0: middle</span>
+<span class="fire">iter 0: deferred (end of THIS iteration)</span>
+<span class="dim">iter 1: top</span>
+<span class="dim">iter 1: middle</span>
+<span class="fire">iter 1: deferred (end of THIS iteration)</span>
+<span class="dim">iter 2: top</span>
+<span class="dim">iter 2: middle</span>
+<span class="fire">iter 2: deferred (end of THIS iteration)</span>
+<span class="dim">loop done</span></div>
+
+    <p class="teach" style="margin-top:26px"><b>Guarantee two — a defer runs <i>after</i> the value is returned, so it can't change what comes back — and the compiler proves it.</b> Because firing happens after the return value is handed to the caller, a defer that tries to assign a named return value would be writing to something already gone. Rather than let you write code that <i>looks</i> like it edits the result, Odin rejects it at <b>compile time</b>:</p>
+    <pre><span class="kw">foo</span> :: proc() -> (n: int) {
+    <span class="kw">defer</span> {
+        n = 456   <span class="cm">// looks like it sets the return value...</span>
+    }
+    n = 123
+    <span class="kw">return</span>
+}
+
+<span class="er">main.odin(10:3) Error: Assignments to named return values within 'defer'</span>
+<span class="er">will not affect the value that is returned</span></pre>
+
+    <p class="teach"><b>The emergent payoff:</b> you never reason about "does this defer fire? on which path? in what order? before or after the return?" — the one rule answers all of it, and the compiler closes the two doors where the answer could bite you (a defer can't smuggle a value into the return, and <span class="il">return</span> itself can't appear inside a deferred block: <span class="il">'return' cannot be used within a defer statement</span>). The keyword stays a one-line guarantee instead of a behavior you have to keep a model of in your head.</p>
+
+    <p class="teach" style="margin-top:24px;color:var(--muted)">That's the arc: <b style="color:var(--ink)">L1</b> a defer moves a statement to scope exit, firing LIFO → <b style="color:var(--ink)">L2</b> it fires on every exit path, so cleanup sits next to acquisition and is written once → <b style="color:var(--ink)">L3</b> it's a recipe, not a snapshot — it reads live values at fire time → <b style="color:var(--ink)">L4</b> from "run at scope exit, after the return" emerge per-iteration loop firing and a compiler-proven can't-touch-the-return.</p>
+  </section>
+
+  <div class="foot">probes reproduce with <span style="color:var(--ink)">odin run</span> · every printed line &amp; the L4 error are real compiler output (claims/lessons/07b-defer)</div>
+</div>
+
+<script>
+/* ============================================================
+   Each interactive component = one data object + one render fn.
+   Vanilla JS, inline, no libraries. Every embedded line/value
+   comes from a passing claim under claims/lessons/07b-defer/.
+   ============================================================ */
+
+/* ---------- LEVEL 1: the registration→firing timeline ----------
+   Claim lifo-order: register A,B,C -> fire C,B,A; "after defers" first. */
+const TL_STEPS = [
+  // each step reveals more of both columns; the firing column is reversed.
+  { lbl:'1 · register the three defers (top to bottom)', reg:3, fire:0, norm:false },
+  { lbl:'2 · run normal flow — "after defers" prints while the scope is open', reg:3, fire:0, norm:true },
+  { lbl:'3 · scope exits — defers fire bottom to top (C, B, A)', reg:3, fire:3, norm:true },
+];
+const REG = [
+  {cls:'reg', ord:'A', tx:'defer println("defer A")'},
+  {cls:'reg', ord:'B', tx:'defer println("defer B")'},
+  {cls:'reg', ord:'C', tx:'defer println("defer C")'},
+];
+const FIRE = [
+  {cls:'fire', ord:'C', tx:'println("defer C")  ← fires 1st'},
+  {cls:'fire', ord:'B', tx:'println("defer B")  ← fires 2nd'},
+  {cls:'fire', ord:'A', tx:'println("defer A")  ← fires 3rd'},
+];
+const NORM = {cls:'norm', ord:'•', tx:'println("after defers")  — normal flow'};
+let tlStep=0;
+function renderL1(){
+  document.querySelectorAll('#tlnav button').forEach((b,i)=>b.classList.toggle('on',i===tlStep));
+  const st=TL_STEPS[tlStep];
+  document.getElementById('tllabel').textContent=st.lbl;
+  // registration column: show first `reg` of REG, plus the normal-flow row once it's run
+  let rc='';
+  REG.forEach((s,i)=>{ rc+=`<div class="step ${s.cls} ${i<st.reg?'shown':''}"><span class="ord">${s.ord}</span><span class="tx">${s.tx}</span></div>`; });
+  rc+=`<div class="step ${NORM.cls} ${st.norm?'shown':''}"><span class="ord">${NORM.ord}</span><span class="tx">${NORM.tx}</span></div>`;
+  document.getElementById('regcol').innerHTML=rc;
+  // firing column
+  let fc='';
+  FIRE.forEach((s,i)=>{ fc+=`<div class="step ${s.cls} ${i<st.fire?'shown':''}"><span class="ord">${s.ord}</span><span class="tx">${s.tx}</span></div>`; });
+  document.getElementById('firecol').innerHTML=fc;
+}
+const tlnav=document.getElementById('tlnav');
+['① register','② normal flow','③ scope exits'].forEach((t,i)=>{
+  const b=document.createElement('button'); b.textContent=t; b.onclick=()=>{tlStep=i;renderL1();}; tlnav.appendChild(b);
+});
+
+/* ---------- LEVEL 2: the three exit paths ----------
+   Claim early-return-fires: the "end" line runs on all three paths. */
+const PATHS = {
+  1: { label:'path 1 — early return A (first guard)',
+       rows:[['start runs','',false],['defer end REGISTERED','',false],
+             ['path == 1 ? yes','',false],['early return A','exit',true]] },
+  2: { label:'path 2 — early return B (second guard)',
+       rows:[['start runs','',false],['defer end REGISTERED','',false],
+             ['path == 1 ? no','',false],['path == 2 ? yes','',false],['early return B','exit',true]] },
+  0: { label:'path 0 — fall off the bottom',
+       rows:[['start runs','',false],['defer end REGISTERED','',false],
+             ['path == 1 ? no','',false],['path == 2 ? no','',false],['fell through, return true','exit',true]] },
+};
+let pathKey='1';
+function renderL2(){
+  document.querySelectorAll('#pathnav button').forEach(b=>b.classList.toggle('on',b.dataset.k===pathKey));
+  // show all three side by side, highlight the chosen one's exit
+  let html='';
+  for(const k of ['1','2','0']){
+    const p=PATHS[k]; const on=(k===pathKey);
+    let rows=p.rows.map(([t,kind,exit])=>`<div class="row ${exit?'exit':''}">${exit?'↳ ':''}${t}</div>`).join('');
+    html+=`<div class="path" style="${on?'border-color:var(--accent)':''}">
+      <h4>${on?'▶ ':''}exit via ${k===pathKey?'<span style="color:var(--accent)">this path</span>':'return '+k}</h4>
+      ${rows}
+      <div class="defrow"><b>defer fires here →</b> "attempt(${k}) end"</div>
+    </div>`;
+  }
+  document.getElementById('pathstage').innerHTML=html;
+  document.getElementById('pathlabel').textContent=PATHS[pathKey].label;
+}
+const pathnav=document.getElementById('pathnav');
+[['1','return on guard 1'],['2','return on guard 2'],['0','fall off bottom']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.k=k; b.textContent=t; b.onclick=()=>{pathKey=k;renderL2();}; pathnav.appendChild(b);
+});
+
+/* ---------- LEVEL 3: value at registration vs at fire time ----------
+   Claim capture-at-fire-time: y registered 10, ->50 ->99; defer reads 99. */
+const CAP = [
+  { lbl:'register: defer fmt.println(y) — y is 10 right now',
+    boxes:[['at register','10','reg'],['y = 50','50',''],['y = 99','99',''],['DEFER FIRES → reads y','?','']] },
+  { lbl:'body runs: y reassigned to 50, then to 99',
+    boxes:[['at register','10','dim'],['y = 50','50',''],['y = 99','99','reg'],['DEFER FIRES → reads y','?','']] },
+  { lbl:'scope exits: the deferred print reads y NOW — value 99, not 10',
+    boxes:[['at register','10','crossout'],['y = 50','50','dim'],['y = 99','99','dim'],['DEFER FIRES → reads y','99','fire']] },
+];
+let capStep=0;
+function renderL3(){
+  document.querySelectorAll('#capnav button').forEach((b,i)=>b.classList.toggle('on',i===capStep));
+  const c=CAP[capStep];
+  document.getElementById('caplabel').textContent=c.lbl;
+  document.getElementById('captrack').innerHTML = c.boxes.map(([when,val,cls],i)=>{
+    const arrow = i<c.boxes.length-1 ? '<div class="arrow">then →</div>' : '';
+    const valCls = cls==='crossout' ? 'val crossout' : 'val';
+    const boxCls = (cls==='reg'||cls==='fire') ? 'vbox '+cls : 'vbox';
+    const dim = cls==='dim' ? 'opacity:.4' : '';
+    return `<div class="${boxCls}" style="${dim}"><div class="when">${when}</div><div class="${valCls}">${val}</div>${arrow}</div>`;
+  }).join('');
+}
+const capnav=document.getElementById('capnav');
+['① register (y=10)','② reassign','③ fire — reads 99'].forEach((t,i)=>{
+  const b=document.createElement('button'); b.textContent=t; b.onclick=()=>{capStep=i;renderL3();}; capnav.appendChild(b);
+});
+
+/* ---------- level navigation ---------- */
+const LEVELS=[
+  ['1','What it is','register down, fire up (LIFO)'],
+  ['2','Why use it','runs on every exit path'],
+  ['3','The sharp edge','a recipe, not a snapshot'],
+  ['4','What emerges','per-iteration + return-proof'],
+];
+let level='1';
+function setLevel(n){
+  level=n;
+  document.querySelectorAll('.levels button').forEach(b=>b.classList.toggle('on',b.dataset.n===n));
+  for(const [k] of LEVELS){ const el=document.getElementById('s'+k); if(el) el.classList.toggle('on',k===n); }
+  if(n==='1') renderL1();
+  if(n==='2') renderL2();
+  if(n==='3') renderL3();
+}
+const lnav=document.getElementById('levelnav');
+for(const [n,tt,sub] of LEVELS){ const b=document.createElement('button'); b.dataset.n=n;
+  b.innerHTML=`<span class="lv">Level ${n} · ${sub}</span><span class="tt">${tt}</span>`;
+  b.onclick=()=>setLevel(n); lnav.appendChild(b); }
+setLevel('1');
+</script>
+</body>
+</html>

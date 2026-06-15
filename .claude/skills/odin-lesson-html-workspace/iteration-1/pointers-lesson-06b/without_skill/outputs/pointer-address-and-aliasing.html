@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Odin pointers — from address to type-told intent</title>
+<style>
+  :root{
+    --paper:#15130f; --card:#1d1a14; --ink:#ece6d8; --muted:#9a9182;
+    --rule:#332e24; --accent:#5ec8b8; --accent-soft:#1f342f;
+    --tag:#e0875a; --pad:#5a544a; --bad:#e0675a;
+    --mono:"Cascadia Mono","Cascadia Code",Consolas,ui-monospace,"SF Mono",monospace;
+    --serif:-apple-system,"Segoe UI Variable Text","Segoe UI",system-ui,Roboto,"Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper);color:var(--ink)}
+  body{font-family:var(--serif);line-height:1.6;padding:0 20px;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-feature-settings:"kern" 1,"liga" 1}
+  .page{max-width:860px;margin:0 auto;padding:46px 0 90px}
+  .kicker{font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+  h1{font-size:30px;line-height:1.15;margin:0 0 18px;font-weight:600;letter-spacing:-.01em}
+
+  /* level tabs */
+  .levels{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+  .levels button{flex:1;min-width:150px;text-align:left;background:var(--card);border:1px solid var(--rule);
+    color:var(--muted);border-radius:10px;padding:11px 14px;cursor:pointer;transition:.12s;font-family:var(--serif)}
+  .levels button:hover{border-color:var(--accent)}
+  .levels button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--ink)}
+  .levels .lv{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);display:block;margin-bottom:3px}
+  .levels .tt{font-size:14px}
+  .rule{height:1px;background:var(--rule);margin:22px 0 26px}
+
+  .deck{color:var(--muted);font-size:17px;margin:0 0 24px;line-height:1.5}
+  .deck b{color:var(--ink)}
+  h2{font-size:21px;margin:0 0 14px;font-weight:600}
+  p.teach{font-size:16px;line-height:1.62;max-width:46em}
+  p.teach code,.il{font-family:var(--mono);font-size:.86em;background:#2a2519;padding:1px 5px;border-radius:4px}
+  .teach b{color:var(--tag)}
+  .section{display:none}
+  .section.on{display:block}
+
+  nav.sub{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;font-family:var(--mono);font-size:13px}
+  nav.sub button{background:var(--card);border:1px solid var(--rule);color:var(--muted);border-radius:8px;padding:8px 14px;cursor:pointer;transition:.12s}
+  nav.sub button:hover{color:var(--ink);border-color:var(--accent)}
+  nav.sub button.on{color:var(--ink);border-color:var(--accent);background:var(--accent-soft)}
+  .hint{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin:0 0 20px}
+
+  .canvas{background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:30px 28px}
+  .slotlabel{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
+
+  /* byte strip (memory-layout device) */
+  .fieldrow{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;margin-bottom:6px;height:22px}
+  .fieldspan{grid-row:1;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:11px;color:var(--accent);border-bottom:2px solid var(--accent);border-radius:2px}
+  .strip{display:grid;grid-template-columns:repeat(8,1fr);gap:6px}
+  .byte{aspect-ratio:1/1.15;border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:var(--mono);position:relative;border:1px solid transparent}
+  .byte .hx{font-size:13px;font-weight:600}
+  .byte .ix{position:absolute;top:2px;left:4px;font-size:8px;color:var(--muted);opacity:.7}
+  .b-used{background:var(--accent-soft);border-color:var(--accent);color:#cdeee7}
+  .b-overlap{background:#241f17;border-color:#332e24;color:#6f6655}
+  .b-tag{background:#3a2417;border-color:var(--tag);color:#f0b48a}
+  .b-pad{background:#201d17;border-color:#332e24;color:#5a544a;background-image:repeating-linear-gradient(45deg,transparent,transparent 4px,#262119 4px,#262119 8px)}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;margin-top:18px;font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+  .legend span{display:flex;align-items:center;gap:7px}
+  .chip{width:13px;height:13px;border-radius:3px;border:1px solid}
+  .c-used{background:var(--accent-soft);border-color:var(--accent)}
+  .c-tag{background:#3a2417;border-color:var(--tag)}
+
+  /* the two-boxes aliasing diagram */
+  .mem{display:grid;grid-template-columns:1fr 1fr;gap:26px;margin-top:8px}
+  @media(max-width:640px){.mem{grid-template-columns:1fr}}
+  .cell{background:#1a1710;border:1px solid var(--rule);border-radius:10px;padding:16px 16px 14px}
+  .cell .nm{font-family:var(--mono);font-size:12px;color:var(--accent);margin-bottom:3px}
+  .cell .ty{font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:12px}
+  .cell .val{font-family:var(--mono);font-size:26px;font-weight:600;color:var(--ink);transition:color .2s}
+  .cell .val.flash{color:var(--tag)}
+  .cell .sub{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:8px}
+  .arrowwrap{position:relative;text-align:center;font-family:var(--mono);font-size:12px;color:var(--tag);margin:14px 0 2px}
+
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:26px}
+  @media(max-width:680px){.cols{grid-template-columns:1fr}}
+  .panel h3{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 12px;font-weight:600}
+  .sizes{font-family:var(--mono);font-size:13px;line-height:2}
+  .sizes .n{color:var(--accent);font-weight:600}
+  .sizes .big{color:var(--tag);font-weight:600}
+
+  pre{font-family:var(--mono);font-size:12.5px;line-height:1.7;background:#1a1710;border:1px solid var(--rule);border-radius:10px;padding:16px 18px;overflow:auto;margin:22px 0 0;white-space:pre-wrap}
+  pre .cm{color:#6f6655}
+  pre .kw{color:var(--accent)}
+  pre .er{color:var(--bad)}
+  pre .ok{color:var(--accent)}
+
+  /* "the wrong way, drawn" */
+  .oopstrip{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}
+  .oopcell{flex:1;min-width:120px;background:#241f17;border:1px dashed #5a4530;border-radius:7px;padding:9px 8px;font-family:var(--mono);font-size:10px;text-align:center;color:#8a7a66}
+  .heaplabel{font-family:var(--mono);font-size:10px;color:var(--bad);text-align:center;margin-top:8px}
+
+  /* lifetime timeline (L3) */
+  .frame{background:#1a1710;border:1px solid var(--rule);border-radius:10px;padding:14px 16px;margin:8px 0;font-family:var(--mono);font-size:12px}
+  .frame .ttl{color:var(--muted);font-size:10px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px}
+  .frame.alive{border-color:var(--accent)}
+  .frame.dead{border-color:var(--bad);background:#1f1410}
+  .frame .slot{display:inline-block;border-radius:6px;padding:6px 12px;margin:2px 0}
+  .slot.live{background:var(--accent-soft);border:1px solid var(--accent);color:#cdeee7}
+  .slot.gone{background:#2a1714;border:1px dashed var(--bad);color:#d88}
+  .ptrline{font-family:var(--mono);font-size:12px;color:var(--tag);margin-top:10px}
+
+  /* trio comparison table (L4) */
+  table.trio{width:100%;border-collapse:collapse;margin-top:8px;font-family:var(--mono);font-size:12.5px}
+  table.trio th,table.trio td{border:1px solid var(--rule);padding:9px 10px;text-align:center}
+  table.trio th{color:var(--muted);font-weight:600;background:#1a1710;letter-spacing:.04em}
+  table.trio td.ty{color:var(--accent);font-weight:600;text-align:left;white-space:nowrap}
+  table.trio td.yes{color:var(--accent)}
+  table.trio td.no{color:var(--pad)}
+  table.trio tr.hi td{background:#1f1a12}
+
+  .note{background:#1a1710;border:1px solid var(--rule);border-left:3px solid var(--tag);
+    border-radius:10px;padding:15px 18px;margin-top:24px;font-size:15px;line-height:1.6;color:var(--muted)}
+  .note b{color:var(--ink)}
+  .note .h{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--tag);display:block;margin-bottom:8px}
+  .foot{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;margin-top:34px}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="kicker">Odin · pointers</div>
+  <h1>A pointer, four levels deep</h1>
+
+  <div class="levels" id="levelnav"></div>
+  <div class="rule"></div>
+
+  <!-- ===================== LEVEL 1 — WHAT IT IS ===================== -->
+  <section class="section" id="s1">
+    <p class="deck">A pointer is <b>one 8-byte number, and that number is an address</b> — the location of some other data, not the data itself. Two names for one storage: write through the address and the original changes, because there was only ever one box. Pick an action and watch.</p>
+    <nav class="sub" id="nav"></nav>
+    <div class="hint">Real behavior, measured from a compiled Odin program. The address number is different every run, so this shows the relationship, not a fixed hex value.</div>
+    <div class="canvas">
+      <div class="slotlabel" id="aliaslabel"></div>
+      <div class="mem">
+        <div class="cell" id="cell-x">
+          <div class="nm">x</div><div class="ty">int — 8 bytes of value</div>
+          <div class="val" id="val-x">42</div>
+          <div class="sub">lives at some address, call it A</div>
+        </div>
+        <div class="cell" id="cell-p">
+          <div class="nm">p := &amp;x</div><div class="ty">^int — 8 bytes of address</div>
+          <div class="val" id="val-p">A</div>
+          <div class="sub" id="sub-p">p holds A — the address of x</div>
+        </div>
+      </div>
+      <div class="arrowwrap" id="aliasarrow">p ───────▶ x &nbsp;&nbsp; (p^ follows the address to the box)</div>
+      <p class="teach" id="aliasteach" style="margin:14px 0 0;color:var(--muted)"></p>
+    </div>
+    <div class="cols">
+      <div class="panel"><h3>size_of — an address is one width</h3>
+        <div class="sizes">
+          ^int&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= <span class="n">8</span><br>
+          ^Player&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= <span class="n">8</span><br>
+          ^[dynamic]string = <span class="n">8</span><br>
+          rawptr&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= <span class="n">8</span><br><br>
+          <span style="color:var(--muted)">Every pointer is the same 8 bytes on a 64-bit target — it holds an <b style="color:var(--ink)">address</b>, and an address is the same size no matter what sits there.</span>
+        </div>
+      </div>
+      <div class="panel"><h3>The byte strip of p</h3>
+        <div class="strip" id="pstrip" style="grid-template-columns:repeat(8,1fr)"></div>
+        <div class="legend" style="margin-top:12px"><span><i class="chip c-used"></i> the 8 bytes of the address</span></div>
+        <p class="teach" style="font-size:13.5px;color:var(--muted);margin-top:12px">Those 8 bytes, read as one number, <b style="color:var(--ink)">equal the address of x</b> — verified <span class="il">true</span> at runtime. A pointer is not a magic link; it's a plain integer that happens to name a place.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============= LEVEL 2 — WHY YOU'D REACH FOR IT ============= -->
+  <section class="section" id="s2">
+    <p class="deck">Level 1 was <i>what it is</i>. Now the case where <b>not</b> using a pointer is the wrong call: you want a procedure to <b>change the caller's data</b> — and without a pointer it physically cannot.</p>
+    <p class="teach">A <span class="il">Player</span> passed by value is <b>copied</b> into the procedure. The procedure can scribble on its copy all it likes; when it returns, the copy is gone and the caller's <span class="il">Player</span> never moved. Pass a <span class="il">^Player</span> instead and the procedure shares the caller's exact storage (Level 1's aliasing) — now the write sticks. Press the button to run both against the same starting <span class="il">hp = 20</span>:</p>
+
+    <div class="canvas">
+      <div class="slotlabel" id="healLabel">two procedures, one starting hp = 20</div>
+      <div class="cols" style="margin-top:6px">
+        <div class="panel">
+          <h3 style="color:var(--bad)">heal_copy(p: Player, 30)</h3>
+          <div class="frame"><div class="ttl">caller's player</div>
+            <span class="slot live" id="copy-hp">hp = 20</span>
+            <div class="ptrline" id="copy-note" style="color:var(--bad)">the proc mutated its private copy — thrown away on return</div>
+          </div>
+        </div>
+        <div class="panel">
+          <h3 style="color:var(--accent)">heal_ptr(p: ^Player, 30)</h3>
+          <div class="frame alive"><div class="ttl">caller's player</div>
+            <span class="slot live" id="ptr-hp">hp = 20</span>
+            <div class="ptrline">the proc shares the caller's storage — the write lands here</div>
+          </div>
+        </div>
+      </div>
+      <nav class="sub" style="justify-content:center;margin:18px 0 0"><button id="healrun">▸ run both procs</button></nav>
+    </div>
+
+    <p class="teach"><b>The counterfactual:</b> if your procedure only <i>reads</i> a small value — an <span class="il">int</span>, a tiny struct it never changes — a pointer buys you nothing; pass the value and let it copy. The pointer earns its keep precisely when you need <b>shared mutation</b> (the callee changes what the caller holds) or want to <b>skip copying something large</b> every call. No mutation, no bulk — no pointer.</p>
+
+    <h2 style="margin-top:30px">Why the alternatives are worse</h2>
+    <div class="canvas">
+      <div class="slotlabel" style="color:var(--bad)">trying to mutate the caller without a pointer</div>
+      <div class="oopstrip">
+        <div class="oopcell">return the whole<br>modified struct,<br>caller reassigns</div>
+        <div class="oopcell">stash it in a<br>package-level<br>global</div>
+        <div class="oopcell">give the proc a<br>by-value copy and<br>hope</div>
+      </div>
+      <div class="heaplabel">each one is either a needless copy, a hidden dependency, or simply doesn't work.</div>
+    </div>
+    <p class="teach">
+      <b>Return the whole struct and reassign</b> (<span class="il">p = heal(p, 30)</span>): works, but it copies the struct out and back every call — fine for an <span class="il">int</span>, wasteful for anything fat, and it can't touch a value the caller didn't hand back (e.g. one element of an array in place).<br><br>
+      <b>A package-level global</b>: now any two call sites fight over one piece of state, and the dependency is invisible at the call — the classic source of "why did this change?" bugs.<br><br>
+      <b>Pass by value and mutate</b>: doesn't work at all — that's the left column above, <span class="il">hp</span> stays 20. (In C#, by contrast, you'd reach for a <span class="il">ref</span> parameter here; Odin has no <span class="il">ref</span> keyword — you write the <span class="il">^Player</span> out loud, which <i>is</i> the same thing, just visible.)
+    </p>
+  </section>
+
+  <!-- ===================== LEVEL 3 — THE COST ===================== -->
+  <section class="section" id="s3">
+    <p class="deck">Level 2 sold you on the pointer. Level 3 is the bill: <b>a pointer is just an address — it has no idea whether the thing at that address is still alive.</b> Keeping the target alive is <i>your</i> job, and the language will not stop you from getting it wrong.</p>
+    <p class="teach">Here is the footgun. A procedure makes a local, hands back its address, and returns — the local's storage is reclaimed the instant the procedure exits, but the address you returned still names that now-reused spot. Step through it:</p>
+
+    <nav class="sub" id="dangnav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="danglabel"></div>
+      <div class="frame" id="dangframe">
+        <div class="ttl" id="dangttl">inside dangling()</div>
+        <span class="slot" id="dangslot">local = 7</span>
+        <div class="ptrline" id="dangptr">returned address ──▶ local</div>
+      </div>
+      <p class="teach" id="dangteach" style="margin:14px 0 0;color:var(--muted)"></p>
+    </div>
+
+    <p class="teach"><b>The good news:</b> Odin has a targeted escape check that rejects the <i>direct</i> shape at compile time. Returning <span class="il">&amp;local</span> straight out of a procedure does not build:</p>
+    <pre><span class="kw">dangling</span> :: proc() -> ^int {
+    local := 7
+    <span class="kw">return</span> &amp;local   <span class="cm">// the obvious dangle</span>
+}
+
+<span class="er">Error: It is unsafe to return the address of a local variable ('&local') from a procedure</span></pre>
+
+    <p class="teach"><b>The bill, in full:</b> that check guards the <i>obvious</i> shape, not lifetimes in general. An address that escapes <b>indirectly</b> — stored through an out-pointer, parked in a struct that outlives the call, or held past an arena reset — compiles in silence and dangles anyway. There is no garbage collector keeping the target alive while a pointer references it, and no compile-time lifetime tracking. (In Rust, by contrast, the borrow checker refuses to compile a pointer that could outlive its target; Odin makes a different trade — a much simpler language, and the lifetime discipline is on you.) When you allocate with <span class="il">new(Player)</span>, the storage lives until <i>you</i> call <span class="il">free</span> — forget it and you leak; <span class="il">free</span> twice and you corrupt the allocator.</p>
+
+    <div class="note">
+      <span class="h">not the same as a nil pointer</span>
+      A <b>dangling</b> pointer holds a once-valid address whose data is gone — the worst case, because reading it often <i>succeeds</i> and returns plausible garbage. A <b>nil</b> pointer is the zero value (<span class="il">p: ^int</span> is <span class="il">nil</span> until assigned), and a <span class="il">p == nil</span> check is a cheap compare-to-zero you <i>can</i> test for. Forcing a real load through nil — <span class="il">y := bad^</span> then using <span class="il">y</span> — is a hardware segfault, not a friendly Odin message. (A subtlety: <span class="il">fmt.println(bad^)</span> alone prints <span class="il">&lt;nil&gt;</span> without crashing, because <span class="il">fmt</span> sees a nil data pointer and declines to load — you have to force the load to feel the crash.) Nil you can guard against; dangling you cannot detect after the fact.
+    </div>
+  </section>
+
+  <!-- ============= LEVEL 4 — THE TYPE TELLS YOU ============= -->
+  <section class="section" id="s4">
+    <p class="deck">The last level isn't about one pointer — it's the property that <b>emerges</b> from Odin splitting "pointer" into three distinct types: the type itself tells the reader what the author meant, and forbids the operations that wouldn't make sense.</p>
+    <p class="teach">In some languages one pointer type means "exactly one T", "the first of an unknown run of T", and "an arithmetic cursor" all at once, and you guess which from context. Odin gives each its own type. Click a column to see what each allows — and what the compiler rejects:</p>
+
+    <nav class="sub" id="trionav"></nav>
+    <table class="trio" id="triotable">
+      <thead><tr><th style="text-align:left">operation</th><th data-c="ptr">^T<br><span style="font-weight:400;color:var(--muted)">one T</span></th><th data-c="mp">[^]T<br><span style="font-weight:400;color:var(--muted)">unknown count</span></th><th data-c="sl">[]T<br><span style="font-weight:400;color:var(--muted)">slice (lesson 06)</span></th></tr></thead>
+      <tbody id="triobody"></tbody>
+    </table>
+    <p class="teach" id="trioteach" style="color:var(--muted);margin-top:14px"></p>
+
+    <p class="teach" style="margin-top:24px">Two of those "no" cells are real compiler errors, not style advice. Indexing a single-value <span class="il">^T</span>, or doing arithmetic on it, simply has no operator — Odin has <b>no pointer-arithmetic operators at all</b>. <span class="il">p + 1</span> on a <span class="il">^int</span>:</p>
+    <pre><span class="kw">x</span>: int = 42
+p := &amp;x
+q := p + 1   <span class="cm">// step the pointer? there is no such operator</span>
+
+<span class="er">Error: Cannot convert untyped value '1' to '^int' from 'untyped integer'</span></pre>
+    <p class="teach">And a multi-pointer refuses the opposite mistake — you can index it, but you cannot <span class="il">^</span>-dereference it, because "dereference <i>which</i> element?" has no answer:</p>
+    <pre><span class="kw">mp</span>: [^]int = raw_data(nums[:])
+x := mp^     <span class="cm">// deref which one?</span>
+
+<span class="er">Error: Cannot dereference 'mp' of type '[^]int'</span>
+<span class="er">    Did you mean 'mp[0]'?</span></pre>
+
+    <p class="teach"><b>The emergent payoff:</b> because the three are different types, a function signature is a <b>contract you can read</b>. A parameter typed <span class="il">^Player</span> says "I will touch exactly one"; <span class="il">[^]c.int</span> says "this came from a C library and I must carry the count separately"; <span class="il">[]Player</span> says "a bounded run I can iterate and the length rides along." The compiler enforces the difference — indexing a <span class="il">^T</span> won't compile, so the "is this one thing or many?" bug is caught at the type level instead of becoming a runtime read off the end of something. The cheapest move on this whole ladder is to climb to the <b>lightest type that does the job</b>: a multi-pointer from C bindings should be sliced into a <span class="il">[]T</span> the moment you know the length, and from there you never think about raw addresses again.</p>
+
+    <p class="teach" style="margin-top:24px;color:var(--muted)">That's the arc: <b style="color:var(--ink)">L1</b> a pointer is one 8-byte address, and the address aliases real storage → <b style="color:var(--ink)">L2</b> that aliasing is the only way a proc can mutate the caller's data without copying → <b style="color:var(--ink)">L3</b> the address knows nothing about lifetime, so keeping the target alive is your unguarded job → <b style="color:var(--ink)">L4</b> Odin splits "pointer" into <span class="il">^T</span> / <span class="il">[^]T</span> / <span class="il">[]T</span> so the type states the intent and the compiler forbids the nonsense.</p>
+  </section>
+
+  <div class="foot">sizes, the aliasing result &amp; both compiler errors are real <span style="color:var(--ink)">odin</span> output · probes under <span style="color:var(--ink)">claims/lessons/06b-pointers/</span></div>
+</div>
+
+<script>
+/* ============================================================
+   Each interactive component = one data object + one render fn.
+   Vanilla JS, inline, no libraries.
+   Every number / behavior shown here is backed by a passing claim
+   under claims/lessons/06b-pointers/ (see the footer).
+   ============================================================ */
+
+/* ---------- LEVEL 1: aliasing demo (ptr-sizes + alias-bytes) ---------- */
+/* A fake but stable address so the "8 bytes of an address" strip has
+   something concrete to show. The page never claims a SPECIFIC address is
+   real (it isn't, every run differs) — it shows that p's bytes EQUAL the
+   address of x, which the alias-bytes claim verifies as `true`. */
+const ADDR = 0x7ff61a40;            // illustrative low 4 bytes; high 4 are 0
+const ADDR_BYTES = [0x40,0x1a,0xf6,0x7f,0x00,0x00,0x00,0x00]; // little-endian
+const A1 = {
+  read:  { xval:42,  pval:'A', flash:false,
+           label:'p^  —  read the int at p\'s address',
+           teach:'<code>p^</code> takes p\'s value (the address A), goes to that box, and reads the int there: <b>42</b>. The verified probe confirms <code>p^</code> reads x as 42. No copy, no link followed — just "go to A and look."' },
+  write: { xval:100, pval:'A', flash:true,
+           label:'p^ = 100  —  write through the address',
+           teach:'<code>p^ = 100</code> stores 100 at address A — and <b>x is now 100 too</b>, because x is the variable that lives at A. There is one box with two names. The probe confirms <code>x == p^</code> is <code>true</code> after the write: same storage, not a copy.' },
+};
+let a1 = 'read';
+function renderL1(){
+  document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('on',b.dataset.a===a1));
+  const s = A1[a1];
+  document.getElementById('aliaslabel').textContent = s.label;
+  const vx = document.getElementById('val-x');
+  vx.textContent = s.xval; vx.classList.toggle('flash', s.flash);
+  document.getElementById('val-p').textContent = s.pval;
+  document.getElementById('aliasteach').innerHTML = s.teach;
+  // byte strip of p (the 8 bytes of the address)
+  let st='';
+  for(let i=0;i<8;i++){ const hx=ADDR_BYTES[i].toString(16).padStart(2,'0');
+    st+=`<div class="byte b-used"><span class="ix">${i}</span><span class="hx">${hx}</span></div>`; }
+  document.getElementById('pstrip').innerHTML = st;
+}
+const nav=document.getElementById('nav');
+[['read','p^  (read)'],['write','p^ = 100  (write)']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.a=k; b.textContent=t;
+  b.onclick=()=>{a1=k;renderL1();}; nav.appendChild(b); });
+
+/* ---------- LEVEL 2: copy vs pointer (mutate-copy-vs-ptr) ---------- */
+/* Verified: heal_copy leaves hp = 20, heal_ptr leaves hp = 50. */
+let healed=false;
+function runHeal(){
+  healed=!healed;
+  const copy=document.getElementById('copy-hp'), ptr=document.getElementById('ptr-hp');
+  const copyNote=document.getElementById('copy-note');
+  if(healed){
+    copy.textContent='hp = 20'; copy.className='slot live';
+    copyNote.innerHTML='heal_copy added 30 to its private copy — the caller is still <b>20</b>';
+    ptr.textContent='hp = 50'; ptr.className='slot live';
+    document.getElementById('healLabel').textContent='ran both — copy stayed 20, pointer landed at 50';
+    document.getElementById('healrun').textContent='▸ reset';
+  } else {
+    copy.textContent='hp = 20'; copy.className='slot live'; copyNote.textContent='the proc mutated its private copy — thrown away on return';
+    ptr.textContent='hp = 20'; ptr.className='slot live';
+    document.getElementById('healLabel').textContent='two procedures, one starting hp = 20';
+    document.getElementById('healrun').textContent='▸ run both procs';
+  }
+}
+document.getElementById('healrun').onclick=runHeal;
+
+/* ---------- LEVEL 3: dangling-pointer timeline (break-return-local-addr) ---------- */
+const DANG = {
+  during: { ttl:'inside dangling() — local is alive', frameCls:'frame alive', slotCls:'slot live', slotTxt:'local = 7',
+            ptr:'about to: return &amp;local', label:'step 1 — the local exists, its address is valid',
+            teach:'Inside the procedure, <code>local</code> occupies real storage and <code>&amp;local</code> is a perfectly valid address. So far, nothing is wrong.' },
+  after:  { ttl:'dangling() has returned — local is gone', frameCls:'frame dead', slotCls:'slot gone', slotTxt:'reclaimed',
+            ptr:'returned address ──▶ reclaimed storage (DANGLING)', label:'step 2 — the proc returned; the address now points at garbage',
+            teach:'The instant <code>dangling()</code> returns, <code>local</code>\'s storage is reclaimed and reused by whatever runs next. The returned address still names that spot, but reading through it now gives garbage. This is the dangling pointer — and it is why Odin <b>rejects this exact shape at compile time</b> (below). It cannot reject the indirect escapes, though.' },
+};
+let dang='during';
+function renderL3(){
+  document.querySelectorAll('#dangnav button').forEach(b=>b.classList.toggle('on',b.dataset.d===dang));
+  const d=DANG[dang];
+  document.getElementById('dangframe').className=d.frameCls;
+  document.getElementById('dangttl').textContent=d.ttl;
+  const slot=document.getElementById('dangslot'); slot.className=d.slotCls; slot.textContent=d.slotTxt;
+  document.getElementById('dangptr').innerHTML=d.ptr;
+  document.getElementById('danglabel').textContent=d.label;
+  document.getElementById('dangteach').innerHTML=d.teach;
+}
+const dangnav=document.getElementById('dangnav');
+[['during','① local alive'],['after','② proc returned']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.d=k; b.textContent=t;
+  b.onclick=()=>{dang=k;renderL3();}; dangnav.appendChild(b); });
+
+/* ---------- LEVEL 4: the trio table (multipointer-index + break-* claims) ---------- */
+/* y/n/note per (op, type). 'note' cells carry a short caption. */
+const TRIO_ROWS = [
+  ['carries a length?',        ['no','no','yes'],   "Only []T stores its len — len(tail) == 2, verified. ^T is always exactly one; [^]T's count is unknown to the type."],
+  ['deref with p^ ?',          ['yes','no','no'],   "Only ^T can be dereferenced (one^ == 10, verified). mp^ is a compile error — deref which element? []T isn't a pointer, you index it."],
+  ['index p[i] ?',             ['no','yes-unchecked','yes-checked'], "[^]T indexes with NO bounds check (mp[3] == 40, you're on your honor). []T indexes WITH a bounds check. ^T can't index — it's one value."],
+  ['slice p[lo:hi] back to []T ?', ['no','yes','yes'], "mp[1:3] yields a []int of length 2 — the bridge from C-interop land back up to a bounded, length-carrying view."],
+  ['p + 1 arithmetic ?',       ['no','no','no'],    "None of them. Odin has no pointer-arithmetic operators; to advance a [^]T you slice (mp[1:]), you never add to an address."],
+];
+const COLMAP = {ptr:0, mp:1, sl:2};
+const CELL = {
+  'yes':           ['yes','yes'],
+  'no':            ['no','—'],
+  'yes-unchecked': ['yes','yes (unchecked)'],
+  'yes-checked':   ['yes','yes (checked)'],
+};
+let trioCol='mp';
+function renderL4(){
+  document.querySelectorAll('#trionav button').forEach(b=>b.classList.toggle('on',b.dataset.c===trioCol));
+  document.querySelectorAll('#triotable th[data-c]').forEach(th=>th.style.color = th.dataset.c===trioCol?'var(--accent)':'');
+  const ci = COLMAP[trioCol];
+  let body='';
+  for(const [op,vals,] of TRIO_ROWS){
+    let cells='';
+    vals.forEach((v,i)=>{
+      const [cls,txt]=CELL[v];
+      const hl = i===ci ? ' style="outline:1px solid var(--accent);outline-offset:-2px"' : '';
+      cells+=`<td class="${cls}"${hl}>${txt}</td>`;
+    });
+    body+=`<tr><td class="ty">${op}</td>${cells}</tr>`;
+  }
+  document.getElementById('triobody').innerHTML=body;
+  // teach line = the note for whichever row is most distinctive; show the col summary
+  const SUMM = {
+    ptr:'<code>^T</code> — pointer to exactly one T. You can <code>p^</code> it and pass it for shared mutation; you cannot index it or do arithmetic on it. This is the everyday pointer from Levels 1–3.',
+    mp:'<code>[^]T</code> — a multi-pointer: an unknown number of T. Index it (unchecked), slice it back to a <code>[]T</code>, but no <code>^</code>-deref and no arithmetic. You mostly meet this at C-binding boundaries, e.g. <code>process :: proc "c" (nums: [^]c.int, count: c.int)</code>.',
+    sl:'<code>[]T</code> — a slice (lesson 06): a <code>{ptr, len}</code> pair, so it carries its length and indexes with a bounds check. <code>size_of([]int) == 16</code> (verified) — exactly the 8-byte address plus an 8-byte length. The heaviest of the trio, and usually the one you want.',
+  };
+  document.getElementById('trioteach').innerHTML=SUMM[trioCol];
+}
+const trionav=document.getElementById('trionav');
+[['ptr','^T (one)'],['mp','[^]T (many)'],['sl','[]T (slice)']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.c=k; b.textContent=t;
+  b.onclick=()=>{trioCol=k;renderL4();}; trionav.appendChild(b); });
+
+/* ---------- level navigation ---------- */
+const LEVELS=[
+  ['1','What it is','an address that aliases'],
+  ['2','Why use it','mutate the caller\'s data'],
+  ['3','The cost','lifetime is your job'],
+  ['4','Why the types split','^T vs [^]T vs []T'],
+];
+let level='1';
+function setLevel(n){
+  level=n;
+  document.querySelectorAll('.levels button').forEach(b=>b.classList.toggle('on',b.dataset.n===n));
+  for(const [k] of LEVELS){ const el=document.getElementById('s'+k); if(el) el.classList.toggle('on',k===n); }
+  if(n==='1') renderL1();
+  if(n==='3') renderL3();
+  if(n==='4') renderL4();
+}
+const lnav=document.getElementById('levelnav');
+for(const [n,tt,sub] of LEVELS){ const b=document.createElement('button'); b.dataset.n=n;
+  b.innerHTML=`<span class="lv">Level ${n} · ${sub}</span><span class="tt">${tt}</span>`;
+  b.onclick=()=>setLevel(n); lnav.appendChild(b); }
+setLevel('1');
+</script>
+</body>
+</html>

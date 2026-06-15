@@ -1,0 +1,7 @@
+{}                   bits=0b0000 int=0
+{.Fire}              bits=0b0001 int=1
+{.Ice}               bits=0b0010 int=2
+{.Lightning}         bits=0b0100 int=4
+{.Physical}          bits=0b1000 int=8
+{.Fire, .Ice}        bits=0b0011 int=3
+{all four}           bits=0b1111 int=15

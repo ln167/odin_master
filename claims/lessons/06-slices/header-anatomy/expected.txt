@@ -1,0 +1,9 @@
+all  header: <addr>   data=<addr> len=6
+head header: <addr>   data=<addr> len=2
+mid  header: <addr>   data=<addr> len=3
+tail header: <addr>   data=<addr> len=3
+len fields: all=6 head=2 mid=3 tail=3
+raw_data(all)  == &nums[0] : true
+raw_data(head) == &nums[0] : true
+raw_data(mid)  == &nums[1] : true
+raw_data(tail) == &nums[3] : true

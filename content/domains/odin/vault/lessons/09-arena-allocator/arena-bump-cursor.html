@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Odin arena allocator — one block, four levels deep</title>
+<style>
+  :root{
+    --paper:#15130f; --card:#1d1a14; --ink:#ece6d8; --muted:#9a9182;
+    --rule:#332e24; --accent:#5ec8b8; --accent-soft:#1f342f;
+    --tag:#e0875a; --pad:#5a544a; --bad:#e0675a; --bad-soft:#2a1815;
+    --mono:"Cascadia Mono","Cascadia Code",Consolas,ui-monospace,"SF Mono",monospace;
+    --serif:-apple-system,"Segoe UI Variable Text","Segoe UI",system-ui,Roboto,"Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper);color:var(--ink)}
+  body{font-family:var(--serif);line-height:1.6;padding:0 20px;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-feature-settings:"kern" 1,"liga" 1}
+  .page{max-width:860px;margin:0 auto;padding:46px 0 90px}
+  .kicker{font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+  h1{font-size:30px;line-height:1.15;margin:0 0 18px;font-weight:600;letter-spacing:-.01em}
+
+  /* level tabs */
+  .levels{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+  .levels button{flex:1;min-width:150px;text-align:left;background:var(--card);border:1px solid var(--rule);
+    color:var(--muted);border-radius:10px;padding:11px 14px;cursor:pointer;transition:.12s;font-family:var(--serif)}
+  .levels button:hover{border-color:var(--accent)}
+  .levels button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--ink)}
+  .levels .lv{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);display:block;margin-bottom:3px}
+  .levels .tt{font-size:14px}
+  .rule{height:1px;background:var(--rule);margin:22px 0 26px}
+
+  .deck{color:var(--muted);font-size:17px;margin:0 0 24px;line-height:1.5}
+  .deck b{color:var(--ink)}
+  h2{font-size:21px;margin:0 0 14px;font-weight:600}
+  p.teach{font-size:16px;line-height:1.62;max-width:46em}
+  p.teach code,.il{font-family:var(--mono);font-size:.86em;background:#2a2519;padding:1px 5px;border-radius:4px}
+  .teach b{color:var(--tag)}
+  .section{display:none}
+  .section.on{display:block}
+
+  nav.sub{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;font-family:var(--mono);font-size:13px}
+  nav.sub button{background:var(--card);border:1px solid var(--rule);color:var(--muted);border-radius:8px;padding:8px 14px;cursor:pointer;transition:.12s}
+  nav.sub button:hover{color:var(--ink);border-color:var(--accent)}
+  nav.sub button.on{color:var(--ink);border-color:var(--accent);background:var(--accent-soft)}
+  nav.sub button:disabled{opacity:.4;cursor:default}
+  nav.sub button:disabled:hover{color:var(--muted);border-color:var(--rule)}
+  .hint{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin:0 0 20px}
+
+  .canvas{background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:30px 28px}
+  .slotlabel{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
+
+  /* the block + bump cursor (L1/L2) */
+  .block{position:relative;height:62px;background:#171410;border:1px solid var(--rule);border-radius:10px;overflow:hidden;display:flex}
+  .seg{height:100%;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:11px;color:#cdeee7;
+    border-right:1px solid #0e0c08;transition:width .42s cubic-bezier(.4,0,.2,1),background .3s;overflow:hidden;white-space:nowrap}
+  .seg.s0{background:var(--accent-soft);border-top:1px solid var(--accent);border-bottom:1px solid var(--accent)}
+  .seg.s1{background:#24463f;border-top:1px solid var(--accent);border-bottom:1px solid var(--accent)}
+  .seg.s2{background:#2e564d;border-top:1px solid var(--accent);border-bottom:1px solid var(--accent)}
+  .seg.pad{background:#201d17;color:#5a544a;background-image:repeating-linear-gradient(45deg,transparent,transparent 4px,#262119 4px,#262119 8px)}
+  .seg.free{flex:1;background:#171410;color:#4a453c;border-right:none;justify-content:flex-start;padding-left:12px}
+  .seg.stale{background:#241f17;color:#7a6a56;background-image:repeating-linear-gradient(45deg,transparent,transparent 5px,#2a2017 5px,#2a2017 10px)}
+  .cursor{position:absolute;top:-7px;bottom:-7px;width:2px;background:var(--tag);transition:left .42s cubic-bezier(.4,0,.2,1);z-index:3}
+  .cursor::before{content:"offset";position:absolute;top:-15px;left:50%;transform:translateX(-50%);font-family:var(--mono);font-size:9px;color:var(--tag);white-space:nowrap}
+  .blockaxis{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:9px}
+
+  .legend{display:flex;gap:18px;flex-wrap:wrap;margin-top:18px;font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+  .legend span{display:flex;align-items:center;gap:7px}
+  .chip{width:13px;height:13px;border-radius:3px;border:1px solid}
+  .c-used{background:var(--accent-soft);border-color:var(--accent)}
+  .c-pad{background:#201d17;border-color:#332e24}
+  .c-free{background:#171410;border-color:#332e24}
+  .c-stale{background:#241f17;border-color:#5a4530}
+
+  .readout{font-family:var(--mono);font-size:12.5px;line-height:1.9;margin-top:18px;color:var(--muted)}
+  .readout .n{color:var(--accent);font-weight:600}
+  .readout .t{color:var(--tag);font-weight:600}
+  .readout b{color:var(--ink)}
+
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:26px}
+  @media(max-width:680px){.cols{grid-template-columns:1fr}}
+  .panel h3{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 12px;font-weight:600}
+  .sizes{font-family:var(--mono);font-size:13px;line-height:2}
+  .sizes .n{color:var(--accent);font-weight:600}
+  .sizes .big{color:var(--tag);font-weight:600}
+
+  pre{font-family:var(--mono);font-size:12.5px;line-height:1.7;background:#1a1710;border:1px solid var(--rule);border-radius:10px;padding:16px 18px;overflow:auto;margin:22px 0 0;white-space:pre-wrap}
+  pre .cm{color:#6f6655}
+  pre .kw{color:var(--accent)}
+  pre .er{color:var(--bad)}
+  pre .ok{color:var(--accent)}
+
+  /* "the wrong way, drawn" (L3) */
+  .oopstrip{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+  .oopcell{flex:1;min-width:74px;background:#241f17;border:1px dashed #5a4530;border-radius:7px;padding:9px 8px;font-family:var(--mono);font-size:10px;text-align:center;color:#8a7a66}
+  .heaplabel{font-family:var(--mono);font-size:10px;color:var(--bad);text-align:center;margin-top:10px}
+
+  /* the three-cost cards (L4) */
+  .costnav{margin-bottom:8px}
+  .note{background:#1a1710;border:1px solid var(--rule);border-left:3px solid var(--tag);
+    border-radius:10px;padding:15px 18px;margin-top:24px;font-size:15px;line-height:1.6;color:var(--muted)}
+  .note b{color:var(--ink)}
+  .note .h{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--tag);display:block;margin-bottom:8px}
+  .foot{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;margin-top:34px}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="kicker">Odin · arena allocator</div>
+  <h1>An arena, four levels deep</h1>
+
+  <div class="levels" id="levelnav"></div>
+  <div class="rule"></div>
+
+  <!-- ===================== LEVEL 1 — WHAT IT IS ===================== -->
+  <section class="section" id="s1">
+    <p class="deck">An arena is <b>one block of bytes and a cursor</b>. To allocate, it reads the cursor, hands you that spot, and slides the cursor forward by your request. That's the whole algorithm — no free list, no block sizes, no bookkeeping. Press <b>allocate</b> and watch the cursor march.</p>
+    <div class="hint">Real offsets, measured from a compiled Odin program. Each <span style="color:var(--accent)">make</span> here asks for 8 bytes; the cursor still steps by 16 (the default 16-byte alignment rounds each request up).</div>
+
+    <nav class="sub" id="bumpnav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="bumplabel"></div>
+      <div class="block" id="bumpblock">
+        <div class="cursor" id="bumpcursor" style="left:0%"></div>
+      </div>
+      <div class="blockaxis"><span>0</span><span>64-byte window of the block</span></div>
+      <div class="legend">
+        <span><i class="chip c-used"></i> handed-out bytes</span>
+        <span><i class="chip c-pad"></i> alignment padding</span>
+        <span><i class="chip c-free"></i> still free (below the cursor)</span>
+      </div>
+      <div class="readout" id="bumpread"></div>
+    </div>
+
+    <div class="cols">
+      <div class="panel"><h3>The three operations</h3>
+        <div class="sizes">
+          allocate N&nbsp; = <span class="n">read cursor, +N, return old spot</span><br>
+          free one&nbsp;&nbsp;&nbsp;= <span class="n">do nothing</span><br>
+          free all&nbsp;&nbsp;&nbsp;= <span class="big">cursor = 0</span><br><br>
+          <span style="color:var(--muted)">An allocation is about three machine instructions: load the offset, add the size, store it back.</span>
+        </div>
+      </div>
+      <div class="panel"><h3>What you're seeing</h3><p class="teach" id="bumpteach"></p></div>
+    </div>
+  </section>
+
+  <!-- ============= LEVEL 2 — RESET REUSES THE BLOCK ============= -->
+  <section class="section" id="s2">
+    <p class="deck">Level 1 filled the block. Level 2 empties it: <b><span class="il">free_all</span> is a single store — it sets the cursor back to 0.</b> Every allocation is gone at once, and the next one reuses the same address the first one had.</p>
+    <p class="teach">There is no walking a list of objects to release them one by one. You snap the cursor to the start, and the bytes below it are free again — instantly, regardless of how many things were in there. Step through it:</p>
+
+    <nav class="sub" id="resetnav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="resetlabel"></div>
+      <div class="block" id="resetblock">
+        <div class="cursor" id="resetcursor" style="left:0%"></div>
+      </div>
+      <div class="blockaxis"><span>0</span><span>same backing buffer the whole time</span></div>
+      <div class="readout" id="resetread"></div>
+    </div>
+
+    <p class="teach"><b>The proof it's the same spot:</b> allocate 32 bytes — the cursor lands at offset <span class="il">40</span> (8 bytes of leading padding, then 32). Call <span class="il">free_all</span> — the cursor is <span class="il">0</span>. Allocate 32 bytes again — back to offset <span class="il">40</span>, and the returned address is <b>byte-for-byte the address the first allocation had</b>. The arena didn't ask anyone for memory; it just rewound its own cursor.</p>
+
+    <div class="note">
+      <span class="h">the high-water mark survives the reset</span>
+      The arena keeps a second number, <span class="il">peak_used</span> — the most it ever held. <span class="il">free_all</span> clears <span class="il">offset</span> (what's in use <i>now</i>) but leaves <span class="il">peak_used</span> alone. Allocate 1000 bytes and you read <span class="il">offset=1000 peak=1000</span>; after <span class="il">free_all</span>, <span class="il">offset=0 peak=1000</span>; a later 100-byte frame reads <span class="il">offset=100 peak=1000</span>. That preserved high-water mark is how you size the buffer: run with a generous one, watch the peak, shrink to fit.
+    </div>
+  </section>
+
+  <!-- ===================== LEVEL 3 — WHY YOU'D REACH FOR IT ===================== -->
+  <section class="section" id="s3">
+    <p class="deck">Levels 1 and 2 were the mechanism. Level 3 is <i>when it's the right tool</i>: <b>a pile of allocations that all die at the same moment.</b></p>
+    <p class="teach">A frame of a game builds path strings, dispatch lists, particle batches — dozens or hundreds of little allocations — and every one of them is garbage the instant the frame ends. A parser builds a tree of nodes, and they all die together when evaluation finishes. The allocations have <b>different sizes and different types but one shared lifetime</b>. That shared lifetime is exactly the thing an arena exploits: it doesn't track them individually because it doesn't need to — it ends them all with one cursor reset.</p>
+
+    <div class="canvas">
+      <div class="slotlabel">one frame: many sizes, many types, ONE lifetime</div>
+      <div class="cmdstrip" id="framestrip" style="display:flex;gap:5px;flex-wrap:wrap"></div>
+      <div style="text-align:center;color:var(--muted);font-family:var(--mono);font-size:11px;margin-top:12px">all of it packed contiguously in the block · <span style="color:var(--tag)">free_all</span> at end of frame ends every one of them at once</div>
+      <nav class="sub" style="justify-content:center;margin:14px 0 0"><button id="reframe">▸ record another frame</button></nav>
+    </div>
+
+    <p class="teach"><b>The counterfactual:</b> an arena is the wrong tool when the lifetimes <i>aren't</i> bundled — when some allocations must outlive the others by minutes and you don't know which ones up front, or when you need to hand memory back to the system mid-run. If a value has to survive the reset, you copy it out into a longer-lived allocator first. The arena's whole advantage — no per-object tracking — is precisely what makes it useless when the objects have independent lifetimes.</p>
+
+    <h2 style="margin-top:30px">Why the alternative is worse</h2>
+    <div class="canvas">
+      <div class="slotlabel" style="color:var(--bad)">tracking every allocation individually so you can free each one</div>
+      <div class="oopstrip">
+        <div class="oopcell">alloc → track</div><div class="oopcell">alloc → track</div><div class="oopcell">alloc → track</div><div class="oopcell">alloc → track</div><div class="oopcell">alloc → track</div><div class="oopcell">alloc → track</div>
+      </div>
+      <div class="heaplabel">each allocation carries size + free-list metadata · each release walks structures, splits/coalesces blocks · a matching free for every alloc, or it leaks</div>
+    </div>
+    <p class="teach">
+      <b>A general-purpose allocator</b> treats each of those frame allocations as independent: it stores a size next to each block, threads them onto free lists, splits and coalesces, and on a multithreaded path takes a lock. Allocation costs hundreds of instructions and a possible cache miss; every allocation needs a matching free or it leaks; a stray free-after-free is a crash. The arena throws all of that away — <i>because it knows up front the lifetimes are one</i>. You trade per-object flexibility you don't need for an allocation that's nearly free and a release that's a single store.
+    </p>
+  </section>
+
+  <!-- ============= LEVEL 4 — THE BILL ============= -->
+  <section class="section" id="s4">
+    <p class="deck">Nothing this cheap is free. The arena buys its speed by <b>refusing to do the things a general allocator does</b> — and those refusals are the bill. Pick one:</p>
+
+    <nav class="sub costnav" id="billnav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="billlabel"></div>
+      <pre id="billpre"></pre>
+      <p class="teach" id="billwhy" style="margin:18px 0 0"></p>
+    </div>
+
+    <p class="teach" style="margin-top:26px"><b>The emergent payoff:</b> add up those three refusals and the arena's deal is simple — <i>you</i> own one decision (when to reset) and in exchange the allocator owns nothing else. There are no individual frees to forget, no free-list corruption to chase, no per-object lifetimes to reason about. The discipline collapses from "match every allocation with a free, in the right order" down to "reset the region at its obvious boundary." When the boundary is obvious — end of frame, end of parse, end of request — that's a trade worth taking every time.</p>
+
+    <div class="note">
+      <span class="h">you've already been using one</span>
+      Odin hands every thread a <span class="il">context.temp_allocator</span> for free — and it is exactly this arena, with exactly these semantics. <span class="il">fmt.aprintf(..., allocator = context.temp_allocator)</span> bumps a cursor; <span class="il">free_all(context.temp_allocator)</span> snaps it back, typically at the end of a frame or request. The "scratch string you don't bother freeing" pattern you reach for without thinking <i>is</i> an arena reset on a schedule. This lesson is just naming the thing that was already under your hands.
+    </div>
+
+    <p class="teach" style="margin-top:24px;color:var(--muted)">That's the arc: <b style="color:var(--ink)">L1</b> one block + a cursor, allocate = bump it forward → <b style="color:var(--ink)">L2</b> <span class="il">free_all</span> snaps the cursor to 0, so everything is reclaimed at once and the next allocation reuses the same address → <b style="color:var(--ink)">L3</b> that's the right shape exactly when many allocations share one lifetime → <b style="color:var(--ink)">L4</b> the bill is what it refuses to do, and trading that for "reset at an obvious boundary" is the whole point — which is what <span class="il">temp_allocator</span> already is.</p>
+  </section>
+
+  <div class="foot">probes reproduce with <span style="color:var(--ink)">odin run</span> · offsets, addresses, the overflow &amp; the free-error are real compiler output (claims/lessons/09-arena-allocator)</div>
+</div>
+
+<script>
+/* ============================================================
+   Each interactive component = one data object + one render fn.
+   Vanilla JS, inline, no libraries. Math.random() is fine here
+   (browser page JS, not a workflow script).
+   All embedded offsets/addresses/errors come from passing claims
+   under claims/lessons/09-arena-allocator/.
+   ============================================================ */
+
+/* ---------- LEVEL 1: the bump cursor ----------
+   Measured (claim bump-cursor): three 8-byte allocations land the cursor at
+   offset 16, 32, 48; addresses strictly advance; the address gap between two
+   allocations equals the offset gap (contiguous). 8 bytes -> 16 because the
+   default alignment is 16. We render a 64-byte window; each step is one alloc. */
+const WINDOW = 64;                         // bytes shown across the block
+const ALLOCS = [16, 32, 48];               // cursor offset after alloc 1,2,3 (measured)
+const BUMP_TEACH = [
+  `Empty arena. <code>offset = 0</code>; the cursor sits at the start and the whole block is free.`,
+  `<code>make([]u8, 8)</code> hands out a chunk and bumps the cursor to <b>16</b>. The 8 bytes you asked for, plus 8 of padding to keep the next allocation 16-aligned. The returned address is where the cursor <i>used to be</i>.`,
+  `Second <code>make</code>: the cursor was at 16, so this allocation starts <i>there</i> — right after the first, no gap, no searching. Cursor moves to <b>32</b>. The new address is greater than the first by exactly 16 — the address gap equals the offset gap.`,
+  `Third <code>make</code>: same story, cursor 32 → <b>48</b>. Three allocations, three additions. The block is just filling up left to right, and the cursor is the only state the arena keeps about "what's in use."`,
+];
+let bumpStep = 0;                          // 0 = empty, 1..3 = after that alloc
+function renderBump(){
+  const block = document.getElementById('bumpblock');
+  block.querySelectorAll('.seg').forEach(s=>s.remove());
+  // build segments for each completed allocation: 8 used + 8 pad each
+  let html = '';
+  for(let i=0;i<bumpStep;i++){
+    const usedPct = 8/WINDOW*100, padPct = 8/WINDOW*100;
+    html += `<div class="seg s${i}" style="width:${usedPct}%">${i+1}</div>`;
+    html += `<div class="seg pad" style="width:${padPct}%">pad</div>`;
+  }
+  const off = bumpStep===0 ? 0 : ALLOCS[bumpStep-1];
+  html += `<div class="seg free">${off}/${WINDOW} used — free space below the cursor</div>`;
+  block.insertAdjacentHTML('beforeend', html);
+  document.getElementById('bumpcursor').style.left = (off/WINDOW*100)+'%';
+  document.getElementById('bumplabel').textContent =
+    bumpStep===0 ? 'arena.offset = 0  (empty)' : `after allocation ${bumpStep} — arena.offset = ${off}`;
+  document.getElementById('bumpteach').innerHTML = BUMP_TEACH[bumpStep];
+  let r = `<b>arena.offset</b> = <span class="n">${off}</span>`;
+  if(bumpStep>=1){
+    const seq = ALLOCS.slice(0,bumpStep).map(v=>`<span class="n">${v}</span>`);
+    r += `  &nbsp;·&nbsp; cursor walk: <span class="n">0</span> → ${seq.join(' → ')}`;
+    if(bumpStep>=2) r += `<br>address gap between allocations = offset gap = <span class="t">16</span> bytes &nbsp;(contiguous — no holes)`;
+  }
+  document.getElementById('bumpread').innerHTML = r;
+  // button states
+  document.getElementById('bump-alloc').disabled = bumpStep>=3;
+  document.getElementById('bump-reset').disabled = bumpStep===0;
+}
+const bumpnav = document.getElementById('bumpnav');
+[['bump-alloc','▸ allocate make([]u8, 8)'],['bump-reset','↺ start over']].forEach(([id,t])=>{
+  const b=document.createElement('button'); b.id=id; b.textContent=t; bumpnav.appendChild(b);
+});
+document.getElementById('bump-alloc').onclick=()=>{ if(bumpStep<3){bumpStep++;renderBump();} };
+document.getElementById('bump-reset').onclick=()=>{ bumpStep=0;renderBump(); };
+
+/* ---------- LEVEL 2: free_all rewinds the cursor ----------
+   Measured (claim reset-reuses-address): 32-byte alloc -> offset 40; free_all
+   -> offset 0; 32-byte alloc again -> offset 40, and the address EQUALS the
+   first allocation's address. (40 = 8 leading pad + 32.)
+   Measured (claim free-all-is-one-store): free_all does not zero the bytes —
+   the old value is still readable until the next allocation overwrites it.     */
+const RESET = [
+  { lbl:'1 · allocate 32 bytes', off:40, mode:'used',
+    read:`<b>arena.offset</b> = <span class="n">40</span> &nbsp;(8 bytes leading padding + 32 requested)<br>the returned address is recorded as <span class="t">A</span>.` },
+  { lbl:'2 · free_all — one store, cursor = 0', off:0, mode:'stale',
+    read:`<b>arena.offset</b> = <span class="n">0</span> in a single instruction. The bytes are <i>not</i> zeroed — read address <span class="t">A</span> right now and the old <span class="n">1234</span> is still sitting there (stale, but plausible). The space below the cursor is simply free again.` },
+  { lbl:'3 · allocate 32 bytes again', off:40, mode:'used',
+    read:`<b>arena.offset</b> = <span class="n">40</span> again, and the returned address is <span class="t">A</span> — <b>byte-for-byte the same address</b> the first allocation had. The new <span class="n">5678</span> overwrites the stale bytes. Reuse, proven.` },
+];
+let resetStep = 0;
+function renderReset(){
+  const r = RESET[resetStep];
+  const block = document.getElementById('resetblock');
+  block.querySelectorAll('.seg').forEach(s=>s.remove());
+  let html='';
+  if(r.mode==='used'){
+    const padPct=8/WINDOW*100, usedPct=32/WINDOW*100;
+    html += `<div class="seg pad" style="width:${padPct}%">pad</div>`;
+    html += `<div class="seg s0" style="width:${usedPct}%">32 bytes @ A</div>`;
+    html += `<div class="seg free">free</div>`;
+  } else {
+    // reset: cursor at 0, the old bytes shown as stale-but-present below it
+    html += `<div class="seg stale" style="width:${40/WINDOW*100}%">stale bytes still here (1234)</div>`;
+    html += `<div class="seg free">free</div>`;
+  }
+  block.insertAdjacentHTML('beforeend', html);
+  document.getElementById('resetcursor').style.left = (r.off/WINDOW*100)+'%';
+  document.getElementById('resetlabel').textContent = r.lbl + ` — offset = ${r.off}`;
+  document.getElementById('resetread').innerHTML = r.read;
+  document.getElementById('reset-step').disabled = resetStep>=2;
+  document.getElementById('reset-rewind').disabled = resetStep===0;
+}
+const resetnav = document.getElementById('resetnav');
+[['reset-step','▸ next step'],['reset-rewind','↺ start over']].forEach(([id,t])=>{
+  const b=document.createElement('button'); b.id=id; b.textContent=t; resetnav.appendChild(b);
+});
+document.getElementById('reset-step').onclick=()=>{ if(resetStep<2){resetStep++;renderReset();} };
+document.getElementById('reset-rewind').onclick=()=>{ resetStep=0;renderReset(); };
+
+/* ---------- LEVEL 3: a different frame of allocations every press ---------- */
+let frameNo = 0;
+function genFrame(){
+  frameNo++;
+  const pool = [
+    ['path string','[]u8'], ['dispatch list','[dynamic]Cmd'], ['particle batch','[]Particle'],
+    ['AST node','^Node'], ['aprintf result','string'], ['scratch buffer','[]f32'],
+  ];
+  const n = 4 + Math.floor(Math.random()*5);  // 4..8 allocations
+  const seq = [];
+  for(let i=0;i<n;i++) seq.push(pool[Math.floor(Math.random()*pool.length)]);
+  document.getElementById('framestrip').innerHTML = seq.map(([nm,ty])=>
+    `<div class="oopcell" style="border-style:solid;border-color:var(--accent);color:#cdeee7;background:var(--accent-soft)">${nm}<br><span style="color:var(--tag)">${ty}</span></div>`
+  ).join('');
+}
+document.getElementById('reframe').onclick = genFrame;
+
+/* ---------- LEVEL 4: the three refusals (verified) ----------
+   Verified strings:
+     break-arena-overflow : make returns len=0, err=Out_Of_Memory (single-value form discards it)
+     break-free-individual: delete on an arena item returns err=Mode_Not_Implemented (silent no-op)
+     free-all-is-one-store: free_all does not zero; a pointer held across it reads stale bytes      */
+const BILL = {
+  capacity: {
+    label:'1 · the block has a fixed size — it cannot grow',
+    code:`backing := make([]u8, 256)         <span class="cm">// a tiny block</span>
+context.allocator = mem.arena_allocator(&arena)
+big := make([]int, 1000)            <span class="cm">// needs far more than 256 bytes</span>
+fmt.printfln("len=%d", len(big))`,
+    out:`overflow: len=<span class="ok">0</span> err=<span class="ok">Out_Of_Memory</span>`,
+    why:`An arena never asks the OS for more — when the request won't fit, allocation returns an empty slice (<code>len 0</code>, nil data) and an <code>Out_Of_Memory</code> error. The danger isn't a crash; it's that the single-value <code>big := make(...)</code> form <b>silently discards that error</b> and leaves you a zero-length slice. The two-value <code>big, err := make(...)</code> form is how you actually see it.` },
+  nofree: {
+    label:'2 · you cannot free one allocation',
+    code:`s, _ := make([]int, 4)
+err := delete(s)                    <span class="cm">// try to free just this slice</span>
+fmt.printfln("err=%v", err)`,
+    out:`delete arena item err=<span class="ok">Mode_Not_Implemented</span>`,
+    why:`The arena keeps no metadata about individual allocations, so it <i>can't</i> free one — its <code>.Free</code> path returns <code>Mode_Not_Implemented</code> as an error value, not a crash. A bare <code>delete(s)</code> discards that error and is a silent no-op. The contract is one-way on purpose: allocate many, reset all. Individual frees just quietly do nothing.` },
+  stale: {
+    label:'3 · free_all does not zero — held pointers dangle silently',
+    code:`first := make([]int, 1); first[0] = 1234
+stale := &first[0]                  <span class="cm">// a pointer into the block</span>
+mem.arena_free_all(&arena)          <span class="cm">// one store: offset = 0</span>
+fmt.printfln("stale=%d", stale^)    <span class="cm">// reads the OLD bytes</span>`,
+    out:`stale read after reset (not zeroed)=<span class="ok">1234</span>
+after re-alloc, same address now reads=<span class="ok">5678</span>`,
+    why:`<code>free_all</code> is a single store to <code>offset</code>; it does <b>not</b> wipe the bytes. So a pointer you held across the reset still reads its old value — stale but plausible — right up until the next allocation reuses that address and the value changes underneath it. That's the use-after-reset bug, and it's why arena lifetimes have to be short and obvious. If a value must survive the reset, copy it into a longer-lived allocator first.` },
+};
+let billKey = 'capacity';
+function renderBill(){
+  document.querySelectorAll('#billnav button').forEach(b=>b.classList.toggle('on',b.dataset.k===billKey));
+  const e = BILL[billKey];
+  document.getElementById('billlabel').textContent = e.label;
+  document.getElementById('billpre').innerHTML = e.code + '\n\n' + e.out;
+  document.getElementById('billwhy').innerHTML = e.why;
+}
+const billnav = document.getElementById('billnav');
+[['capacity','fixed capacity'],['nofree','no individual free'],['stale','use-after-reset']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.k=k; b.textContent=t;
+  b.onclick=()=>{billKey=k;renderBill();}; billnav.appendChild(b);
+});
+
+/* ---------- level navigation ---------- */
+const LEVELS=[
+  ['1','What it is','one block + a cursor'],
+  ['2','Reset','free_all rewinds, reuses'],
+  ['3','Why use it','bundled lifetimes'],
+  ['4','The bill','what it refuses to do'],
+];
+let level='1';
+function setLevel(n){
+  level=n;
+  document.querySelectorAll('.levels button').forEach(b=>b.classList.toggle('on',b.dataset.n===n));
+  for(const [k] of LEVELS){ const el=document.getElementById('s'+k); if(el) el.classList.toggle('on',k===n); }
+  if(n==='1') renderBump();
+  if(n==='2') renderReset();
+  if(n==='3' && frameNo===0) genFrame();
+  if(n==='4') renderBill();
+}
+const lnav=document.getElementById('levelnav');
+for(const [n,tt,sub] of LEVELS){ const b=document.createElement('button'); b.dataset.n=n;
+  b.innerHTML=`<span class="lv">Level ${n} · ${sub}</span><span class="tt">${tt}</span>`;
+  b.onclick=()=>setLevel(n); lnav.appendChild(b); }
+setLevel('1');
+</script>
+</body>
+</html>

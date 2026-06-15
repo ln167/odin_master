@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Odin dynamic array — header, growth, and ownership</title>
+<style>
+  :root{
+    --paper:#15130f; --card:#1d1a14; --ink:#ece6d8; --muted:#9a9182;
+    --rule:#332e24; --accent:#5ec8b8; --accent-soft:#1f342f;
+    --tag:#e0875a; --pad:#5a544a; --bad:#e0675a; --bad-soft:#2a1815;
+    --mono:"Cascadia Mono","Cascadia Code",Consolas,ui-monospace,"SF Mono",monospace;
+    --serif:-apple-system,"Segoe UI Variable Text","Segoe UI",system-ui,Roboto,"Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper);color:var(--ink)}
+  body{font-family:var(--serif);line-height:1.6;padding:0 20px;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-feature-settings:"kern" 1,"liga" 1}
+  .page{max-width:860px;margin:0 auto;padding:46px 0 90px}
+  .kicker{font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+  h1{font-size:30px;line-height:1.15;margin:0 0 18px;font-weight:600;letter-spacing:-.01em}
+
+  /* level tabs */
+  .levels{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+  .levels button{flex:1;min-width:150px;text-align:left;background:var(--card);border:1px solid var(--rule);
+    color:var(--muted);border-radius:10px;padding:11px 14px;cursor:pointer;transition:.12s;font-family:var(--serif)}
+  .levels button:hover{border-color:var(--accent)}
+  .levels button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--ink)}
+  .levels .lv{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);display:block;margin-bottom:3px}
+  .levels .tt{font-size:14px}
+  .rule{height:1px;background:var(--rule);margin:22px 0 26px}
+
+  .deck{color:var(--muted);font-size:17px;margin:0 0 24px;line-height:1.5}
+  .deck b{color:var(--ink)}
+  h2{font-size:21px;margin:0 0 14px;font-weight:600}
+  p.teach{font-size:16px;line-height:1.62;max-width:46em}
+  p.teach code,.il{font-family:var(--mono);font-size:.86em;background:#2a2519;padding:1px 5px;border-radius:4px}
+  .teach b{color:var(--tag)}
+  .section{display:none}
+  .section.on{display:block}
+
+  nav.sub{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;font-family:var(--mono);font-size:13px}
+  nav.sub button{background:var(--card);border:1px solid var(--rule);color:var(--muted);border-radius:8px;padding:8px 14px;cursor:pointer;transition:.12s}
+  nav.sub button:hover{color:var(--ink);border-color:var(--accent)}
+  nav.sub button.on{color:var(--ink);border-color:var(--accent);background:var(--accent-soft)}
+  .hint{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin:0 0 20px}
+
+  .canvas{background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:30px 28px}
+  .slotlabel{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
+
+  /* the header (Level 1): four fields, one row */
+  .header{display:grid;grid-template-columns:1fr 1fr 1fr 2fr;gap:8px}
+  .hf{background:#1a1710;border:1px solid var(--rule);border-radius:9px;padding:11px 12px;font-family:var(--mono);position:relative;min-height:78px}
+  .hf .fname{font-size:11px;color:var(--muted);letter-spacing:.06em}
+  .hf .fval{font-size:15px;color:var(--ink);font-weight:600;margin-top:7px;word-break:break-all}
+  .hf .fbytes{position:absolute;bottom:7px;right:10px;font-size:10px;color:var(--muted);opacity:.8}
+  .hf.data{border-color:var(--tag)} .hf.data .fval{color:#f0b48a}
+  .hf.len{border-color:var(--accent)} .hf.len .fval{color:#cdeee7}
+  .hf.cap{border-color:#3a6e64}
+  .hf.alloc{border-color:var(--rule)} .hf.alloc .fval{color:var(--muted);font-size:12px}
+  @media(max-width:640px){.header{grid-template-columns:1fr 1fr}}
+  .arrowdown{text-align:center;color:var(--muted);font-family:var(--mono);font-size:12px;margin:14px 0 8px}
+
+  /* the backing buffer (Level 1 & 3): a row of slot cells */
+  .buffer{display:flex;gap:5px;flex-wrap:wrap}
+  .slot{width:42px;height:46px;border-radius:7px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:var(--mono);font-size:13px;border:1px solid transparent;position:relative;transition:.18s}
+  .slot .si{position:absolute;top:2px;left:4px;font-size:8px;color:var(--muted);opacity:.7}
+  .s-live{background:var(--accent-soft);border-color:var(--accent);color:#cdeee7}
+  .s-free{background:#201d17;border-color:#2a2519;color:#5a544a;background-image:repeating-linear-gradient(45deg,transparent,transparent 4px,#262119 4px,#262119 8px)}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;margin-top:18px;font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+  .legend span{display:flex;align-items:center;gap:7px}
+  .chip{width:13px;height:13px;border-radius:3px;border:1px solid}
+  .c-live{background:var(--accent-soft);border-color:var(--accent)}
+  .c-free{background:#201d17;border-color:#2a2519}
+  .c-data{background:#1a1710;border-color:var(--tag)}
+
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:26px}
+  @media(max-width:680px){.cols{grid-template-columns:1fr}}
+  .panel h3{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 12px;font-weight:600}
+  .sizes{font-family:var(--mono);font-size:13px;line-height:2}
+  .sizes .n{color:var(--accent);font-weight:600}
+  .sizes .big{color:var(--tag);font-weight:600}
+
+  pre{font-family:var(--mono);font-size:12.5px;line-height:1.7;background:#1a1710;border:1px solid var(--rule);border-radius:10px;padding:16px 18px;overflow:auto;margin:22px 0 0;white-space:pre-wrap}
+  pre .cm{color:#6f6655}
+  pre .kw{color:var(--accent)}
+  pre .er{color:var(--bad)}
+  pre .ok{color:var(--accent)}
+
+  /* "the wrong way, drawn" */
+  .oopstrip{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}
+  .oopcell{flex:1;min-width:84px;background:#241f17;border:1px dashed #5a4530;border-radius:7px;padding:9px 8px;font-family:var(--mono);font-size:10px;text-align:center;color:#8a7a66}
+  .heaplabel{font-family:var(--mono);font-size:10px;color:var(--bad);text-align:center;margin-top:8px}
+
+  /* growth stepper readout (Level 3) */
+  .readout{font-family:var(--mono);font-size:13px;color:var(--muted);margin:14px 0 4px;display:flex;gap:22px;flex-wrap:wrap}
+  .readout b{color:var(--ink)}
+  .readout .lenv{color:var(--accent)} .readout .capv{color:#7fd0c4}
+  .flash{animation:flash .6s ease}
+  @keyframes flash{0%{box-shadow:0 0 0 2px var(--tag)}100%{box-shadow:none}}
+
+  /* proportional bars (Level 3 cost) */
+  .bar{height:30px;border-radius:6px;display:flex;align-items:center;font-family:var(--mono);font-size:12px;padding-left:10px;color:#0e0c08;font-weight:600;margin:6px 0;transition:width .3s,background .2s}
+  .bar.used{background:var(--accent)}
+  .bar.waste{background:repeating-linear-gradient(45deg,#5a544a,#5a544a 6px,#48433b 6px,#48433b 12px);color:var(--ink)}
+  .barrow{display:flex;align-items:center;gap:10px}
+  .barrow .lab{font-family:var(--mono);font-size:11px;color:var(--muted);width:150px;flex:none}
+
+  /* ownership lifecycle (Level 4) */
+  .life{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:6px}
+  @media(max-width:640px){.life{grid-template-columns:1fr}}
+  .lane{background:#1a1710;border:1px solid var(--rule);border-radius:12px;padding:16px}
+  .lane.good{border-color:var(--accent)} .lane.bad{border-color:#4a342a}
+  .lane h4{font-family:var(--mono);font-size:12px;margin:0 0 10px;font-weight:600}
+  .lane.good h4{color:var(--accent)} .lane.bad h4{color:var(--tag)}
+  .verdict{font-family:var(--mono);font-size:12px;margin-top:10px;padding:8px 10px;border-radius:7px}
+  .verdict.good{background:var(--accent-soft);color:#cdeee7;border:1px solid var(--accent)}
+  .verdict.bad{background:var(--bad-soft);color:#f0a892;border:1px solid #5a3a30}
+
+  .note{background:#1a1710;border:1px solid var(--rule);border-left:3px solid var(--tag);
+    border-radius:10px;padding:15px 18px;margin-top:24px;font-size:15px;line-height:1.6;color:var(--muted)}
+  .note b{color:var(--ink)}
+  .note .h{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--tag);display:block;margin-bottom:8px}
+  .foot{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;margin-top:34px}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="kicker">Odin · dynamic arrays</div>
+  <h1>A growable array, four levels deep</h1>
+
+  <div class="levels" id="levelnav"></div>
+  <div class="rule"></div>
+
+  <!-- ===================== LEVEL 1 — WHAT IT IS ===================== -->
+  <section class="section" id="s1">
+    <p class="deck">A <span class="il">[dynamic]T</span> is <b>a small fixed header that owns a separate, growable buffer</b>. The header is four fields — <span class="il">data</span> (where the elements live), <span class="il">len</span> (how many are in use), <span class="il">cap</span> (how many fit before the buffer must be replaced), and an <span class="il">allocator</span> (where new memory comes from). Append items and watch <b>len</b> fill while the buffer stays put — until it can't.</p>
+    <div class="hint">Real sizes &amp; the cap schedule, measured from a compiled Odin program. The data address is nondeterministic, shown as one representative run.</div>
+
+    <nav class="sub" id="nav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="hdrlabel"></div>
+      <div class="header">
+        <div class="hf data"><div class="fname">data</div><div class="fval" id="f-data">0x…</div><div class="fbytes">8 B</div></div>
+        <div class="hf len"><div class="fname">len</div><div class="fval" id="f-len">0</div><div class="fbytes">8 B</div></div>
+        <div class="hf cap"><div class="fname">cap</div><div class="fval" id="f-cap">0</div><div class="fbytes">8 B</div></div>
+        <div class="hf alloc"><div class="fname">allocator</div><div class="fval">proc | data</div><div class="fbytes">16 B</div></div>
+      </div>
+      <div class="arrowdown" id="bufarrow">data ↓ points at the backing buffer (lives elsewhere)</div>
+      <div class="buffer" id="buffer"></div>
+      <div class="legend">
+        <span><i class="chip c-live"></i> live element (counted by len)</span>
+        <span><i class="chip c-free"></i> spare capacity (allocated, not yet used)</span>
+      </div>
+    </div>
+
+    <div class="cols">
+      <div class="panel"><h3>Widths (size_of)</h3>
+        <div class="sizes">
+          data&nbsp;(rawptr) = <span class="n">8</span><br>
+          len&nbsp;&nbsp;(int)&nbsp;&nbsp;&nbsp;&nbsp;= <span class="n">8</span><br>
+          cap&nbsp;&nbsp;(int)&nbsp;&nbsp;&nbsp;&nbsp;= <span class="n">8</span><br>
+          allocator&nbsp;&nbsp;&nbsp;= <span class="n">16</span><br><br>
+          <b style="color:var(--ink)">[dynamic]int</b> = <span class="big">40</span><br>
+          &nbsp;= 8 + 8 + 8 + 16<br><br>
+          <span style="color:var(--muted)">a plain <b style="color:var(--ink)">[]int</b> view = <span class="n">16</span> (just data + len — no cap, no owner)</span>
+        </div>
+      </div>
+      <div class="panel"><h3>What you're seeing</h3><p class="teach" id="teach"></p></div>
+    </div>
+  </section>
+
+  <!-- ============= LEVEL 2 — WHY YOU'D REACH FOR IT ============= -->
+  <section class="section" id="s2">
+    <p class="deck">Level 1 was <i>what it is</i>. Now: the case where a fixed array is the wrong call — <b>a count you only learn at runtime, that keeps changing.</b></p>
+    <p class="teach">Think of the live entities a frame has to update: monsters spawn, projectiles fly, particles are born and die. <b>How many there are, and which kinds, change every frame</b> — you cannot write the count into the source. The example below is one frame; hit "next frame" and watch the population swing. A fixed <span class="il">[N]T</span> forces you to guess <span class="il">N</span> at compile time and either overflow it or waste it; a <span class="il">[dynamic]T</span> simply grows to whatever this frame needs and shrinks back when you clear it.</p>
+
+    <div class="canvas">
+      <div class="slotlabel" id="frameflabel"></div>
+      <div class="buffer" id="framefbuf" style="gap:4px"></div>
+      <div class="arrowdown" id="framefarrow"></div>
+      <nav class="sub" style="justify-content:center;margin:14px 0 0"><button id="nextframe">▸ next frame</button></nav>
+    </div>
+
+    <p class="teach"><b>The mechanism:</b> one call does it — <span class="il">append(&amp;entities, e)</span>. Because the live elements sit <b>contiguously</b> in the backing buffer, getting <span class="il">entities[i]</span> is a direct indexed access — step <i>i</i> elements from the start of the buffer, you are there. The buffer is one packed run, so iterating the frame's entities walks straight through memory. The header carries the bookkeeping; you carry none of it.</p>
+
+    <p class="teach"><b>The counterfactual:</b> if the count were genuinely fixed — exactly four party members, always — you would not reach for this. A <span class="il">[4]Entity</span> fixed array is smaller, needs no allocator, and never reallocates. The dynamic array earns its 40-byte header and its allocation <i>because</i> the count is unknown and moves.</p>
+
+    <h2 style="margin-top:30px">Why the alternatives are worse</h2>
+    <div class="canvas">
+      <div class="slotlabel" style="color:var(--bad)">guess a fixed size, then patch around being wrong</div>
+      <div class="oopstrip">
+        <div class="oopcell">[0]</div><div class="oopcell">[1]</div><div class="oopcell">[2]</div><div class="oopcell">[3]</div>
+        <div class="oopcell" style="border-color:var(--bad);color:var(--bad)">[4] ✕ overflow</div>
+      </div>
+      <div class="heaplabel">a [4]Entity that a fifth spawn cannot fit into — and you find out at the worst time.</div>
+    </div>
+    <p class="teach">
+      <b>A fixed <span class="il">[N]T</span> sized to the worst case</b> — say <span class="il">[1024]Entity</span> "to be safe": every frame pays for 1024 slots even when 12 are alive, and a 1025th spawn still overflows. <i>Wasteful and still not safe.</i><br><br>
+      <b>A fixed array plus a hand-tracked count</b> (<span class="il">buf: [1024]Entity</span> alongside <span class="il">count: int</span> you bump yourself): now <span class="il">count</span> and the buffer can drift out of step — bump it but forget to write the slot, or write the slot but forget to bump, and you read a stale or uninitialized element. <i>The same two numbers the dynamic-array header keeps in lockstep for you, now yours to desync.</i><br><br>
+      <b>A buffer you resize by hand</b> — allocate, and when it fills, allocate a bigger one, copy across, free the old: that <i>is</i> a dynamic array, rebuilt by hand, with the data pointer, len, cap, and the free all yours to get wrong. <span class="il">[dynamic]T</span> folds those four into one type and hands you <span class="il">append</span>. <i>More code, same idea, more bugs.</i>
+    </p>
+  </section>
+
+  <!-- ===================== LEVEL 3 — THE COST ===================== -->
+  <section class="section" id="s3">
+    <p class="deck">Level 2 sold you on it. Level 3 is the bill: <b>growth is not free — when the buffer fills, the array allocates a bigger one, copies every element across, and frees the old.</b> Append one at a time and watch exactly when that happens.</p>
+    <p class="teach">Each press of <span class="il">append</span> adds one element. While <span class="il">len &lt; cap</span> it just writes the next slot — cheap. When <span class="il">len</span> would exceed <span class="il">cap</span>, the buffer is replaced: this toolchain goes <span class="il">cap 0 → 8</span> on the first append, holds at 8 through the eighth element, then jumps <span class="il">8 → 24</span> on the ninth. Each jump is a full copy of everything already in the array.</p>
+
+    <nav class="sub" id="growthnav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="growthlabel"></div>
+      <div class="buffer" id="growthbuf"></div>
+      <div class="readout" id="growthread"></div>
+      <div class="hint" id="growthhint" style="margin:10px 0 0;min-height:16px"></div>
+    </div>
+
+    <p class="teach"><b>The hidden hazard:</b> because a grow <i>moves the buffer</i>, any pointer you took into the old one — <span class="il">p := &amp;entities[0]</span> — now points at freed memory. A measured grow on this toolchain: <span class="il">cap before = 8</span>, <span class="il">cap after = 24</span>, <span class="il">buffer moved = true</span>. Hold a pointer across an <span class="il">append</span> that grows, and you are reading reclaimed storage. A slice <span class="il">entities[:]</span> goes stale the same way. Treat any pointer or slice into a dynamic array as valid only until the next append that might grow.</p>
+
+    <h2 style="margin-top:30px">The fix when you know the size</h2>
+    <p class="teach">Each grow is <span class="il">alloc + copy + free</span>. The growth is geometric, so it is amortized cheap — but if you already know roughly how many elements are coming, you can skip the intermediate grows entirely with <span class="il">make([dynamic]int, 0, 1024)</span> (length 0, capacity 1024) or <span class="il">reserve(&amp;xs, 1024)</span>. Toggle the two paths to 1024 elements:</p>
+
+    <nav class="sub" id="costnav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="costlabel"></div>
+      <div class="barrow"><div class="lab">reallocations &amp; copies</div><div style="flex:1"><div class="bar used" id="bar-grows"></div></div></div>
+      <div class="sizes" id="costsizes" style="margin-top:16px"></div>
+    </div>
+
+    <div class="note">
+      <span class="h">cap is not len, and reserve is not resize</span>
+      <b>cap</b> is how much memory is allocated; <b>len</b> is how much you have actually filled. Growing <b>cap</b> changes neither <span class="il">len</span> nor the visible contents — it just buys headroom. <span class="il">reserve(&amp;xs, 1024)</span> grows <b>cap</b> only and leaves <span class="il">len</span> alone; <span class="il">resize(&amp;xs, 6)</span> sets <b>len</b> directly — extending it zero-initializes the new slots, shrinking it drops the tail. Reach for <span class="il">reserve</span> to avoid grows; reach for <span class="il">resize</span> when you actually want that many live elements.
+    </div>
+  </section>
+
+  <!-- ============= LEVEL 4 — THE EMERGENT PAYOFF ============= -->
+  <section class="section" id="s4">
+    <p class="deck">The last level isn't about bytes — it's a discipline that <b>emerges</b> from one fact: a <span class="il">[dynamic]T</span> <i>owns</i> its buffer, and nothing frees it for you. Ownership you can see is ownership you can audit.</p>
+    <p class="teach">There is no garbage collector. Every dynamic array you allocate is a buffer that stays alive until <i>you</i> hand it back with <span class="il">delete</span>. Forget, and it leaks — silently at small scale, fatally over hours. The idiom makes the obligation visible: write <span class="il">defer delete(xs)</span> on the line right after the declaration, so the cleanup sits next to the thing it cleans up and a reader can confirm the pair at a glance.</p>
+    <pre><span class="kw">xs</span>: [dynamic]int
+<span class="kw">defer</span> delete(xs)   <span class="cm">// paired with the declaration — runs at scope exit</span>
+
+append(&amp;xs, 10)
+append(&amp;xs, 20, 30, 40)   <span class="cm">// the array owns one buffer; one delete frees it</span></pre>
+
+    <p class="teach"><b>Two ways to empty, and they are not the same.</b> Within a frame you usually want to <i>reuse</i> the buffer, not give it back: <span class="il">clear(&amp;xs)</span> sets <span class="il">len</span> to 0 but <b>keeps the capacity</b>, so the slots you already paid for are ready for next frame's appends — no allocation. <span class="il">delete(xs)</span> is the opposite: it returns the buffer to the allocator entirely. The measured difference on a 5-element array:</p>
+
+    <div class="life">
+      <div class="lane good">
+        <h4>clear(&amp;xs) — empty, keep the buffer</h4>
+        <div style="font-family:var(--mono);font-size:12px;line-height:1.9;color:var(--muted)">
+          filled &nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#cdeee7">len=5 cap=8</span><br>
+          after clear &nbsp;<span style="color:#cdeee7">len=0</span> <span style="color:#7fd0c4">cap=8</span><br>
+          re-append &nbsp;&nbsp;<span style="color:#cdeee7">len=1</span> <span style="color:#7fd0c4">cap=8</span>
+        </div>
+        <div class="verdict good">len resets, cap survives → next appends reuse the storage</div>
+      </div>
+      <div class="lane bad">
+        <h4>delete(xs) — give the buffer back</h4>
+        <div style="font-family:var(--mono);font-size:12px;line-height:1.9;color:var(--muted)">
+          the backing buffer returns to the allocator;<br>
+          the array's storage is gone. <span style="color:var(--tag)">Use <span class="il">defer delete</span> so this fires exactly once, at scope exit.</span>
+        </div>
+        <div class="verdict bad">delete = end of life · clear = reuse · don't confuse them</div>
+      </div>
+    </div>
+
+    <p class="teach" style="margin-top:22px"><b>The emergent payoff:</b> because ownership is explicit, "who frees this?" is never a mystery you chase at runtime — it is a line of code you can point at. Every <span class="il">[dynamic]T</span> declaration carries a visible <span class="il">defer delete</span> beside it; every per-frame buffer is a <span class="il">clear</span> at the top of the frame instead of a fresh allocation. At the scale of a real game loop, that discipline is the difference between a process that runs for ten frames and one that runs for ten hours — and it is auditable by reading, because the language never hid the allocation from you in the first place.</p>
+
+    <p class="teach" style="margin-top:24px;color:var(--muted)">That's the arc: <b style="color:var(--ink)">L1</b> a 40-byte header — data, len, cap, allocator — owning a separate buffer → <b style="color:var(--ink)">L2</b> that's why you reach for it: a runtime count that keeps changing, grown by one <span class="il">append</span> → <b style="color:var(--ink)">L3</b> the bill is grow = alloc + copy + free (cap 0→8→24 here), so a held pointer dangles and <span class="il">reserve</span> skips the grows → <b style="color:var(--ink)">L4</b> you own the buffer, so <span class="il">defer delete</span> frees it and <span class="il">clear</span> reuses it.</p>
+  </section>
+
+  <div class="foot">probes reproduce with <span style="color:var(--ink)">odin run</span> · sizes, the cap schedule, the grow/reserve counts &amp; the clear/delete numbers are real compiler output (claims/lessons/07-dynamic-arrays)</div>
+</div>
+
+<script>
+/* ============================================================
+   Each interactive component = one data object + one render fn.
+   Vanilla JS, inline, no libraries. Math.random() is fine here
+   (this is browser page JS, not a workflow script).
+   All embedded numbers come from passing claims under
+   claims/lessons/07-dynamic-arrays/ (header-sizes, growth,
+   realloc-moves, reserve-vs-grow, clear-vs-delete, solution).
+   ============================================================ */
+
+/* The measured cap schedule on this toolchain (claim: growth):
+   cap is 0 at start; first append -> 8; holds at 8 through len 8;
+   the 9th append jumps cap to 24, holds at 24 through len 20.    */
+function capForLen(n){ if(n===0) return 0; if(n<=8) return 8; return 24; }
+const EX_DATA = '0x1d4a9f3c20';   // one representative measured data address (nondeterministic)
+
+/* ---------- LEVEL 1: header + buffer, driven by len ---------- */
+const L1STEP = {
+  empty: { len:0, teach:`A fresh <code>[dynamic]int</code> is zero-initialized: <b>data</b> is nil, <b>len</b> and <b>cap</b> are 0, and <i>no buffer has been allocated yet</i>. The first append is what triggers the first allocation.` },
+  one:   { len:1, teach:`The first <code>append</code> allocates a buffer with <b>cap 8</b> and puts one element in it: <b>len 1</b>. Seven slots sit spare — allocated, counted by cap, but not yet used.` },
+  four:  { len:4, teach:`Four appends, <b>len 4</b>, still <b>cap 8</b>. No reallocation happened — the buffer had room. (This is exactly the lesson program's <code>scores</code>: <code>len: 4 cap: 8</code>.)` },
+  eight: { len:8, teach:`<b>len 8, cap 8</b> — the buffer is now full. The header still points at the same buffer; the data address has not changed. The <i>next</i> append is the one that must grow.` },
+  nine:  { len:9, teach:`The ninth append could not fit, so the array allocated a bigger buffer (<b>cap jumped 8 → 24</b>), copied the eight existing elements across, and freed the old one. <b>data now points somewhere new</b>.` },
+};
+let l1='four';
+function renderL1(){
+  document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('on',b.dataset.s===l1));
+  const s=L1STEP[l1], len=s.len, cap=capForLen(len);
+  document.getElementById('hdrlabel').textContent=`[dynamic]int header — 40 bytes — len ${len}, cap ${cap}`;
+  document.getElementById('f-data').textContent = len===0 ? 'nil' : EX_DATA;
+  document.getElementById('f-len').textContent = len;
+  document.getElementById('f-cap').textContent = cap;
+  document.getElementById('bufarrow').style.opacity = len===0 ? .35 : 1;
+  document.getElementById('bufarrow').textContent = len===0
+    ? 'data is nil — no buffer allocated yet'
+    : 'data ↓ points at the backing buffer (lives elsewhere)';
+  let buf='';
+  for(let i=0;i<cap;i++){
+    const live=i<len;
+    buf+=`<div class="slot ${live?'s-live':'s-free'}"><span class="si">${i}</span>${live?'■':'·'}</div>`;
+  }
+  document.getElementById('buffer').innerHTML=buf;
+  document.getElementById('teach').innerHTML=s.teach;
+}
+const nav=document.getElementById('nav');
+[['empty','fresh (len 0)'],['one','append → len 1'],['four','len 4'],['eight','len 8 (full)'],['nine','len 9 → grow']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.s=k; b.textContent=t; b.onclick=()=>{l1=k;renderL1();}; nav.appendChild(b);
+});
+
+/* ---------- LEVEL 2: a different entity population every frame ---------- */
+let frameNo=0;
+function genFrame(){
+  frameNo++;
+  const kinds=[['monster','M'],['projectile','P'],['particle','·'],['pickup','◆']];
+  const n=4+Math.floor(Math.random()*14);   // 4..17 live entities
+  let buf='';
+  for(let i=0;i<n;i++){ const k=kinds[Math.floor(Math.random()*kinds.length)];
+    buf+=`<div class="slot s-live" title="${k[0]}"><span class="si">${i}</span>${k[1]}</div>`; }
+  document.getElementById('frameflabel').textContent=`frame ${frameNo} — ${n} live entities in [dynamic]Entity (this frame only)`;
+  document.getElementById('framefbuf').innerHTML=buf;
+  document.getElementById('framefarrow').textContent=`len = ${n} this frame. Next frame the count and the mix change again — no number in the source ever named it.`;
+}
+document.getElementById('nextframe').onclick=genFrame;
+
+/* ---------- LEVEL 3: the append stepper ---------- */
+let gLen=0, gPrevCap=0;
+function renderGrowth(grew){
+  const cap=capForLen(gLen);
+  document.getElementById('growthlabel').textContent=`appended ${gLen} time(s) — backing buffer of cap ${cap}`;
+  let buf='';
+  for(let i=0;i<cap;i++){ const live=i<gLen;
+    buf+=`<div class="slot ${live?'s-live':'s-free'}"><span class="si">${i}</span>${live?(i):'·'}</div>`; }
+  document.getElementById('growthbuf').innerHTML=buf;
+  document.getElementById('growthread').innerHTML=
+    `<span>len = <b class="lenv">${gLen}</b></span><span>cap = <b class="capv">${cap}</b></span><span>spare = <b>${cap-gLen}</b></span>`;
+  document.getElementById('growthhint').innerHTML = grew
+    ? `cap jumped <b style="color:var(--tag)">${gPrevCap} → ${cap}</b> — new buffer allocated, <b style="color:var(--tag)">${gLen-1}</b> element(s) copied across, old buffer freed. Any pointer into the old one now dangles.`
+    : (gLen===0 ? 'a fresh array: data nil, len 0, cap 0 — nothing allocated yet.' : 'len &lt; cap, so this append just wrote the next slot — no allocation, no copy.');
+  if(grew){ const b=document.getElementById('growthbuf'); b.classList.remove('flash'); void b.offsetWidth; b.classList.add('flash'); }
+}
+function growthAppend(){ const before=capForLen(gLen); gLen++; const after=capForLen(gLen); gPrevCap=before; renderGrowth(after!==before); }
+function growthReset(){ gLen=0; gPrevCap=0; renderGrowth(false); }
+const growthnav=document.getElementById('growthnav');
+[['append','▸ append one'],['reset','reset']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.k=k; b.textContent=t;
+  b.onclick=()=> k==='append'?growthAppend():growthReset(); growthnav.appendChild(b);
+});
+
+/* ---------- LEVEL 3: reserve-vs-grow cost (claim: reserve-vs-grow) ---------- */
+const COST = {
+  grow:    { label:'append 1024× from cap 0', grows:8,  note:'Grow from nothing to 1024 elements: <span class="big">8</span> reallocations, each copying every element so far. Final cap overshoots to <span class="big">2040</span>.' },
+  reserve: { label:'make([dynamic]int, 0, 1024) first', grows:0, note:'Reserve 1024 up front, then append 1024×: <span class="n">0</span> reallocations, <span class="n">0</span> copies. Final cap is exactly <span class="n">1024</span>.' },
+};
+let costMode='grow';
+function renderCost(){
+  document.querySelectorAll('#costnav button').forEach(b=>b.classList.toggle('on',b.dataset.m===costMode));
+  const f=COST[costMode];
+  document.getElementById('costlabel').textContent=f.label;
+  const bar=document.getElementById('bar-grows');
+  bar.style.width=Math.max(6, Math.round(f.grows/8*100))+'%';
+  bar.style.background = f.grows===0 ? 'var(--accent)' : 'repeating-linear-gradient(45deg,#5a544a,#5a544a 6px,#48433b 6px,#48433b 12px)';
+  bar.style.color = f.grows===0 ? '#0e0c08' : 'var(--ink)';
+  bar.textContent = f.grows+' grow + copy';
+  document.getElementById('costsizes').innerHTML=f.note;
+}
+const costnav=document.getElementById('costnav');
+[['grow','grow from 0'],['reserve','reserve 1024']].forEach(([m,t])=>{
+  const b=document.createElement('button'); b.dataset.m=m; b.textContent=t; b.onclick=()=>{costMode=m;renderCost();}; costnav.appendChild(b);
+});
+
+/* ---------- level navigation ---------- */
+const LEVELS=[
+  ['1','What it is','header owns a buffer'],
+  ['2','Why use it','a runtime count that changes'],
+  ['3','The cost','grow = alloc + copy + free'],
+  ['4','Ownership','defer delete, clear to reuse'],
+];
+let level='1';
+function setLevel(n){
+  level=n;
+  document.querySelectorAll('.levels button').forEach(b=>b.classList.toggle('on',b.dataset.n===n));
+  for(const [k] of LEVELS){ const el=document.getElementById('s'+k); if(el) el.classList.toggle('on',k===n); }
+  if(n==='1') renderL1();
+  if(n==='2' && frameNo===0) genFrame();
+  if(n==='3'){ if(gLen===0) renderGrowth(false); renderCost(); }
+}
+const lnav=document.getElementById('levelnav');
+for(const [n,tt,sub] of LEVELS){ const b=document.createElement('button'); b.dataset.n=n;
+  b.innerHTML=`<span class="lv">Level ${n} · ${sub}</span><span class="tt">${tt}</span>`;
+  b.onclick=()=>setLevel(n); lnav.appendChild(b); }
+setLevel('1');
+</script>
+</body>
+</html>

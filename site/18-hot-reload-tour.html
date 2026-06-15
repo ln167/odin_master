@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Odin hot reload — the swap loop, four levels deep</title>
+<style>
+  :root{
+    --paper:#15130f; --card:#1d1a14; --ink:#ece6d8; --muted:#9a9182;
+    --rule:#332e24; --accent:#5ec8b8; --accent-soft:#1f342f;
+    --tag:#e0875a; --pad:#5a544a; --bad:#e0675a; --bad-soft:#2a1815;
+    --mono:"Cascadia Mono","Cascadia Code",Consolas,ui-monospace,"SF Mono",monospace;
+    --serif:-apple-system,"Segoe UI Variable Text","Segoe UI",system-ui,Roboto,"Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper);color:var(--ink)}
+  body{font-family:var(--serif);line-height:1.6;padding:0 20px;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-feature-settings:"kern" 1,"liga" 1}
+  .page{max-width:860px;margin:0 auto;padding:46px 0 90px}
+  .kicker{font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+  h1{font-size:30px;line-height:1.15;margin:0 0 18px;font-weight:600;letter-spacing:-.01em}
+
+  /* level tabs */
+  .levels{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+  .levels button{flex:1;min-width:150px;text-align:left;background:var(--card);border:1px solid var(--rule);
+    color:var(--muted);border-radius:10px;padding:11px 14px;cursor:pointer;transition:.12s;font-family:var(--serif)}
+  .levels button:hover{border-color:var(--accent)}
+  .levels button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--ink)}
+  .levels .lv{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);display:block;margin-bottom:3px}
+  .levels .tt{font-size:14px}
+  .rule{height:1px;background:var(--rule);margin:22px 0 26px}
+
+  .deck{color:var(--muted);font-size:17px;margin:0 0 24px;line-height:1.5}
+  .deck b{color:var(--ink)}
+  h2{font-size:21px;margin:0 0 14px;font-weight:600}
+  p.teach{font-size:16px;line-height:1.62;max-width:46em}
+  p.teach code,.il{font-family:var(--mono);font-size:.86em;background:#2a2519;padding:1px 5px;border-radius:4px}
+  .teach b{color:var(--tag)}
+  .section{display:none}
+  .section.on{display:block}
+
+  nav.sub{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;font-family:var(--mono);font-size:13px}
+  nav.sub button{background:var(--card);border:1px solid var(--rule);color:var(--muted);border-radius:8px;padding:8px 14px;cursor:pointer;transition:.12s}
+  nav.sub button:hover{color:var(--ink);border-color:var(--accent)}
+  nav.sub button.on{color:var(--ink);border-color:var(--accent);background:var(--accent-soft)}
+  .hint{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin:0 0 20px}
+
+  .canvas{background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:30px 28px}
+  .slotlabel{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
+
+  /* the reload-loop diagram (Level 1) */
+  .loop{display:grid;grid-template-columns:1fr 64px 1fr;gap:0;align-items:stretch}
+  @media(max-width:640px){.loop{grid-template-columns:1fr}}
+  .box{background:#1a1710;border:1px solid var(--rule);border-radius:12px;padding:16px 16px 14px}
+  .box.host{border-color:var(--accent)}
+  .box.lib{border-color:var(--tag)}
+  .box .nm{font-family:var(--mono);font-size:13px;color:var(--ink);margin-bottom:2px}
+  .box.host .nm{color:var(--accent)}
+  .box.lib .nm{color:var(--tag)}
+  .box .ty{font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:12px}
+  .statebox{font-family:var(--mono);font-size:11.5px;background:var(--accent-soft);border:1px solid var(--accent);border-radius:8px;padding:9px 10px;color:#cdeee7;margin-top:8px;transition:.25s}
+  .statebox.hot{box-shadow:0 0 0 2px var(--accent)}
+  .libcode{font-family:var(--mono);font-size:11.5px;background:#2a1c12;border:1px solid var(--tag);border-radius:8px;padding:9px 10px;color:#f0b48a;margin-top:8px;transition:.25s}
+  .libcode.swapped{box-shadow:0 0 0 2px var(--tag)}
+  .arrowcol{display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:var(--mono);color:var(--muted);font-size:12px;gap:4px}
+  .arrowcol .a{font-size:20px}
+  .arrowcol.act .a{color:var(--accent)}
+  @media(max-width:640px){.arrowcol{flex-direction:row;margin:8px 0}.arrowcol .a{transform:rotate(90deg)}}
+  .reloadarrow{grid-column:1/4;text-align:center;font-family:var(--mono);font-size:12px;color:var(--tag);margin-top:14px;padding-top:12px;border-top:1px dashed #4a342a}
+  @media(max-width:640px){.reloadarrow{grid-column:1}}
+  .stepnote{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:16px;min-height:2.6em}
+  .stepnote b{color:var(--accent)}
+
+  /* sizes panel */
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:26px}
+  @media(max-width:680px){.cols{grid-template-columns:1fr}}
+  .panel h3{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 12px;font-weight:600}
+  .sizes{font-family:var(--mono);font-size:13px;line-height:2}
+  .sizes .n{color:var(--accent);font-weight:600}
+  .sizes .big{color:var(--tag);font-weight:600}
+
+  pre{font-family:var(--mono);font-size:12.5px;line-height:1.7;background:#1a1710;border:1px solid var(--rule);border-radius:10px;padding:16px 18px;overflow:auto;margin:22px 0 0;white-space:pre-wrap}
+  pre .cm{color:#6f6655}
+  pre .kw{color:var(--accent)}
+  pre .er{color:var(--bad)}
+  pre .ok{color:var(--accent)}
+
+  /* Level 2: the loop-time comparison */
+  .twoup{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:6px}
+  @media(max-width:640px){.twoup{grid-template-columns:1fr}}
+  .lane{background:#1a1710;border:1px solid var(--rule);border-radius:12px;padding:16px}
+  .lane.good{border-color:var(--accent)}
+  .lane.bad{border-color:#4a342a}
+  .lane h4{font-family:var(--mono);font-size:12px;margin:0 0 10px;font-weight:600}
+  .lane.good h4{color:var(--accent)}
+  .lane.bad h4{color:var(--tag)}
+  .stepline{font-family:var(--mono);font-size:11.5px;border-radius:7px;padding:7px 9px;margin:5px 0;border:1px solid var(--rule);background:#241f17;color:#8a7a66}
+  .stepline.keep{background:var(--accent-soft);border-color:var(--accent);color:#cdeee7}
+  .verdict{font-family:var(--mono);font-size:12px;margin-top:10px;padding:8px 10px;border-radius:7px}
+  .verdict.good{background:var(--accent-soft);color:#cdeee7;border:1px solid var(--accent)}
+  .verdict.bad{background:var(--bad-soft);color:#f0a892;border:1px solid #5a3a30}
+  .oopstrip{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}
+  .oopcell{flex:1;min-width:84px;background:#241f17;border:1px dashed #5a4530;border-radius:7px;padding:9px 8px;font-family:var(--mono);font-size:10px;text-align:center;color:#8a7a66}
+  .heaplabel{font-family:var(--mono);font-size:10px;color:var(--bad);text-align:center;margin-top:8px}
+
+  /* Level 3: the shape-guard bars */
+  .bar{height:30px;border-radius:6px;display:flex;align-items:center;font-family:var(--mono);font-size:12px;padding-left:10px;color:#0e0c08;font-weight:600;margin:6px 0;transition:width .3s,background .2s}
+  .bar.used{background:var(--accent)}
+  .bar.extra{background:repeating-linear-gradient(45deg,#e0875a,#e0875a 6px,#c0703f 6px,#c0703f 12px);color:#1a1108}
+  .barrow{display:flex;align-items:center;gap:10px}
+  .barrow .lab{font-family:var(--mono);font-size:11px;color:var(--muted);width:140px;flex:none}
+  .guardverdict{font-family:var(--mono);font-size:12.5px;margin-top:16px;padding:10px 12px;border-radius:8px}
+  .guardverdict.ok{background:var(--accent-soft);color:#cdeee7;border:1px solid var(--accent)}
+  .guardverdict.stop{background:var(--bad-soft);color:#f0a892;border:1px solid #5a3a30}
+
+  .note{background:#1a1710;border:1px solid var(--rule);border-left:3px solid var(--tag);
+    border-radius:10px;padding:15px 18px;margin-top:24px;font-size:15px;line-height:1.6;color:var(--muted)}
+  .note b{color:var(--ink)}
+  .note .h{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--tag);display:block;margin-bottom:8px}
+  .foot{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;margin-top:34px}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="kicker">Odin · hot reload</div>
+  <h1>Hot reload, four levels deep</h1>
+
+  <div class="levels" id="levelnav"></div>
+  <div class="rule"></div>
+
+  <!-- ===================== LEVEL 1 — WHAT IT IS ===================== -->
+  <section class="section" id="s1">
+    <p class="deck">A program split in two: a small <b>host</b> that owns the game's persistent <b>state</b> in its own memory, and a <b>shared library</b> that holds the gameplay code. The host loads the library, calls its procedures each frame, and watches its file on disk. Rebuild the library and the host <b>swaps in the new code without losing the state</b>. Step through one swap.</p>
+    <div class="hint">The state lives in host memory; the library is reloadable. Step the swap below — the state box never moves, only the code does.</div>
+
+    <nav class="sub" id="loopnav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="looplabel"></div>
+      <div class="loop">
+        <div class="box host">
+          <div class="nm">host .exe</div>
+          <div class="ty">stable — never restarts</div>
+          <div style="font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.7">for should_run() {<br>&nbsp;&nbsp;update()<br>&nbsp;&nbsp;poll lib file<br>&nbsp;&nbsp;if changed → swap<br>}</div>
+          <div class="statebox" id="statebox"></div>
+        </div>
+        <div class="arrowcol" id="arrowcol">
+          <span class="a">&rsaquo;</span>
+          <span>calls</span>
+          <span class="a">&lsaquo;</span>
+        </div>
+        <div class="box lib">
+          <div class="nm">game library</div>
+          <div class="ty">reloadable — your edits</div>
+          <div style="font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.7">@(export) game_update<br>@(export) game_memory<br>@(export) game_hot_reloaded<br>… enemy AI, physics</div>
+          <div class="libcode" id="libcode"></div>
+        </div>
+        <div class="reloadarrow" id="reloadarrow"></div>
+      </div>
+      <div class="stepnote" id="stepnote"></div>
+    </div>
+
+    <div class="cols">
+      <div class="panel"><h3>The persistent state (size_of)</h3>
+        <div class="sizes">
+          Game_Memory {<br>
+          &nbsp;&nbsp;frame&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: u64&nbsp;&nbsp; = <span class="n">8</span><br>
+          &nbsp;&nbsp;counter&nbsp;&nbsp;&nbsp;: int&nbsp;&nbsp; = <span class="n">8</span><br>
+          &nbsp;&nbsp;last_reload : f64&nbsp;&nbsp; = <span class="n">8</span><br>
+          &nbsp;&nbsp;allocator&nbsp;&nbsp;: Allocator = <span class="n">16</span><br>
+          }<br><br>
+          <b style="color:var(--ink)">size_of(Game_Memory)</b> = <span class="big">40</span>
+        </div>
+      </div>
+      <div class="panel"><h3>What you're seeing</h3><p class="teach" id="teach"></p></div>
+    </div>
+  </section>
+
+  <!-- ============= LEVEL 2 — WHY YOU'D REACH FOR IT ============= -->
+  <section class="section" id="s2">
+    <p class="deck">Level 1 was <i>what it is</i>. Level 2 is <i>why you pay for the split</i>: the loop from <b>"change a number" to "see the result"</b> collapses from a full rebuild-and-relaunch down to <b>save → see</b>.</p>
+    <p class="teach">Most of building a game is <b>tuning</b> — jump height, damage falloff, camera-shake intensity, spawn cadence. The right value is a <i>feel</i> question, answered by trying it, looking, and trying again, hundreds of times. The cost of one tweak is dominated by <b>how long until you see it</b>. Compare the two loops for a single tweak:</p>
+
+    <nav class="sub" id="loopcmpnav"></nav>
+    <div class="twoup">
+      <div class="lane bad">
+        <h4>rebuild + relaunch the whole program</h4>
+        <div id="lane-cold"></div>
+      </div>
+      <div class="lane good">
+        <h4>rebuild the library only — host keeps running</h4>
+        <div id="lane-hot"></div>
+      </div>
+    </div>
+
+    <p class="teach"><b>The emergent property:</b> because the state lives in the host and only the library is rebuilt, every step that <i>re-establishes the situation</i> — open the window, click through the menu, load the save, walk back to the spot you were testing — happens <b>once</b> and then never again for the rest of the session. You tweak with the character mid-jump, the enemy mid-chase, the exact scene already on screen. The feedback loop is short enough that you tweak twenty times and keep the one that feels right, instead of tweaking twice and shipping the first one that isn't wrong.</p>
+
+    <p class="teach"><b>The counterfactual:</b> if your code were a fixed set of values you never tune — or a tool you run once and read the output — none of this earns its keep. You'd just rebuild and run. The split pays off precisely when you re-run the <i>same</i> code against the <i>same</i> evolving state over and over, changing one line between runs.</p>
+
+    <h2 style="margin-top:30px">Why the alternatives are worse</h2>
+    <div class="canvas">
+      <div class="slotlabel" style="color:var(--bad)">push every tunable out into a data file the running program re-reads</div>
+      <div class="oopstrip">
+        <div class="oopcell">jump.cfg</div><div class="oopcell">damage.cfg</div><div class="oopcell">camera.cfg</div><div class="oopcell">spawn.cfg</div><div class="oopcell">…and the loader for each</div>
+      </div>
+      <div class="heaplabel">every new tunable needs a file entry, a parser, and a field to bind it to — before you can try it.</div>
+    </div>
+    <p class="teach">
+      <b>Rebuild and relaunch every tweak.</b> Correct, simple, and <i>slow</i> — the per-tweak cost is the whole startup path, paid hundreds of times. This is the loop the split exists to kill.<br><br>
+      <b>Move every tunable into an external data file the program re-reads at runtime.</b> Now numbers reload live — but only the numbers you predicted. The moment a tweak is <i>structural</i> (a new branch, a reordered update, a different AI rule) the data file can't express it, and you're back to rebuilding. You also pay up front: each tunable needs a file format, a parser, and a binding, written before you can adjust it. Reloading the <b>code</b> needs none of that — any edit you can compile is live, structural or not.<br><br>
+      <b>Build a command console into the game and re-type tweaks each session.</b> The values evaporate when you close the window, and a console can only reach the hooks you exposed. It's a second, weaker authoring surface bolted next to your real one — more code, narrower reach, and nothing survives the next launch.
+    </p>
+  </section>
+
+  <!-- ===================== LEVEL 3 — THE INVARIANT / THE BILL ===================== -->
+  <section class="section" id="s3">
+    <p class="deck">Level 2 sold you on the split. Level 3 is the bill, and it's a single hard invariant: <b>the persistent state's layout must stay stable across a swap.</b> The new code reinterprets the <i>same bytes</i> the old code wrote — so both versions have to agree, byte for byte, on what those bytes mean.</p>
+    <p class="teach">The host holds one allocation of <span class="il">Game_Memory</span> and never re-makes it. When the new library reads <span class="il">g_mem.counter</span>, it reads a fixed <i>byte offset</i> into that allocation. If you append a field, reorder fields, or retype one, the offsets move — and the new code now reads <span class="il">counter</span> out of bytes that used to be something else. The shipped struct is <b>40 bytes</b> (Level 1). Toggle an edit and watch the size move:</p>
+
+    <nav class="sub" id="guardnav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="guardlabel"></div>
+      <div class="barrow"><div class="lab">old code's view</div><div style="flex:1"><div class="bar used" id="bar-old"></div></div></div>
+      <div class="barrow"><div class="lab">new code's view</div><div style="flex:1"><div class="bar used" id="bar-new"></div><div class="bar extra" id="bar-extra"></div></div></div>
+      <div class="guardverdict" id="guardverdict"></div>
+    </div>
+
+    <p class="teach"><b>How the host catches it:</b> the library exports its own size — <span class="il">game_memory_size :: proc() -> int { return size_of(Game_Memory) }</span> — and the host compares the new library's number against the old one's before committing the swap. Same number, swap proceeds. Different number, the host <b>refuses the swap</b> and waits for a manual restart rather than reinterpret the old bytes through a layout that no longer fits them. That one comparison is the guardrail that turns a whole class of silent corruption into a clean, loud stop:</p>
+    <pre><span class="cm">// in the host loop, before committing the swap:</span>
+<span class="kw">if</span> next.memory_size() != api.memory_size() {
+    <span class="cm">// 40 -> 48: fields added/removed/retyped, so the old</span>
+    <span class="cm">// allocation can't be reinterpreted. Skip the swap.</span>
+    fmt.eprintfln(<span class="ok">"Game_Memory shape changed; skipping swap"</span>)
+} <span class="kw">else</span> {
+    api = next
+    api.hot_reloaded(ptr)   <span class="cm">// safe: layouts agree</span>
+}</pre>
+
+    <div class="note">
+      <span class="h">three more things that survive compilation but break the bytes</span>
+      The size check catches anything that changes <b>how big</b> the struct is, but a few edits keep the size and still corrupt meaning, so the discipline is "append-only, never reorder."
+      <b>Reordering fields</b> of the same total size slips past a size check — the bytes line up but mean different things.
+      <b>Reordering an enum's values</b> remaps which stored byte means which variant, so state typed as that enum decodes wrong.
+      And <b>storing a procedure value in the state</b> points at code <i>inside the old library</i>; once that library is gone, calling through it jumps into reclaimed memory. The rule that dodges all three: keep the state plain data, add fields only at the end, and never store a pointer into the library in the bytes that outlive it.
+    </div>
+  </section>
+
+  <!-- ============= LEVEL 4 — THE EMERGENT PAYOFF ============= -->
+  <section class="section" id="s4">
+    <p class="deck">The last level is the property the whole split exists to produce: <b>state outlives code.</b> What carries across a swap is not a copy of the world — it's a single <b>address</b>, an 8-byte number, and the bytes it points at never move.</p>
+    <p class="teach">Walk the swap once more, as data. The old library hands the host the state pointer; the host loads the new library, whose <span class="il">g_mem</span> global starts out <span class="il">nil</span>; the host calls <span class="il">game_hot_reloaded(ptr)</span>, and the new code writes that same pointer into <i>its</i> <span class="il">g_mem</span>. From that instant, <span class="il">g_mem.counter</span> in the new code reads the exact bytes the old code was writing — no serialize, no migrate, no copy. Acted out in one process, the counter climbs to 240, the swap happens, and the new code reads it back unchanged:</p>
+    <pre><span class="cm">// "old code" ran 240 frames, then we swap:</span>
+ptr := game_memory()        <span class="cm">// the state pointer (a rawptr)</span>
+g_mem = nil                 <span class="cm">// new library's global starts empty</span>
+game_hot_reloaded(ptr)      <span class="cm">// hand it the SAME pointer</span>
+
+<span class="ok">before reload: counter=240</span>
+<span class="ok">after reload:  counter=240</span>
+<span class="ok">same bytes?    true</span></pre>
+
+    <p class="teach"><b>The emergent payoff:</b> the persistent struct lives in the host, so the library can be torn down and rebuilt under it without the world flinching — the window stays open, the player keeps their position, the enemies keep chasing. And the procedures the host calls during this dance are the <i>same</i> <span class="il">@(export)</span> procedures the shipping build calls directly: one path opens the library and binds those names at runtime, the other calls them as ordinary package procedures, and the gameplay code is byte-identical between them. There is no "remove the hot-reload scaffolding before you ship" step — the fast-iteration architecture <b>is</b> the release architecture.</p>
+
+    <p class="teach" style="margin-top:24px;color:var(--muted)">That's the arc: <b style="color:var(--ink)">L1</b> a stable host owns the state, a swappable library owns the code, and a rebuild loops the new code back in → <b style="color:var(--ink)">L2</b> that split shrinks the tune-and-look loop to save → see → <b style="color:var(--ink)">L3</b> the price is a fixed layout, since new code reinterprets old bytes — guarded by a <span class="il">size_of</span> check → <b style="color:var(--ink)">L4</b> only an address crosses the swap, so state outlives code, and the same exported procs ship unchanged.</p>
+  </section>
+
+  <div class="foot">probes reproduce with <span style="color:var(--ink)">odin run</span> · the <span style="color:var(--ink)">size_of(Game_Memory)=40</span>, the 40→48 shape change, the contract compiling, and the counter surviving the swap are real compiler output (claims/lessons/18-hot-reload-tour). The live reload itself is described from this repo's lab host (<span style="color:var(--ink)">lab/src/main_hot_reload.odin</span>).</div>
+</div>
+
+<script>
+/* ============================================================
+   Each interactive component = one data object + one render fn.
+   Vanilla JS, inline, no libraries.
+   Embedded numbers/outputs come from passing claims under
+   claims/lessons/18-hot-reload-tour/ :
+     mem-size               -> size_of(Game_Memory) = 40 (+ field widths)
+     reload-contract-compiles -> the export + Game_API signatures compile
+     shape-guard            -> 40 -> 48 when a field is appended
+     same-bytes-survive     -> counter=240 before AND after the swap
+   ============================================================ */
+
+/* ---------- LEVEL 1: step the swap dance ---------- */
+const SWAP = {
+  run:   { state:'counter = 137', code:'old code v1', hot:false, swapped:false, arrow:true, reload:'',
+           note:`The host loops, calling <b>update()</b> in the library each frame. The state — <b>counter = 137</b> — lives in the <span style="color:var(--accent)">host</span>, written by the library through a pointer.` },
+  build: { state:'counter = 137', code:'old code v1', hot:false, swapped:false, arrow:false,
+           reload:'you ran <b>odin build</b> → a new library file appears on disk',
+           note:`You edited gameplay code and rebuilt the library. A new file lands on disk; the host's file poll notices it. The state is untouched — still <b>counter = 137</b>.` },
+  swap1: { state:'counter = 137', code:'old code v1', hot:true, swapped:false, arrow:false,
+           reload:'1. ptr := api.memory() &nbsp; — ask old code for the state pointer',
+           note:`<b>Step 1:</b> the host asks the old library for its state pointer and holds onto it. Then it tears the old library down. The bytes it points at stay put — the pointer is just an 8-byte address.` },
+  swap2: { state:'counter = 137', code:'NEW code v2', hot:true, swapped:true, arrow:false,
+           reload:'2–3. load the new library &nbsp; — bind game_* exports into Game_API',
+           note:`<b>Steps 2–3:</b> the host loads the rebuilt library and re-binds each <b>game_*</b> export into its <b>Game_API</b> proc-pointer struct by name. The new code is in place — but its <b>g_mem</b> still points nowhere.` },
+  swap3: { state:'counter = 137', code:'NEW code v2', hot:false, swapped:true, arrow:true,
+           reload:'4. api.hot_reloaded(ptr) &nbsp; — hand the SAME pointer to the new code',
+           note:`<b>Step 4:</b> the host hands the captured pointer to the new code, which stores it in its own <b>g_mem</b>. Now the new code reads the same <b>counter = 137</b> the old code left. Same state, new code — the loop continues.` },
+};
+const SWAP_ORDER = ['run','build','swap1','swap2','swap3'];
+let swapStep = 'run';
+function renderL1(){
+  document.querySelectorAll('#loopnav button').forEach(b=>b.classList.toggle('on',b.dataset.s===swapStep));
+  const s = SWAP[swapStep];
+  document.getElementById('looplabel').textContent = `swap step: ${swapStep}`;
+  const sb = document.getElementById('statebox');
+  sb.textContent = `Game_Memory · ${s.state}`;
+  sb.classList.toggle('hot', s.hot);
+  const lc = document.getElementById('libcode');
+  lc.textContent = s.code;
+  lc.classList.toggle('swapped', s.swapped);
+  document.getElementById('arrowcol').classList.toggle('act', s.arrow);
+  document.getElementById('reloadarrow').innerHTML = s.reload || '&nbsp;';
+  document.getElementById('stepnote').innerHTML = s.note;
+}
+const loopnav = document.getElementById('loopnav');
+[['run','▶ running'],['build','◆ you rebuild'],['swap1','1 · capture'],['swap2','2–3 · load'],['swap3','4 · re-attach']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.s=k; b.textContent=t;
+  b.onclick=()=>{swapStep=k;renderL1();}; loopnav.appendChild(b);
+});
+document.getElementById('teach') && (document.getElementById('teach').innerHTML =
+  `The library writes <code>g_mem.counter</code> through a pointer; the bytes themselves sit in the <b style="color:var(--accent)">host</b>, which never restarts. <code>size_of(Game_Memory)</code> is <b>40</b> bytes — the fixed width the host allocates once and reinterprets across every swap. Step the buttons to watch the code box change while the state box holds.`);
+
+/* ---------- LEVEL 2: cold loop vs hot loop ---------- */
+const LOOPCMP = {
+  cold: {
+    cold:[['edit one number','tweak'],['rebuild the whole program','rebuild'],
+          ['relaunch the executable','restart'],['click through the menu','restart'],
+          ['load the save','restart'],['walk back to the test spot','restart'],
+          ['LOOK — was it right?','look']],
+    hot:[['edit one number','tweak'],['rebuild the LIBRARY only','rebuild'],
+         ['host swaps it in (~16 ms)','keep'],['LOOK — was it right?','look']],
+  },
+};
+function renderL2(){
+  const C = LOOPCMP.cold;
+  document.getElementById('lane-cold').innerHTML =
+    C.cold.map(([t,k])=>`<div class="stepline">${t}</div>`).join('') +
+    `<div class="verdict bad">every tweak pays the whole startup path again</div>`;
+  document.getElementById('lane-hot').innerHTML =
+    C.hot.map(([t,k])=>`<div class="stepline ${k==='keep'||k==='tweak'||k==='look'?'keep':''}">${t}</div>`).join('') +
+    `<div class="verdict good">the situation is established ONCE; only the edit repeats</div>`;
+}
+
+/* ---------- LEVEL 3: the shape-guard (real measured sizes) ----------
+   shape-guard claim:  old=40  new(+score:int)=48  shape changed = true     */
+const GUARD = {
+  same: { label:'no layout change — just edit a proc body', old:40, new:40, extra:0,
+          verdict:`<span style="color:var(--accent)">size_of agrees: <b>40</b> == <b>40</b></span> → the host commits the swap. The old bytes still mean exactly what the new code expects.`, ok:true },
+  grow: { label:'append a field: score: int', old:40, new:40, extra:8,
+          verdict:`<span style="color:var(--bad)">size_of disagrees: <b>40</b> ≠ <b>48</b></span> → the host <b>refuses the swap</b> and asks for a restart. Reinterpreting the 40 old bytes as the new 48-byte layout would read <code>score</code> out of bytes that were never it.`, ok:false },
+};
+const GUARD_MAX = 48;
+let guardMode = 'same';
+function renderL3(){
+  document.querySelectorAll('#guardnav button').forEach(b=>b.classList.toggle('on',b.dataset.m===guardMode));
+  const g = GUARD[guardMode];
+  document.getElementById('guardlabel').textContent = g.label + `  —  old = ${g.old} bytes, new = ${g.new + g.extra} bytes`;
+  const bo = document.getElementById('bar-old');
+  bo.style.width = Math.round(g.old / GUARD_MAX * 100) + '%';
+  bo.textContent = g.old + ' bytes';
+  const bn = document.getElementById('bar-new');
+  bn.style.width = Math.round(g.new / GUARD_MAX * 100) + '%';
+  bn.textContent = g.new + ' bytes';
+  const be = document.getElementById('bar-extra');
+  be.style.width = Math.round(g.extra / GUARD_MAX * 100) + '%';
+  be.textContent = g.extra ? '+' + g.extra : '';
+  be.style.display = g.extra ? 'flex' : 'none';
+  const v = document.getElementById('guardverdict');
+  v.className = 'guardverdict ' + (g.ok ? 'ok' : 'stop');
+  v.innerHTML = g.verdict;
+}
+const guardnav = document.getElementById('guardnav');
+[['same','edit a proc body (size 40)'],['grow','append a field (size 48)']].forEach(([m,t])=>{
+  const b=document.createElement('button'); b.dataset.m=m; b.textContent=t;
+  b.onclick=()=>{guardMode=m;renderL3();}; guardnav.appendChild(b);
+});
+
+/* ---------- level navigation ---------- */
+const LEVELS=[
+  ['1','What it is','host state + swappable library'],
+  ['2','Why use it','save → see, not rebuild + relaunch'],
+  ['3','The bill','the layout must stay stable'],
+  ['4','The payoff','state outlives code'],
+];
+let level='1';
+function setLevel(n){
+  level=n;
+  document.querySelectorAll('.levels button').forEach(b=>b.classList.toggle('on',b.dataset.n===n));
+  for(const [k] of LEVELS){ const el=document.getElementById('s'+k); if(el) el.classList.toggle('on',k===n); }
+  if(n==='1') renderL1();
+  if(n==='2') renderL2();
+  if(n==='3') renderL3();
+}
+const lnav=document.getElementById('levelnav');
+for(const [n,tt,sub] of LEVELS){ const b=document.createElement('button'); b.dataset.n=n;
+  b.innerHTML=`<span class="lv">Level ${n} · ${sub}</span><span class="tt">${tt}</span>`;
+  b.onclick=()=>setLevel(n); lnav.appendChild(b); }
+setLevel('1');
+</script>
+</body>
+</html>

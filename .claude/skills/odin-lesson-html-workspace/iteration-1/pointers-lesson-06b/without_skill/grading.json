@@ -1,0 +1,13 @@
+{
+  "run_id": "pointers-lesson-06b-without_skill",
+  "expectations": [
+    {"text": "Single self-contained HTML (inline <style>/<script>, no external assets/CDNs)", "passed": true, "evidence": "One file, inline style+script, no external refs."},
+    {"text": "3-5 distinct levels with tab nav, each a different altitude", "passed": true, "evidence": "4 levels mirroring the reference arc; clearly distinct altitudes."},
+    {"text": "Describes Odin in Odin's terms; C only as labeled contrast", "passed": true, "evidence": "Got 'Odin has no pointer-arithmetic operators at all' right; C#/Rust only in labeled contrasts. Minor: calls reclaimed storage 'garbage' in the dangling case (accurate for use-after-scope, not the targeted init C-ism)."},
+    {"text": "Shows verified 'Cannot convert untyped value 1 to ^int' pointer-arith rejection", "passed": true, "evidence": "L4 shows the exact error string in a <pre>."},
+    {"text": "Every number/size/error/output backed by a real compile", "passed": false, "evidence": "Created claims (ptr-sizes, alias-bytes, ...) and claims PASS, BUT the L1 byte strip uses 'A fake but stable address' (script comment line ~289) rather than a measured representative address. Weaker provenance than required: a shown byte strip should trace to a measured value, even if labeled nondeterministic."},
+    {"text": "Reuses the reference design system", "passed": true, "evidence": "Same theme + components; .trio table, .frame, .oopstrip in the reference idiom."},
+    {"text": "Arc recap + honest provenance footer", "passed": true, "evidence": "Closing recap present; footer cites claims dir. Footer is honest about the (faked) address by saying it shows 'the relationship, not a fixed hex value'."},
+    {"text": "Misconception callout disambiguating a confusable neighbor", "passed": true, "evidence": "'not the same as a nil pointer' .note distinguishing dangling vs nil; plus the trio table."}
+  ]
+}

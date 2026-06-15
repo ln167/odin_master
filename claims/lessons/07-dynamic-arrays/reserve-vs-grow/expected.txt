@@ -1,0 +1,2 @@
+grow-from-0:  final cap=2040  reallocations=8
+reserve-1024: final cap=1024  reallocations=0

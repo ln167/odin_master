@@ -1,0 +1,9 @@
+a       = bit_set[Element]{Fire, Ice}  int=3
+b       = bit_set[Element]{Fire, Physical}  int=9
+a | b   = bit_set[Element]{Fire, Ice, Physical}  int=11
+a & b   = bit_set[Element]{Fire}  int=1
+a - b   = bit_set[Element]{Ice}  int=2
+.Fire in a      = true
+.Lightning in a = false
+card(a) = 2
+door <= player  = true

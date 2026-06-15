@@ -1,0 +1,3 @@
+attack(): 10
+attack(25): 25
+attack(25, true): 50

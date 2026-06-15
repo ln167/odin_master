@@ -1,0 +1,3 @@
+  inside by_value   local = [999, 20, 30, 40]
+after by_value   a = [10, 20, 30, 40]
+after by_pointer a = [999, 20, 30, 40]

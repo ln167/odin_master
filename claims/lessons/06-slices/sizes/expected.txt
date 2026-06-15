@@ -1,0 +1,5 @@
+size_of([6]int)  = 48
+size_of([]int)   = 16
+size_of(^int)    = 8
+len(all)         = 6
+len(mid)         = 3

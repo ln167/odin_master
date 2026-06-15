@@ -1,0 +1,7 @@
+size_of(Particle)         = 28
+size_of([3]f32)           = 12
+size_of([N]Particle)      = 112
+size_of(#soa [N]Particle) = 112
+AoS pos stride            = 28
+SoA pos stride            = 12
+&soa[0].pos == &soa.pos[0]: true

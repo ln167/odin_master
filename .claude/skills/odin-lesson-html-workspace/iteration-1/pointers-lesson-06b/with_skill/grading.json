@@ -1,0 +1,13 @@
+{
+  "run_id": "pointers-lesson-06b-with_skill",
+  "expectations": [
+    {"text": "Single self-contained HTML (inline <style>/<script>, no external assets/CDNs)", "passed": true, "evidence": "One file, inline style+script, zero external refs."},
+    {"text": "3-5 distinct levels with tab nav, each a different altitude", "passed": true, "evidence": "4 levels: address/aliasing -> shared mutation -> lifetimes/dangling -> three pointer types. Level-tab nav built from LEVELS array. Each is a clearly different altitude."},
+    {"text": "Describes Odin in Odin's terms; C only as labeled contrast", "passed": true, "evidence": "Exemplary: postfix p^, auto-deref p.field, nil-not-garbage stated explicitly. C/C#/Rust appear ONLY in .note.contrast callouts, each resolved back to Odin."},
+    {"text": "Shows verified 'Cannot convert untyped value 1 to ^int' pointer-arith rejection", "passed": true, "evidence": "L4 errKey 'ptradd' shows exact string; backed by break-pointer-arith claim. Plus the [^]int+1 case (multiptr-no-arith)."},
+    {"text": "Every number/size/error/output backed by a real compile", "passed": true, "evidence": "notes.md maps each fact to a claim; created sizes/deref-roundtrip/byte-layout/by-value-no-mutate (+ reused break-*). Independently confirmed `lessons/06b-pointers/sizes` PASS. Address shown as a real representative run, labeled nondeterministic."},
+    {"text": "Reuses the reference design system", "passed": true, "evidence": "Same :root theme, mono+serif roles, .canvas/.byte/.note components; adds .memrow/.lane/.ladder built in the same idiom."},
+    {"text": "Arc recap + honest provenance footer", "passed": true, "evidence": "Closing one-clause-per-level recap present in L4. Footer: 'widths, bytes, outputs & the L3/L4 errors are real compiler output (claims/lessons/06b-pointers)'."},
+    {"text": "Misconception callout disambiguating a confusable neighbor", "passed": true, "evidence": "The ^T/[^]T/[]T type ladder is the central disambiguator; plus a nil-vs-dangling .note."}
+  ]
+}

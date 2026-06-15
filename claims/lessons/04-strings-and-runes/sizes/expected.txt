@@ -1,0 +1,4 @@
+size_of(string)  = 16
+size_of(rune)    = 4
+size_of(u8)      = 1
+size_of(cstring) = 8

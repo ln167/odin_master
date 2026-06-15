@@ -1,0 +1,3 @@
+counter (heap, will be freed on exit): 42
+slice (heap, will be deleted on exit): 0 1 4 9
+reached end of scope; both defers fire now

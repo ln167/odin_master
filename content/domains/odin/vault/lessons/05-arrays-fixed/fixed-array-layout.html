@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Odin fixed arrays — one block, four levels deep</title>
+<style>
+  :root{
+    --paper:#15130f; --card:#1d1a14; --ink:#ece6d8; --muted:#9a9182;
+    --rule:#332e24; --accent:#5ec8b8; --accent-soft:#1f342f;
+    --tag:#e0875a; --pad:#5a544a; --bad:#e0675a; --bad-soft:#2a1815;
+    --mono:"Cascadia Mono","Cascadia Code",Consolas,ui-monospace,"SF Mono",monospace;
+    --serif:-apple-system,"Segoe UI Variable Text","Segoe UI",system-ui,Roboto,"Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper);color:var(--ink)}
+  body{font-family:var(--serif);line-height:1.6;padding:0 20px;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-feature-settings:"kern" 1,"liga" 1}
+  .page{max-width:860px;margin:0 auto;padding:46px 0 90px}
+  .kicker{font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+  h1{font-size:30px;line-height:1.15;margin:0 0 18px;font-weight:600;letter-spacing:-.01em}
+
+  /* level tabs */
+  .levels{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+  .levels button{flex:1;min-width:150px;text-align:left;background:var(--card);border:1px solid var(--rule);
+    color:var(--muted);border-radius:10px;padding:11px 14px;cursor:pointer;transition:.12s;font-family:var(--serif)}
+  .levels button:hover{border-color:var(--accent)}
+  .levels button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--ink)}
+  .levels .lv{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);display:block;margin-bottom:3px}
+  .levels .tt{font-size:14px}
+  .rule{height:1px;background:var(--rule);margin:22px 0 26px}
+
+  .deck{color:var(--muted);font-size:17px;margin:0 0 24px;line-height:1.5}
+  .deck b{color:var(--ink)}
+  h2{font-size:21px;margin:0 0 14px;font-weight:600}
+  p.teach{font-size:16px;line-height:1.62;max-width:46em}
+  p.teach code,.il{font-family:var(--mono);font-size:.86em;background:#2a2519;padding:1px 5px;border-radius:4px}
+  .teach b{color:var(--tag)}
+  .section{display:none}
+  .section.on{display:block}
+
+  nav.sub{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;font-family:var(--mono);font-size:13px}
+  nav.sub button{background:var(--card);border:1px solid var(--rule);color:var(--muted);border-radius:8px;padding:8px 14px;cursor:pointer;transition:.12s}
+  nav.sub button:hover{color:var(--ink);border-color:var(--accent)}
+  nav.sub button.on{color:var(--ink);border-color:var(--accent);background:var(--accent-soft)}
+  .hint{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin:0 0 20px}
+
+  .canvas{background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:30px 28px}
+  .slotlabel{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
+
+  /* the contiguous byte strip (32 cells = 4 eight-byte int slots) */
+  .slotrow{display:grid;grid-template-columns:repeat(32,1fr);gap:3px;margin-bottom:6px;height:24px}
+  .slotspan{display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:11px;color:var(--accent);border-bottom:2px solid var(--accent);border-radius:2px;cursor:pointer}
+  .strip{display:grid;grid-template-columns:repeat(32,1fr);gap:3px}
+  .byte{aspect-ratio:1/1.4;border-radius:4px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:var(--mono);position:relative;border:1px solid transparent}
+  .byte .hx{font-size:10px;font-weight:600}
+  .byte .ix{position:absolute;top:1px;left:2px;font-size:6px;color:var(--muted);opacity:.6}
+  .b-live{background:var(--accent-soft);border-color:var(--accent);color:#cdeee7}
+  .b-dim{background:#241f17;border-color:#2a2519;color:#6f6655}
+  .b-high{background:#3a2417;border-color:var(--tag);color:#f0b48a}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;margin-top:18px;font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+  .legend span{display:flex;align-items:center;gap:7px}
+  .chip{width:13px;height:13px;border-radius:3px;border:1px solid}
+  .c-live{background:var(--accent-soft);border-color:var(--accent)}
+  .c-dim{background:#241f17;border-color:#2a2519}
+  .c-high{background:#3a2417;border-color:var(--tag)}
+
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:26px}
+  @media(max-width:680px){.cols{grid-template-columns:1fr}}
+  .panel h3{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 12px;font-weight:600}
+  .sizes{font-family:var(--mono);font-size:13px;line-height:2}
+  .sizes .n{color:var(--accent);font-weight:600}
+  .sizes .big{color:var(--tag);font-weight:600}
+
+  pre{font-family:var(--mono);font-size:12.5px;line-height:1.7;background:#1a1710;border:1px solid var(--rule);border-radius:10px;padding:16px 18px;overflow:auto;margin:22px 0 0;white-space:pre-wrap}
+  pre .cm{color:#6f6655}
+  pre .kw{color:var(--accent)}
+  pre .er{color:var(--bad)}
+
+  /* copy vs alias lanes (Level 2) */
+  .twoup{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:6px}
+  @media(max-width:640px){.twoup{grid-template-columns:1fr}}
+  .lane{background:#1a1710;border:1px solid var(--rule);border-radius:12px;padding:16px}
+  .lane.good{border-color:var(--accent)}
+  .lane.warn{border-color:#4a342a}
+  .lane h4{font-family:var(--mono);font-size:12px;margin:0 0 4px;font-weight:600}
+  .lane.good h4{color:var(--accent)}
+  .lane.warn h4{color:var(--tag)}
+  .lane .sub{font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:12px}
+  .miniarr{display:flex;gap:4px;margin:6px 0}
+  .cellbox{flex:1;background:var(--accent-soft);border:1px solid var(--accent);border-radius:6px;padding:7px 4px;font-family:var(--mono);font-size:12px;text-align:center;color:#cdeee7;transition:.25s}
+  .cellbox.changed{background:#3a2417;border-color:var(--tag);color:#f0b48a}
+  .cellbox.dim{background:#241f17;border:1px dashed #5a4530;color:#8a7a66}
+  .laneflow{font-family:var(--mono);font-size:11px;color:var(--muted);margin:8px 0 2px;text-align:center}
+  .verdict{font-family:var(--mono);font-size:12px;margin-top:10px;padding:8px 10px;border-radius:7px}
+  .verdict.good{background:var(--accent-soft);color:#cdeee7;border:1px solid var(--accent)}
+  .verdict.warn{background:var(--bad-soft);color:#f0a892;border:1px solid #5a3a30}
+  .objlabel{font-family:var(--mono);font-size:10px;color:var(--muted);margin:10px 0 4px}
+
+  /* proportional copy-cost bars (Level 3) */
+  .bar{height:30px;border-radius:6px;display:flex;align-items:center;font-family:var(--mono);font-size:12px;padding-left:10px;color:#0e0c08;font-weight:600;margin:6px 0;transition:width .3s,background .2s}
+  .bar.used{background:var(--accent)}
+  .bar.heavy{background:repeating-linear-gradient(45deg,#5a544a,#5a544a 6px,#48433b 6px,#48433b 12px);color:var(--ink)}
+  .barrow{display:flex;align-items:center;gap:10px}
+  .barrow .lab{font-family:var(--mono);font-size:11px;color:var(--muted);width:150px;flex:none}
+
+  .note{background:#1a1710;border:1px solid var(--rule);border-left:3px solid var(--tag);
+    border-radius:10px;padding:15px 18px;margin-top:24px;font-size:15px;line-height:1.6;color:var(--muted)}
+  .note b{color:var(--ink)}
+  .note .h{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--tag);display:block;margin-bottom:8px}
+  .foot{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;margin-top:34px}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="kicker">Odin · fixed arrays</div>
+  <h1>A fixed array, four levels deep</h1>
+
+  <div class="levels" id="levelnav"></div>
+  <div class="rule"></div>
+
+  <!-- ===================== LEVEL 1 — WHAT IT IS ===================== -->
+  <section class="section" id="s1">
+    <p class="deck">A fixed array <span class="il">[N]T</span> is <b>N values of type T laid end to end in one block of memory</b> — nothing in front, nothing between, no separate length stored anywhere. The count <b>N is baked into the type itself</b>: <span class="il">[4]int</span> and <span class="il">[5]int</span> are different types. Pick a slot below and watch where its bytes live.</p>
+    <div class="hint">Real bytes, measured from a compiled Odin program (little-endian). Each int slot is 8 bytes; byte index is top-left of each cell.</div>
+
+    <nav class="sub" id="nav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="striplabel"></div>
+      <div class="slotrow" id="slotrow"></div>
+      <div class="strip" id="strip"></div>
+      <div class="legend">
+        <span><i class="chip c-live"></i> all four slots (one block)</span>
+        <span><i class="chip c-high"></i> the slot you picked</span>
+        <span><i class="chip c-dim"></i> high bytes of each int (zero)</span>
+      </div>
+    </div>
+
+    <div class="cols">
+      <div class="panel"><h3>Widths (size_of)</h3>
+        <div class="sizes">
+          int&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; = <span class="n">8</span><br>
+          <b style="color:var(--ink)">[4]int</b>&nbsp; = <span class="big">32</span> <span style="color:var(--muted)">= 4 &times; 8</span><br>
+          f32&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; = <span class="n">4</span><br>
+          Vec3&nbsp;&nbsp; = <span class="n">12</span> <span style="color:var(--muted)">= 3 &times; 4</span><br>
+          align_of([4]int) = <span class="n">8</span><br><br>
+          <span style="color:var(--muted)"><b style="color:var(--ink)">len(a)</b> = <span class="n">4</span> — a compile-time constant; it rides inside the type, not as a stored word.</span>
+        </div>
+      </div>
+      <div class="panel"><h3>What you're seeing</h3><p class="teach" id="teach"></p></div>
+    </div>
+
+    <p class="teach" style="margin-top:26px">Because every slot is the same width and they sit back to back, reaching <span class="il">a[i]</span> is a <b>direct indexed access</b>: start at the block, step <i>i</i> slots of 8 bytes, you're there. The cost of getting any element is the same as getting the first — there is no chain to follow off to somewhere else in memory. That uniform stride is the whole speed story of a packed array, and it is why a <span class="il">[N]T</span> streams through the cache cleanly when you loop over it.</p>
+  </section>
+
+  <!-- ============= LEVEL 2 — IT'S A VALUE ============= -->
+  <section class="section" id="s2">
+    <p class="deck">Level 1 was <i>what it is</i>. Level 2 is the property that surprises people: a fixed array <b>is a value</b>. Assigning it, or passing it to a proc, <b>copies every element</b> — you get a second, independent block. There is no sharing by default.</p>
+    <p class="teach">Two lines that look identical but mean opposite things. <span class="il">b := a</span> <b>copies</b> all four ints into a fresh block named <span class="il">b</span>. <span class="il">s := a[:]</span> takes a <b>slice</b> — a view that points back at <span class="il">a</span>'s own storage, no copy. Then write <span class="il">999</span> through each and watch who changes:</p>
+
+    <nav class="sub" id="copynav"></nav>
+    <div class="twoup">
+      <div class="lane good">
+        <h4>b := a</h4>
+        <div class="sub">a copy — a second block of 32 bytes</div>
+        <div id="lane-copy"></div>
+      </div>
+      <div class="lane warn">
+        <h4>s := a[:]</h4>
+        <div class="sub">a slice — a view into a's bytes</div>
+        <div id="lane-alias"></div>
+      </div>
+    </div>
+
+    <p class="teach" style="margin-top:24px"><b>The mechanism:</b> the array literally <i>is</i> its bytes, so <span class="il">b := a</span> duplicates those bytes. <span class="il">b</span> and <span class="il">a</span> now have no connection — a write to one cannot be seen by the other. A <span class="il">[]int</span> slice is a different thing entirely: it is a small handle (a start and a length) that <i>refers</i> to storage it does not own. Writing through the slice reaches <span class="il">a</span>'s real bytes, so the change is visible under both names. Copy versus reference — and the array picked copy.</p>
+
+    <p class="teach"><b>The counterfactual:</b> if you only ever <i>read</i> the array, the copy semantics never cost you a thought — handing a proc a <span class="il">[4]int</span> gives it a private duplicate it cannot use to clobber yours. You only need to think about it when you <i>want</i> a write to stick, which is exactly when you reach for a slice or a pointer (Level 3). Value-by-default means the safe, non-aliasing case is the one you get for free.</p>
+
+    <div class="note">
+      <span class="h">the copy is so complete the parameter is read-only</span>
+      A by-value array parameter isn't just a copy you <i>can</i> mutate harmlessly — Odin treats it as <b>immutable</b>. Writing <span class="il">x[0] = 999</span> on a <span class="il">proc(x: [4]int)</span> parameter doesn't silently mutate a throwaway copy; it <b>doesn't compile</b>: <span style="color:var(--bad)">Error: Cannot assign to 'x[0]'</span>. If you genuinely want a local scratch array, you copy the parameter into a <span class="il">local := x</span> first and mutate that. The language won't let you mistake "I'm editing my copy" for "I'm editing the caller's array."
+    </div>
+  </section>
+
+  <!-- ===================== LEVEL 3 — THE BILL ===================== -->
+  <section class="section" id="s3">
+    <p class="deck">Level 2 sold you on value semantics. Level 3 is the bill: <b>a copy is real bytes moved.</b> At four ints it's nothing; at a few kilobytes, every assignment and every call quietly duplicates the whole block of bytes.</p>
+    <p class="teach">A <span class="il">[4]int</span> is 32 bytes — copying it is a couple of register loads, free in practice. But the copy is proportional to <span class="il">size_of</span>, and a fixed array can be large: a <span class="il">[4096]u8</span> pixel tile is 4096 bytes, copied in full every time you pass it by value. Toggle the element type and watch the per-call cost:</p>
+
+    <nav class="sub" id="costnav"></nav>
+    <div class="canvas">
+      <div class="slotlabel" id="costlabel"></div>
+      <div class="barrow"><div class="lab">copied by value</div><div style="flex:1"><div class="bar heavy" id="bar-copy"></div></div></div>
+      <div class="barrow"><div class="lab">^[N]T or []T handle</div><div style="flex:1"><div class="bar used" id="bar-handle"></div></div></div>
+      <div class="sizes" id="costsizes" style="margin-top:16px"></div>
+    </div>
+
+    <p class="teach"><b>The fix:</b> when the array is big and you don't need a private copy, hand over a <b>handle</b> instead of the bytes. A <span class="il">^[4]int</span> (a pointer to the array) or a <span class="il">[]int</span> slice is one 8-byte address (the slice adds a length word, so 16 bytes) — fixed and tiny no matter how big the array is. The proc reads and writes the caller's real storage through it. Below, <span class="il">by_value</span> mutates its copy and the caller is untouched; <span class="il">by_pointer</span> takes <span class="il">^[4]int</span> and the write lands on the original:</p>
+    <pre id="passpre"></pre>
+
+    <p class="teach" style="margin-top:22px"><b>The payoff hiding in the same feature:</b> because a numeric <span class="il">[N]T</span> is a real value the language understands, it gives you <b>element-wise arithmetic</b> with the plain operators — no loop, no library. <span class="il">Vec3{1,2,3} + Vec3{10,20,30}</span> is one expression:</p>
+    <pre id="vecpre"></pre>
+    <p class="teach">That is why a fixed array is the natural type for small vectors and colors in game and graphics code: it is a packed value with built-in math, and the only tax is the copy you now know how to dodge when it grows.</p>
+
+    <div class="note">
+      <span class="h">a slice is not a copy — and not a separate length you pass</span>
+      The handle you reach for, <span class="il">[]int</span>, is a <b>view</b>, not a duplicate: it borrows the array's storage and carries the array's length with it, so <span class="il">len(s)</span> always answers correctly. You never hand a proc the array <i>and</i> a separate count argument that could disagree — the length travels inside the slice (and inside the fixed array's own type). The class of bug where a length argument drifts out of sync with the data it describes simply has no place to live here.
+    </div>
+  </section>
+
+  <!-- ============= LEVEL 4 — THE EMERGENT PAYOFF ============= -->
+  <section class="section" id="s4">
+    <p class="deck">The last level isn't about bytes — it's the correctness property that <b>emerges from N living in the type</b>. The length isn't a runtime number you hope is right; it's a fact the compiler knows, and it spends that knowledge guarding every access.</p>
+    <p class="teach">An out-of-bounds read splits into two cases, and Odin handles each at the earliest moment it possibly can. When the index is a <b>compile-time constant</b>, the compiler already knows the length, so it proves the access is bad and <b>refuses to build</b> — no runtime check is even emitted. Pick a case:</p>
+
+    <nav class="sub" id="oobnav"></nav>
+    <pre id="oobpre"></pre>
+    <p class="teach" id="oobwhy" style="margin-top:14px"></p>
+
+    <p class="teach" style="margin-top:24px">And because the length is part of the <i>type</i>, mixing lengths is a type error, caught the same way. Element-wise <span class="il">+</span> demands matching shapes, so adding a <span class="il">[3]f32</span> to a <span class="il">[4]f32</span> never silently runs off the end of the shorter one — it doesn't build at all:</p>
+    <pre><span class="kw">p</span>: [3]f32 = {1, 2, 3}
+<span class="kw">q</span>: [4]f32 = {10, 20, 30, 40}
+r := p + q
+
+<span class="er">Error: Mismatched types in binary expression 'p + q' : '[3]f32' vs '[4]f32'</span></pre>
+
+    <p class="teach"><b>The emergent payoff:</b> a whole family of bugs — reading past the end, adding mismatched-length vectors, handing a proc the wrong-sized array — stops being a runtime hunt and becomes a <b>compile error the moment you write it</b>, because the length is a fact the type system carries rather than a number you track by hand. The runtime bounds check is the safety net for the one case the compiler genuinely can't decide ahead of time (an index it can't prove); everything it <i>can</i> prove, it catches before the program ever runs.</p>
+
+    <p class="teach" style="margin-top:24px;color:var(--muted)">That's the arc: <b style="color:var(--ink)">L1</b> N values end to end in one block, N baked into the type → <b style="color:var(--ink)">L2</b> that block <i>is</i> a value, so assigning or passing it copies — slices are how you share instead → <b style="color:var(--ink)">L3</b> the copy is real bytes, cheap when small, so big arrays travel by <span class="il">^[N]T</span> or <span class="il">[]T</span> handle → <b style="color:var(--ink)">L4</b> N-in-the-type turns out-of-bounds and length-mismatch into compile errors, with a runtime check only for what can't be proven.</p>
+  </section>
+
+  <div class="foot">probes reproduce with <span style="color:var(--ink)">odin run</span> · widths, bytes, outputs &amp; the L2/L4 errors are real compiler output (claims/lessons/05-arrays-fixed)</div>
+</div>
+
+<script>
+/* ============================================================
+   Each interactive component = one data object + one render fn.
+   Vanilla JS, inline, no libraries.
+   All embedded numbers/bytes/errors come from passing claims
+   under claims/lessons/05-arrays-fixed/.
+   ============================================================ */
+
+/* ---------- LEVEL 1: the contiguous byte strip ----------
+   Measured (claims: layout-sizes, byte-strip):
+     size_of([4]int) = 32, align 8, len 4, slot stride 8
+     a = {10,20,30,40} dumps to little-endian bytes:
+     0a 00 00 00 00 00 00 00  14 ...  1e ...  28 ...
+   So byte 0 = 0x0a (10), byte 8 = 0x14 (20), byte 16 = 0x1e (30), byte 24 = 0x28 (40). */
+const VALS = [10, 20, 30, 40];                 // a[0..3]
+const STRIP_BYTES = [];                        // 32 little-endian bytes
+for (const v of VALS) {                        // 8 bytes per int slot
+  let a = v;
+  for (let k = 0; k < 8; k++) { STRIP_BYTES.push(a & 0xff); a = a >> 8; }
+}
+let pick = 0;                                  // which slot is highlighted
+function renderL1(){
+  document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('on', +b.dataset.i===pick));
+  document.getElementById('striplabel').textContent =
+    `a : [4]int = {10, 20, 30, 40}   —   32-byte block   ·   a[${pick}] = ${VALS[pick]}, stored at bytes ${pick*8}..${pick*8+7}`;
+  // slot labels across the top (each spans its 8 bytes)
+  let sr='';
+  for(let s=0;s<4;s++){
+    sr+=`<div class="slotspan" data-s="${s}" style="grid-column:${s*8+1}/${s*8+9}">a[${s}] = ${VALS[s]}</div>`;
+  }
+  document.getElementById('slotrow').innerHTML=sr;
+  // 32 byte cells
+  let html='';
+  for(let i=0;i<32;i++){
+    const slot=Math.floor(i/8);
+    const low=(i%8)===0;                       // byte 0 of each int holds the value (<256)
+    let cls;
+    if(slot===pick) cls='b-high';
+    else if(low) cls='b-live';
+    else cls='b-dim';
+    const hx=STRIP_BYTES[i].toString(16).padStart(2,'0');
+    html+=`<div class="byte ${cls}"><span class="ix">${i}</span><span class="hx">${hx}</span></div>`;
+  }
+  document.getElementById('strip').innerHTML=html;
+  document.getElementById('teach').innerHTML=
+    `<code>a[${pick}]</code> is the ${['first','second','third','fourth'][pick]} 8-byte slot. Its value <b>${VALS[pick]}</b> sits in byte <b>${pick*8}</b> (low byte first); the seven bytes above it are the int's high bytes, all zero for these small numbers. Nothing separates the slots — slot ${pick} starts exactly where slot ${pick-1<0?'(the block)':pick-1} ends. To reach it the program steps <b>${pick} &times; 8 = ${pick*8} bytes</b> from the start. No length word is stored; <code>len(a)</code> is <b>4</b> because the type says so.`;
+}
+const nav=document.getElementById('nav');
+for(let i=0;i<4;i++){
+  const b=document.createElement('button'); b.dataset.i=i; b.textContent=`a[${i}]`;
+  b.onclick=()=>{pick=i;renderL1();}; nav.appendChild(b);
+}
+
+/* ---------- LEVEL 2: copy vs alias ----------
+   Measured (claims: copy-semantics, slice-aliases):
+     b := a; b[0]=999  yields  a = [10,20,30,40],  b = [999,20,30,40]
+     s := a[:]; s[0]=999 yields a = [999,20,30,40], s = [999,20,30,40]   */
+let copyPhase='before';
+function cell(v,changed,dim){ return `<div class="cellbox ${changed?'changed':''} ${dim?'dim':''}">${v}</div>`; }
+function renderL2(){
+  document.querySelectorAll('#copynav button').forEach(b=>b.classList.toggle('on',b.dataset.p===copyPhase));
+  const wrote = copyPhase==='after';
+  // COPY lane: a stays [10,20,30,40]; b's [0] becomes 999
+  const aCopy = [10,20,30,40];
+  const bCopy = wrote ? [999,20,30,40] : [10,20,30,40];
+  document.getElementById('lane-copy').innerHTML =
+    `<div class="objlabel">a (original block)</div>
+     <div class="miniarr">${aCopy.map((v)=>cell(v,false,false)).join('')}</div>
+     <div class="laneflow">${wrote?'b[0] = 999 wrote the copy →':'b is a fresh copy of a'}</div>
+     <div class="objlabel">b (its own 32 bytes)</div>
+     <div class="miniarr">${bCopy.map((v,i)=>cell(v, wrote&&i===0, false)).join('')}</div>
+     <div class="verdict good">a = [10, 20, 30, 40] — untouched</div>`;
+  // ALIAS lane: s is a view; s[0]=999 also changes a
+  const aAlias = wrote ? [999,20,30,40] : [10,20,30,40];
+  document.getElementById('lane-alias').innerHTML =
+    `<div class="objlabel">a (the storage)</div>
+     <div class="miniarr">${aAlias.map((v,i)=>cell(v, wrote&&i===0, false)).join('')}</div>
+     <div class="laneflow">${wrote?'s[0] = 999 wrote a’s bytes →':'s points back at a (no copy)'}</div>
+     <div class="objlabel">s : []int (a view into a)</div>
+     <div class="miniarr">${aAlias.map((v,i)=>cell(v, wrote&&i===0, true)).join('')}</div>
+     <div class="verdict warn">a = [999, 20, 30, 40] — changed through s</div>`;
+}
+const copynav=document.getElementById('copynav');
+[['before','set up: a = {10,20,30,40}'],['after','▸ write 999 through each']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.p=k; b.textContent=t;
+  b.onclick=()=>{copyPhase=k;renderL2();}; copynav.appendChild(b);
+});
+
+/* ---------- LEVEL 3: copy cost + pass-by-value/pointer + element-wise ----------
+   Measured (claims: layout-sizes, pass-by-pointer, elementwise):
+     size_of([4]int)=32, size_of([4096]u8)=4096; handle = 8 (ptr) / 16 (slice)
+     by_value local=[999,20,30,40]; after by_value a=[10,20,30,40];
+       after by_pointer a=[999,20,30,40]
+     p+q=[11,22,33], p*q=[10,40,90], q-p=[9,18,27]                     */
+const COST = {
+  small: { label:'[4]int', copy:32,   handle:8,  note:'A <span class="n">32</span>-byte copy is a register move or two — pass it by value all day. The <span class="n">8</span>-byte pointer would save nothing.' },
+  big:   { label:'[4096]u8', copy:4096, handle:8, note:'A <span class="big">4096</span>-byte copy <i>every call</i>. The <span class="n">8</span>-byte <span style="font-family:var(--mono)">^[4096]u8</span> handle moves the same data for the cost of one address.' },
+};
+let costMode='small';
+const COST_MAX = 4096;
+function renderL3(){
+  document.querySelectorAll('#costnav button').forEach(b=>b.classList.toggle('on',b.dataset.m===costMode));
+  const f=COST[costMode];
+  document.getElementById('costlabel').textContent=`${f.label}  —  by value copies ${f.copy} bytes per call`;
+  const pc = Math.max(2, Math.round(f.copy/COST_MAX*100));
+  document.getElementById('bar-copy').style.width=pc+'%';
+  document.getElementById('bar-copy').textContent=f.copy+' bytes';
+  const ph = Math.max(2, Math.round(f.handle/COST_MAX*100));
+  document.getElementById('bar-handle').style.width=ph+'%';
+  document.getElementById('bar-handle').textContent=f.handle+' bytes';
+  document.getElementById('costsizes').innerHTML=f.note;
+}
+const costnav=document.getElementById('costnav');
+[['small','[4]int — 32 B'],['big','[4096]u8 — 4096 B']].forEach(([m,t])=>{
+  const b=document.createElement('button'); b.dataset.m=m; b.textContent=t;
+  b.onclick=()=>{costMode=m;renderL3();}; costnav.appendChild(b);
+});
+/* the two static <pre> blocks for L3 (verified output) */
+document.getElementById('passpre').innerHTML =
+`<span class="kw">by_value</span> :: proc(x: [4]int) {
+    local := x        <span class="cm">// an explicit copy; the parameter itself is read-only</span>
+    local[0] = 999
+}
+<span class="kw">by_pointer</span> :: proc(x: ^[4]int) {
+    x[0] = 999        <span class="cm">// writes the caller's array through the address</span>
+}
+
+  inside by_value   local = [999, 20, 30, 40]
+after by_value   a = [10, 20, 30, 40]      <span class="cm">// the copy's write didn't stick</span>
+after by_pointer a = [999, 20, 30, 40]     <span class="cm">// the pointer's write did</span>`;
+document.getElementById('vecpre').innerHTML =
+`Vec3 :: [3]f32
+p := Vec3{1, 2, 3}
+q := Vec3{10, 20, 30}
+
+p + q = [11, 22, 33]    <span class="cm">// element-wise, no loop, no library</span>
+p * q = [10, 40, 90]
+q - p = [9, 18, 27]`;
+
+/* ---------- LEVEL 4: the two out-of-bounds cases ----------
+   Verified error / panic strings (claims):
+     break-oob-constant : Error: Index '10' is out of bounds range 0..<4, got 10   (COMPILE error)
+     break-oob-runtime  : Index 10 is out of range 0..<4                            (RUNTIME panic, exit nonzero) */
+const OOB = {
+  constant: {
+    code:"a: [4]int = {10, 20, 30, 40}\nfmt.println([[er]]a[10][[/er]])   [[cm]]// 10 is a constant the compiler can check[[/cm]]",
+    out:"Error: Index '10' is out of bounds range 0..<4, got 10",
+    kind:"compile error · the build stops",
+    why:"<code>10</code> is a literal constant, so the compiler already knows it falls outside <code>0..&lt;4</code>. It <b>rejects the program at build time</b> — no executable is produced, and <b>no runtime check is even emitted</b> for this access. The error is caught before the program could ever run." },
+  runtime: {
+    code:"a: [4]int = {10, 20, 30, 40}\ni := len(os.args) + 9     [[cm]]// >= 10, unknowable at compile time[[/cm]]\nfmt.println([[er]]a[i][[/er]])",
+    out:"Index 10 is out of range 0..<4",
+    kind:"runtime panic · the program aborts",
+    why:"<code>i</code> depends on the command line, so the compiler <i>cannot</i> prove it. Here it inserts a <b>bounds check</b> that runs when the index does: the program builds, starts, and then <b>aborts with a panic</b> the moment the bad access happens — a controlled crash with the exact index and range, not a silent read past the end." },
+};
+let oobKey='constant';
+function escHtml(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function renderL4(){
+  document.querySelectorAll('#oobnav button').forEach(b=>b.classList.toggle('on',b.dataset.k===oobKey));
+  const e=OOB[oobKey];
+  let html = escHtml(e.code)
+    .replace(/\[\[er\]\]/g,'<span class="er">').replace(/\[\[\/er\]\]/g,'</span>')
+    .replace(/\[\[cm\]\]/g,'<span class="cm">').replace(/\[\[\/cm\]\]/g,'</span>');
+  document.getElementById('oobpre').innerHTML =
+    html + '\n\n<span class="er">' + escHtml(e.out) + '</span>';
+  document.getElementById('oobwhy').innerHTML = `<b>${e.kind}.</b> ${e.why}`;
+}
+const oobnav=document.getElementById('oobnav');
+[['constant','constant index a[10]'],['runtime','runtime index a[i]']].forEach(([k,t])=>{
+  const b=document.createElement('button'); b.dataset.k=k; b.textContent=t;
+  b.onclick=()=>{oobKey=k;renderL4();}; oobnav.appendChild(b);
+});
+
+/* ---------- level navigation ---------- */
+const LEVELS=[
+  ['1','What it is','N values, one block'],
+  ['2','It’s a value','assigning copies all of it'],
+  ['3','The bill','the copy is real bytes'],
+  ['4','Why it stays safe','N lives in the type'],
+];
+let level='1';
+function setLevel(n){
+  level=n;
+  document.querySelectorAll('.levels button').forEach(b=>b.classList.toggle('on',b.dataset.n===n));
+  for(const [k] of LEVELS){ const el=document.getElementById('s'+k); if(el) el.classList.toggle('on',k===n); }
+  if(n==='1') renderL1();
+  if(n==='2') renderL2();
+  if(n==='3') renderL3();
+  if(n==='4') renderL4();
+}
+const lnav=document.getElementById('levelnav');
+for(const [n,tt,sub] of LEVELS){ const b=document.createElement('button'); b.dataset.n=n;
+  b.innerHTML=`<span class="lv">Level ${n} · ${sub}</span><span class="tt">${tt}</span>`;
+  b.onclick=()=>setLevel(n); lnav.appendChild(b); }
+setLevel('1');
+</script>
+</body>
+</html>
