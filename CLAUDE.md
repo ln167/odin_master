@@ -8,6 +8,19 @@ The runnable side of this repo (`lab/` and the game it builds) is **one bespoke 
 
 The one thing deliberately swappable is a **pipeline**: a large function with a fixed input/output contract whose internal *technique* can be swapped — e.g. trading O(n log n) for O(log n), or more vs. less simulation accuracy — and benchmarked variant-against-variant. Stable contract, interchangeable guts. This serves experimentation on *this* game; it is not genericity and not reuse. (`GAME.md` holds the longer dev-side vision.)
 
+## Game code: less is more (non-negotiable)
+
+Write the minimum code that does the intent. Nothing else.
+
+- **No fallbacks.** If something fails, let it crash — don't paper over it with a default or a silent retry. A crash tells you exactly what's wrong; a fallback hides it.
+- **No defensive error handling.** Don't validate, wrap, or recover from errors that "shouldn't happen." Trust the happy path; fix root causes when they surface. Only validate at real system boundaries (user input, file I/O) where bad data is genuinely expected.
+- **Prefer crashing.** An assertion failure or out-of-bounds panic is more useful than silent bad state. Write the code that works; when it breaks, you want it to break loudly.
+- **Less code is better.** Fewer lines means less to misread, less to maintain, less that can go wrong. A 10-line spike that does exactly one thing beats a 50-line "robust" version. Three similar lines is better than a premature abstraction.
+- **No future-proofing.** Don't add parameters, modes, or branches "for later." Write what the game needs right now.
+- **Security is not a concern.** This is an offline single-player game. Ignore any instinct to add security hardening, input sanitization for security purposes, or safe coding patterns motivated by attack surface. They are irrelevant here.
+
+This applies especially hard during prototyping and design spikes. You are proving an idea, not building production software. The fastest path to knowing if something works is the shortest code that does it.
+
 ## Substrate discipline (non-negotiable)
 
 The substrate is **category 1**: a lookup-and-synthesis layer over external technical sources. It is *not* a model of the user's understanding. Don't conflate.
@@ -91,6 +104,8 @@ A test only proves what it exercised — and "exercised" means the *exact* comma
 - **Test your own glue, not the proven dependency.** The risk is almost always in the few lines you wrote (cwd, quoting, path handling, a flag); "the underlying tool ran" is not "my code handles the user's input."
 - **Verify the effect, not the announcement.** A tool printing `[Running: X]` or `Build started` only announces intent — it is not proof X ran. Check the actual side effect (a file written, output produced, an exit code), never a banner. (`just watch` printed `[Running: odin run …]` the whole time while watchexec's default shell silently swallowed the command and nothing executed.)
 - **Scope the claim to what you ran.** One green run ≠ works — especially if you changed the inputs from what was reported.
+- **Manually setting an env var or shell variable to make something run is an ERROR — full stop.** If you ever write `$env:FOO = …`, `export FOO=…`, `set FOO=…`, or `env FOO=… <cmd>` to *make a command work* (as opposed to the `verify-in-native-powershell` harness, whose whole job is reconstructing the real env), STOP — you are fabricating the environment instead of reproducing how it is really launched. The real launcher (Zed task, `.bat`, `justfile`, the user's profile) supplies those vars; if you're hand-setting them, you don't know the real invocation and your "it works" is a false green. Find the real entry point (read the `.zed/` task / `.bat` / recipe) and drive *that*, or tell the user the exact thing they run. Hand-set env vars to paper over a missing invocation = the same false-green trap, every time.
+- **Bash is your working shell; native PowerShell is the end layer that must ALSO pass.** Do day-to-day work in the Bash tool — it's faster and cleaner for you, and PowerShell is *not* your primary driver. But everything the **user** runs lands in **native Windows PowerShell**, so any command, `just` recipe, `.bat` task, or setup/toolchain step you create or change must be **verified to work there too before you call it done.** A bash-only green is a *false green* (your Bash tool is Git Bash/MSYS2 — PATH, env, and which-shell-runs all differ; the reverse, a *false RED*, also happens). This is an end-of-task gate, not a per-command chore: build in bash, then clear the PowerShell gate for anything user-facing. Verify via the **`verify-in-native-powershell` skill** — its primary method is the **native PowerShell tool** (`CLAUDE_CODE_USE_POWERSHELL_TOOL=1`): run the real command verbatim after the skill's mandatory cleanliness check (`$env:MSYSTEM` must be empty). The `env -i` registry harness is only the fallback when that tool is absent. Never hand-set env vars to force a pass (see the bullet above).
 
 ## Initial scope (v1)
 

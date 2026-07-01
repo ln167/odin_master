@@ -1,0 +1,10 @@
+tele cap seq=1 rp=ptr type=rawptr proc=main loc=<...>:21
+tele cap seq=2 mp=ptr type=[^]int proc=main loc=<...>:23
+tele cap seq=3 ppp=7 type=^^int proc=main loc=<...>:25
+tele cap seq=4 fn=proc type=proc() proc=main loc=<...>:27
+tele cap seq=5 s=a=b c d type=string proc=main loc=<...>:29
+tele cap seq=6 flag=true type=bool proc=main loc=<...>:31
+tele cap seq=7 f=1.5 type=f32 proc=main loc=<...>:33
+tele cap seq=8 col=Green type=Color proc=main loc=<...>:35
+tele cap seq=9 nl=alpha\nbeta type=string proc=main loc=<...>:37
+tele cap seq=10 xs=[1]ptr type=[]^int proc=main loc=<...>:39

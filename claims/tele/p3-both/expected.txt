@@ -1,0 +1,12 @@
+[90m<...>:14[0m [36mx[0m [90m(int)[0m = [33m42[0m
+tele x=42 type=int loc=<...>:14
+[90m<...>:15[0m [36mx[0m [90m(int)[0m = [33m42[0m
+tele x=42 type=int loc=<...>:15
+[90m<...>:15[0m [36mpos[0m [90m([2]f32)[0m = [33m[400, 100][0m
+tele pos=[400, 100] type=[2]f32 loc=<...>:15
+[90m<...>:16[0m [36mx[0m [90m(int)[0m = [33m42[0m
+tele x=42 type=int loc=<...>:16
+[90m<...>:16[0m [36mpos[0m [90m([2]f32)[0m = [33m[400, 100][0m
+tele pos=[400, 100] type=[2]f32 loc=<...>:16
+[90m<...>:16[0m [36mp[0m [90m(Player)[0m = [33mPlayer{hp = 100, name = "hero"}[0m
+tele p=Player{hp = 100, name = "hero"} type=Player loc=<...>:16

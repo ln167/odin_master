@@ -1,0 +1,6 @@
+tele x=42 type=int loc=<...>:14
+tele x=42 type=int loc=<...>:15
+tele pos=[400, 100] type=[2]f32 loc=<...>:15
+tele x=42 type=int loc=<...>:16
+tele pos=[400, 100] type=[2]f32 loc=<...>:16
+tele p=Player{hp = 100, name = "hero"} type=Player loc=<...>:16

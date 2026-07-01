@@ -1,0 +1,1 @@
+-define:TELE=on -define:TELE_FORMAT=machine -define:TELE_FLIGHT_CAP=4

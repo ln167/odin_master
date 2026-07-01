@@ -1,0 +1,6 @@
+tele observe=hp value=90 frame=0
+tele observe=score value=5 frame=0
+tele observe=hp value=80 frame=1
+tele observe=score value=10 frame=1
+tele observe=hp value=70 frame=2
+tele observe=score value=15 frame=2

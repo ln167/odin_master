@@ -7,6 +7,7 @@ package game
 // fallback if it ever crashes: destroy+recreate per reload and eat the leak).
 
 import "core:fmt"
+import "odin_lib:tele"
 import sdl "vendor:sdl3"
 import im "vnd:odin-imgui"
 import imsdl "vnd:odin-imgui/imgui_impl_sdl3"
@@ -52,6 +53,13 @@ ui_shutdown :: proc() {
 // viewport. ImGui never draws over the game.
 hud_window :: proc() {
 	s := &g_mem.sim
+	// (Re)register live observations once per DLL load — the registry resets on each hot-reload,
+	// so the len==0 guard refills it with the (still-valid) pointers into persistent g_mem.
+	if len(tele.observe_list()) == 0 {
+		tele.observe("frame", &s.frame)
+		tele.observe("paused", &s.paused)
+		tele.observe("pos", &s.particle.pos)
+	}
 	im.set_next_window_pos({FB_W + 6, 6}, .Always)
 	im.set_next_window_size({PANEL_W - 12, FB_H - 12}, .Always)
 	if im.begin("debug", nil, {.No_Resize, .No_Move, .No_Collapse}) {
@@ -77,6 +85,10 @@ hud_window :: proc() {
 		} else {
 			v := s.particle.pos - s.particle.pos_prev
 			im.text_unformatted(fmt.ctprintf("pos %.1f,%.1f  vel %.2f,%.2f", s.particle.pos.x, s.particle.pos.y, v.x, v.y))
+		}
+		im.separator_text("observe")
+		for o in tele.observe_list() {
+			im.text_unformatted(fmt.ctprintf("%s = %v", o.label, tele.observe_value(o)))
 		}
 	}
 	im.end()

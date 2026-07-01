@@ -1,0 +1,5 @@
+working
+fired: false
+paired: false
+own_seen: false
+whole_program: false

@@ -1,0 +1,4 @@
+count=3
+skips=2
+skip: do-form body scoped out near offset <...> (injected ';' would escape the do-scope)
+skip: when-stmt scoped out (compile-time branch)

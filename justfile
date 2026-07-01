@@ -1,5 +1,13 @@
 # odin_master task runner.
 
+# Pin the recipe interpreter to Git's bash as a LOGIN shell (-l). Git's usr/bin
+# is NOT on the Windows PATH here, so a non-login `sh -c`/`bash -c` inherits a
+# PATH without /usr/bin and recipes die with "grep: command not found" (from a
+# clean native PowerShell, our main driver). A login shell sources /etc/profile,
+# which unconditionally puts /usr/bin on PATH — so grep/sed/find always resolve,
+# from PowerShell, cmd, and Git Bash alike. Recipe bodies are POSIX sh.
+set shell := ["C:/Program Files/Git/bin/bash.exe", "-lc"]
+
 default:
     @just --list --unsorted
 
@@ -13,6 +21,14 @@ clean:
 
 format:
     @find . -name '*.odin' -not -path '*/build/*' -not -path '*/vendor/*' -print0 | xargs -0 -n1 odinfmt -overwrite
+
+# ─── Tele dial (off|on|max) — project-wide instrumentation level ──────────
+# `just tele` prints the current dial; `just tele <off|on|max>` sets it. The
+# dial lives in `.tele` at the root and zrun reads it on every run (console /
+# windowless). max = woven firehose (dev only); on = lean; off = ships nothing.
+# Changing it is the rare action — your run keybinds never change.
+tele level="":
+    @if [ -z "{{level}}" ]; then grep -vE '^[[:space:]]*#|^[[:space:]]*$' .tele | head -1 | sed 's/^/current dial: /'; elif echo "{{level}}" | grep -qE '^(off|on|max)$'; then grep -E '^[[:space:]]*#|^[[:space:]]*$' .tele > .tele.tmp && echo "{{level}}" >> .tele.tmp && mv .tele.tmp .tele && echo "dial set to: {{level}}"; else echo "usage: just tele [off|on|max]" && exit 1; fi
 
 # ─── Bench / profile ──────────────────────────────────────────────────────
 bench name:

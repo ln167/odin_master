@@ -1,5 +1,6 @@
 package game
 
+import "odin_lib:tele"
 import sdl "vendor:sdl3"
 
 Input_Context :: enum {
@@ -14,6 +15,7 @@ Action :: enum {
 	Step_Frame,
 	Toggle_Arena,
 	Toggle_HUD,
+	Flight_Dump,
 	Vote_1,
 	Vote_2,
 	Vote_3,
@@ -47,6 +49,7 @@ bind_defaults :: proc() {
 		Binding{._4, .Vote_4, .Gameplay},
 		Binding{.SPACE, .Toggle_Pause, .Debug},
 		Binding{.PERIOD, .Step_Frame, .Debug},
+		Binding{.F2, .Flight_Dump, .Debug},
 	)
 }
 
@@ -82,6 +85,9 @@ do_action :: proc(a: Action) {
 		}
 	case .Toggle_HUD:
 		g_mem.hud = !g_mem.hud
+	case .Flight_Dump:
+		// Manual flight-recorder trigger (W6): dump the last FLIGHT_CAP frames of the ring on demand.
+		tele.flight_dump("key")
 	case .Vote_1:
 		arena_select(1)
 	case .Vote_2:

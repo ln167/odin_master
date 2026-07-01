@@ -5,6 +5,7 @@ import "core:hash"
 import "core:mem"
 import "core:os"
 import "core:slice"
+import "odin_lib:tele"
 import sdl "vendor:sdl3"
 
 @(export)
@@ -92,8 +93,27 @@ game_update :: proc() {
 // One whole frame, SDL-free: advance the sim, repaint the framebuffer.
 // The SDL host calls it between event pump and texture blit; the headless
 // runner calls it directly.
+// Flight-recorder record names: static literals (the ring holds names across frames).
+@(rodata)
+TILE_NAMES := [4]string{"t0", "t1", "t2", "t3"}
+
 frame_step :: proc() {
 	tick_sim(&g_mem.sim)
+	// Flight recorder (W6): push this frame's state into the bounded ring -- cheap, no I/O. Shared by
+	// the SDL host and the headless runner (both call frame_step), so the black box fills for free;
+	// a trigger (a key, a NaN invariant, end-of-run) dumps the last FLIGHT_CAP frames. The frame is
+	// the opt-in coordinate (§7): the lab has the real counter, so it supplies it. Record the ACTIVE
+	// mode's entities -- the 4 tiles in arena, else the single particle -- so the black box shows what
+	// actually moved (an arena blow-up is a tile; recording the frozen particle would be useless).
+	s := &g_mem.sim
+	if s.arena {
+		for t, i in s.tiles {
+			tele.flight_record(s.frame, TILE_NAMES[i], t.pos)
+		}
+	} else {
+		tele.flight_record(s.frame, "pos", s.particle.pos)
+		tele.flight_record(s.frame, "vel", s.particle.pos - s.particle.pos_prev)
+	}
 	render_frame()
 }
 

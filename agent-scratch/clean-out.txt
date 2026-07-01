@@ -1,0 +1,10 @@
+MSYSTEM=[]  (empty = clean, like your native PowerShell)
+=== 1) bare usr/bin/sh.exe -cu   (the OLD broken shell) ===
+/usr/bin/grep
+=== 2) git/bin/bash.exe -cu      (the fix I applied) ===
+/usr/bin/grep
+=== 3) git/bin/bash.exe -lc      (login fallback) ===
+/usr/bin/grep
+=== 4) just tele on (current justfile shell) ===
+dial set to: on
+just-exit=0

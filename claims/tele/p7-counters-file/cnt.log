@@ -1,0 +1,2 @@
+tele count=hits value=2 loc=C:/Users/user1/dev/odin_master/claims/tele/p7-counters-file/main.odin:12
+tele count=misses value=1 loc=C:/Users/user1/dev/odin_master/claims/tele/p7-counters-file/main.odin:12

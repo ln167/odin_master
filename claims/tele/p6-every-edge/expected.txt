@@ -1,0 +1,1 @@
+n=0 fired 0, n=-5 fired 0, n=1 fired 5

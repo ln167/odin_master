@@ -14,6 +14,10 @@ ODIN_ROOT = Path(ODIN).resolve().parent
 SDL_NAME = {"linux": "libSDL3.so.0", "darwin": "libSDL3.dylib", "windows": "SDL3.dll"}[platform.system().lower()]
 # vnd: collection — Dear ImGui bindings (vendored at the repo root, shared with tools/ui)
 VND = f"-collection:vnd={ROOT.parent / 'tools' / 'domains' / 'odin' / 'odin_lib' / 'vendor'}"
+# odin_lib: collection — shared internal packages (tele, bench, …)
+ODIN_LIB = f"-collection:odin_lib={ROOT.parent / 'tools' / 'domains' / 'odin' / 'odin_lib'}"
+# the lab is the dev build: telemetry on so dbg/dump/watch/counters light up.
+TELE_ON = "-define:TELE=on"
 
 if platform.system().lower() == "windows":  # enable ANSI so the watch screen-clear works in plain conhost
     import ctypes
@@ -33,7 +37,7 @@ def ensure_sdl():
 
 def hot():
     ensure_sdl()
-    cmd = [ODIN, "build", "src/game", "-build-mode:dll", "-debug", VND,
+    cmd = [ODIN, "build", "src/game", "-build-mode:dll", "-debug", VND, ODIN_LIB, TELE_ON,
            f"-out:{HOT / ('game' + EXT)}"]
     if platform.system().lower() == "windows":
         cmd.append(f"-pdb-name:{HOT / f'game_{time.time_ns()}.pdb'}")
@@ -97,7 +101,7 @@ def test():
     ensure_sdl()
     out = HOT / ("labtest" + EXE)
     subprocess.run([ODIN, "build", "src/test", "-debug", "-define:LAB_HEADLESS=true",
-                    "-collection:src=src", VND, f"-out:{out}"], cwd=ROOT, check=True)
+                    "-collection:src=src", VND, ODIN_LIB, TELE_ON, f"-out:{out}"], cwd=ROOT, check=True)
     rc = subprocess.run([str(out)], cwd=ROOT).returncode
     if rc != 0:
         sys.exit(rc)
@@ -110,7 +114,7 @@ def guard():
     optimizer changed trajectory math — a real Odin/LLVM footgun). Input gates
     are pinned via LAB_DEBUG_KEYS so both builds handle keys identically."""
     base = [ODIN, "build", "src/headless", "-define:LAB_DEBUG_KEYS=true",
-            "-define:LAB_HEADLESS=true", "-collection:src=src", VND]
+            "-define:LAB_HEADLESS=true", "-collection:src=src", VND, ODIN_LIB, TELE_ON]
     none_exe = HOT / ("labx_none" + EXE)
     speed_exe = HOT / ("labx_speed" + EXE)
     subprocess.run([*base, "-o:none", f"-out:{none_exe}"], cwd=ROOT, check=True)
@@ -140,7 +144,7 @@ def labx():
     ensure_sdl()
     out = HOT / ("labx" + EXE)
     subprocess.run([ODIN, "build", "src/headless", "-debug", "-define:LAB_DEBUG_KEYS=true",
-                    "-define:LAB_HEADLESS=true", "-collection:src=src", VND, f"-out:{out}"], cwd=ROOT, check=True)
+                    "-define:LAB_HEADLESS=true", "-collection:src=src", VND, ODIN_LIB, TELE_ON, f"-out:{out}"], cwd=ROOT, check=True)
     sys.exit(subprocess.run([str(out), *sys.argv[2:]], cwd=ROOT).returncode)
 
 

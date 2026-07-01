@@ -1,0 +1,23 @@
+[90m<...>:35[0m [36mp[0m [90m(Particle)[0m =
+[33mParticle{
+	pos = [
+		400,
+		100,
+	],
+	vel = [
+		1.5,
+		-2,
+	],
+	color = "Green",
+	name = "player",
+	tags = [
+		1,
+		2,
+		3,
+	],
+	meta = map[
+		str = 10,
+	],
+	hp = 100,
+	alive = true,
+}[0m

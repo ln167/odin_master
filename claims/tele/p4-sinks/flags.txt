@@ -1,0 +1,1 @@
+-define:TELE=on -define:TELE_FORMAT=both -define:TELE_FILE=p4.log

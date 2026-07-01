@@ -4,15 +4,15 @@ package main
 
 import "core:fmt"
 import "core:time"
-import "odin_lib:instrument"
+import "odin_lib:tele"
 
 work :: proc(ms: int) {
-	instrument.SCOPE()
+	tele.SCOPE()
 	time.sleep(time.Duration(ms) * time.Millisecond)
 }
 
 main :: proc() {
-	instrument.SCOPE_NAMED("smoke")
+	tele.SCOPE_NAMED("smoke")
 	fmt.println("tracy smoke client up")
 	for i in 0 ..< 6 {
 		work(500)

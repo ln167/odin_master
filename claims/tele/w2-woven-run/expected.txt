@@ -1,0 +1,20 @@
+tele cap seq=1 xs=[1, 2, 3] type=[]int proc=main loc=<...>:11
+tele cap seq=2 acc=0 type=int proc=main loc=<...>:12
+tele cap seq=3 x=1 type=int proc=main loc=<...>:13
+tele cap seq=4 a=0 type=int proc=add loc=<...>:5
+tele cap seq=5 b=1 type=int proc=add loc=<...>:5
+tele cap seq=6 sum=1 type=int proc=add loc=<...>:6
+tele cap seq=7 acc=1 type=int proc=main loc=<...>:14
+tele cap seq=8 x=2 type=int proc=main loc=<...>:13
+tele cap seq=9 a=1 type=int proc=add loc=<...>:5
+tele cap seq=10 b=2 type=int proc=add loc=<...>:5
+tele cap seq=11 sum=3 type=int proc=add loc=<...>:6
+tele cap seq=12 acc=3 type=int proc=main loc=<...>:14
+tele cap seq=13 x=3 type=int proc=main loc=<...>:13
+tele cap seq=14 a=3 type=int proc=add loc=<...>:5
+tele cap seq=15 b=3 type=int proc=add loc=<...>:5
+tele cap seq=16 sum=6 type=int proc=add loc=<...>:6
+tele cap seq=17 acc=6 type=int proc=main loc=<...>:14
+tele cap seq=18 big=12 type=int proc=main loc=<...>:17
+12
+6

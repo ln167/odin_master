@@ -1,0 +1,5 @@
+tele flight dump reason=test count=4
+tele flight frame=3 x=30 proc=main loc=<...>:14
+tele flight frame=4 x=40 proc=main loc=<...>:14
+tele flight frame=5 x=50 proc=main loc=<...>:14
+tele flight frame=6 x=60 proc=main loc=<...>:14

@@ -15,6 +15,12 @@ target/
 *.rdi
 *.S
 
+# Windowless run-mode capture (zrun odin-run-log / <leader>ow) — session output
+run.log
+
+# Woven mirror built at dial=max (zrun weaves source here, never touches source)
+.tele-woven/
+
 # Assembly / IR dumps from `just asm` / `just asm-file`
 bench/**/*.S
 bench/**/*.s
@@ -91,3 +97,10 @@ tools/domains/odin/odin_lib/vendor/odin-imgui/build/venv/
 tools/domains/odin/odin_lib/vendor/odin-imgui/build/generated/
 tools/domains/odin/odin_lib/vendor/odin-imgui/build/make/
 tools/domains/odin/odin_lib/vendor/odin-imgui/build/build.bat
+
+# Tracy client lib build artifacts (just tracy-build) -- 881 KB, built per machine
+tools/domains/odin/odin_lib/vendor/odin-tracy/tracy.lib
+tools/domains/odin/odin_lib/vendor/odin-tracy/tracy.obj
+tools/domains/odin/odin_lib/vendor/odin-tracy/tracy.a
+tools/domains/odin/odin_lib/vendor/odin-tracy/tracy.so
+tools/domains/odin/odin_lib/vendor/odin-tracy/tracy.dylib

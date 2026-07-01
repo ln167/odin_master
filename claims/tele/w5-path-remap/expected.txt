@@ -1,0 +1,2 @@
+tele cap seq=1 hp=90 type=int proc=main loc=/src/pkg/main.odin:17
+tele cap seq=2 mana=30 type=int proc=main loc=/src/pkg/main.odin:19

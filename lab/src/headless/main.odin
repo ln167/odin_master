@@ -5,13 +5,15 @@ package main
 // for the loader): N deterministic frames, scripted key injection, per-frame
 // NaN/escape invariants, a folded trajectory hash, and PNG framebuffer dumps.
 //
-//   labx -frames:600 -script:tape.txt -png:out/shot -png-every:120 -arena
+//   labx -frames:600 -script:tape.txt -png:out/shot -png-every:120 -arena -flight
 //
-// Script lines: "<frame> <KEY>", KEY in R SPACE PERIOD ESCAPE A F1 1 2 3 4.
+// Script lines: "<frame> <KEY>", KEY in R SPACE PERIOD ESCAPE A F1 F2 1 2 3 4.
+// F2 = flight-recorder dump (W6); -flight also dumps the ring at end-of-run.
 // Output: "f=..." state lines every -state-every frames (default 60, 0 = off),
 // "png=..." per dump, final "hash=..." trajectory line.
 // Exit 0 = ok, 1 = invariant violation, 2 = bad usage/script.
 
+import "base:runtime"
 import "core:fmt"
 import "core:hash"
 import "core:math"
@@ -19,6 +21,7 @@ import "core:mem"
 import "core:os"
 import "core:strconv"
 import "core:strings"
+import "odin_lib:tele"
 import sdl "vendor:sdl3"
 import stbi "vendor:stb/image"
 import game "src:game"
@@ -28,13 +31,23 @@ Ev :: struct {
 	key:   sdl.Scancode,
 }
 
+// Route an assert failure through the flight recorder before the default abort: the last
+// FLIGHT_CAP frames of ring history are the black box for "what led up to the assert" (spec §10 trigger).
+flight_assert :: proc(prefix, message: string, loc: runtime.Source_Code_Location) -> ! {
+	tele.flight_dump(fmt.tprintf("assert: %s %s", prefix, message))
+	runtime.default_assertion_failure_proc(prefix, message, loc)
+}
+
 main :: proc() {
+	context.assertion_failure_proc = flight_assert // W6: an assert dumps the ring before aborting
+
 	frames := 600
 	state_every := 60
 	png_every := 0
 	png_prefix: string
 	script_path: string
 	arena := false
+	flight := false
 
 	for a in os.args[1:] {
 		switch {
@@ -50,6 +63,8 @@ main :: proc() {
 			script_path = a[len("-script:"):]
 		case a == "-arena":
 			arena = true
+		case a == "-flight":
+			flight = true // W6: dump the flight-recorder ring at end-of-run (else quiet)
 		case:
 			fmt.eprintfln("labx: unknown arg %q", a)
 			os.exit(2)
@@ -99,6 +114,9 @@ main :: proc() {
 			break
 		}
 		if msg, bad := invariants(); bad {
+			// Programmatic trigger (spec §10): a NaN / out-of-range particle dumps the ring -- the
+			// frames leading up to the blow-up -- before the run exits nonzero.
+			tele.flight_dump(fmt.tprintf("invariant f=%d %s", f, msg))
 			fmt.eprintfln("INVARIANT f=%d %s", f, msg)
 			os.exit(1)
 		}
@@ -114,6 +132,9 @@ main :: proc() {
 	}
 	if png_prefix != "" && png_every == 0 {
 		write_png(png_prefix, frames)
+	}
+	if flight {
+		tele.flight_dump("end-of-run") // W6: opt-in black box of the last FLIGHT_CAP frames
 	}
 	fmt.printfln("hash=%x", traj)
 }
@@ -141,6 +162,8 @@ key_from_name :: proc(name: string) -> (sdl.Scancode, bool) {
 		return .ESCAPE, true
 	case "F1":
 		return .F1, true
+	case "F2":
+		return .F2, true
 	case "1":
 		return ._1, true
 	case "2":

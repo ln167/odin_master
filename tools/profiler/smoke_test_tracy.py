@@ -7,7 +7,7 @@ the Tracy backend is alive. PASS = port accepts a connection during the
 binary's lifetime. FAIL = port unreachable or binary crashed.
 
 This does NOT validate the full Tracy protocol; it validates that the
-instrument package -> tracy.lib chain is initialized and listening.
+tele scope -> tracy.lib chain is initialized and listening.
 """
 import socket
 import subprocess

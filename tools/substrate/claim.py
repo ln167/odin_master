@@ -41,6 +41,10 @@ ROOT = Path(__file__).resolve().parents[2]
 ROOTS = [ROOT / "tests", ROOT / "claims"]
 PIN = (ROOT / ".odin-version").read_text(encoding="utf-8").strip()
 
+# Standing collection so any fixture can `import "odin_lib:tele"` (and friends) without
+# per-claim wiring. Harmless to claims that don't import it -- Odin ignores unused collections.
+COLL = f"-collection:odin_lib={ROOT / 'tools' / 'domains' / 'odin' / 'odin_lib'}"
+
 # --- faster verdict tunables (one place) --------------------------------------
 DEFAULT_K     = 1.5   # speedup factor B must beat when claim.txt omits k
 NOISE         = 1.15  # ~+/-15% run-to-run band on this box; speedups inside it are unprovable
@@ -139,10 +143,10 @@ def build(d, src, extra=()):
     # src == "." builds the whole directory as a package (multi-file/package lessons);
     # any other value is a single file via the -file shortcut. `extra` are per-claim flags.
     flags = [] if src == "." else ["-file"]
-    return run(["odin", "build", src, *flags, *extra, "-o:none", "-out:.bin"], cwd=d)
+    return run(["odin", "build", src, *flags, *extra, COLL, "-o:none", "-out:.bin"], cwd=d)
 
 def build_dir(d, opt="none"):
-    return run(["odin", "build", ".", f"-o:{opt}", "-out:.bin"], cwd=d)
+    return run(["odin", "build", ".", COLL, f"-o:{opt}", "-out:.bin"], cwd=d)
 
 def clean_artifacts(d):
     for a in ARTIFACTS:
@@ -232,7 +236,7 @@ def run_one(d: Path):
 
     if kind == "test":
         substr = " ".join(args)
-        r = run(["odin", "test", ".", *extra, "-out:.bin"], cwd=d)
+        r = run(["odin", "test", ".", *extra, COLL, "-out:.bin"], cwd=d)
         out = normalize(r.stderr + "\n" + r.stdout)  # the test runner reports on stderr
         if r.returncode == 0 and substr in out:
             return "PASS", [f"PASS  {name}  (tests pass)"]
@@ -241,7 +245,7 @@ def run_one(d: Path):
 
     if kind == "test-fails":
         substr = " ".join(args)
-        r = run(["odin", "test", ".", *extra, "-out:.bin"], cwd=d)
+        r = run(["odin", "test", ".", *extra, COLL, "-out:.bin"], cwd=d)
         out = normalize(r.stderr + "\n" + r.stdout)  # the test runner reports on stderr
         if r.returncode != 0 and substr in out:
             return "PASS", [f"PASS  {name}  (tests fail as expected)"]
@@ -251,7 +255,7 @@ def run_one(d: Path):
     if kind == "output":
         src = args[0] if args else "main.odin"
         flags = [] if src == "." else ["-file"]
-        r = run(["odin", "run", src, *flags, *extra, "-out:.bin"], cwd=d)
+        r = run(["odin", "run", src, *flags, *extra, COLL, "-out:.bin"], cwd=d)
         if r.returncode != 0:
             # build failed or the program crashed -- never a vacuous empty==empty pass.
             return "FAIL", [f"FAIL  {name}  (output)", f"  run exited {r.returncode}: {normalize(r.stderr)}"]

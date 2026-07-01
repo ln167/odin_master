@@ -1,0 +1,3 @@
+tele count=even value=5 loc=<...>:14
+tele count=odd value=5 loc=<...>:14
+tele count=total value=10 loc=<...>:14

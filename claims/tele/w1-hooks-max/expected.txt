@@ -1,0 +1,5 @@
+working
+fired: true
+paired: true
+own_seen: true
+whole_program: true

@@ -17,7 +17,7 @@
     "cwd": "$ZED_DIRNAME",
     "use_new_terminal": true,
     "reveal": "always",
-    "allow_concurrent_runs": true
+    "allow_concurrent_runs": true,
   },
   {
     "label": "Odin: run current file",
@@ -29,7 +29,24 @@
     "allow_concurrent_runs": false,
     "tags": ["odin-run"],
     "env": { "ZED_FAST_TASK": "1" },
-    "shell": { "program": "cmd.exe" }
+    "shell": { "program": "cmd.exe" },
+  },
+  {
+    // Windowless 2nd run-mode: runs the exe with no console, redirects all
+    // output to <root>\run.log, and opens that file in Zed. The Zed task
+    // pane stays hidden on success (output is in run.log) and only reveals
+    // on a build/run failure so errors stay clickable. See zrun odin-run-log.
+    "label": "Odin: run windowless (log)",
+    "command": ".zed\\scripts\\odin-run-log.bat",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "save": "current",
+    "reveal": "never",
+    "hide": "always",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "tags": ["odin-run-log"],
+    "env": { "ZED_FAST_TASK": "1" },
+    "shell": { "program": "cmd.exe" },
   },
   {
     "label": "Odin: build current file",
@@ -41,7 +58,7 @@
     "allow_concurrent_runs": false,
     "tags": ["odin-build"],
     "env": { "ZED_FAST_TASK": "1" },
-    "shell": { "program": "cmd.exe" }
+    "shell": { "program": "cmd.exe" },
   },
   {
     "label": "Odin: build package (cwd)",
@@ -51,7 +68,7 @@
     "reveal": "always",
     "use_new_terminal": true,
     "env": { "ZED_FAST_TASK": "1" },
-    "shell": { "program": "cmd.exe" }
+    "shell": { "program": "cmd.exe" },
   },
   {
     "label": "Odin: doctor",
@@ -60,16 +77,17 @@
     "reveal": "always",
     "use_new_terminal": true,
     "env": { "ZED_FAST_TASK": "1" },
-    "shell": { "program": "cmd.exe" }
+    "shell": { "program": "cmd.exe" },
   },
   {
     "label": "Odin: open scratch",
-    "command": "zed --add scratch\\scratch.odin",
+    "command": "\"C:\\Users\\user1\\AppData\\Local\\Programs\\Zed\\bin\\Zed.exe\" --add scratch\\scratch.odin",
     "cwd": "$ZED_WORKTREE_ROOT",
-    "reveal": "on_failure",
+    "reveal": "never",
+    "hide": "always",
     "use_new_terminal": true,
     "env": { "ZED_FAST_TASK": "1" },
-    "shell": { "program": "cmd.exe" }
+    "shell": { "program": "cmd.exe" },
   },
   {
     "label": "Odin: qmd search (selected text)",
@@ -78,7 +96,7 @@
     "reveal": "always",
     "use_new_terminal": true,
     "env": { "ZED_FAST_TASK": "1" },
-    "shell": { "program": "cmd.exe" }
+    "shell": { "program": "cmd.exe" },
   },
   {
     "label": "Odin: build debug current",
@@ -89,7 +107,7 @@
     "hide": "on_success",
     "use_new_terminal": true,
     "env": { "ZED_FAST_TASK": "1" },
-    "shell": { "program": "cmd.exe" }
+    "shell": { "program": "cmd.exe" },
   },
   {
     "label": "Odin: launch RAD Debugger (current)",
@@ -100,7 +118,7 @@
     "hide": "on_success",
     "use_new_terminal": true,
     "env": { "ZED_FAST_TASK": "1" },
-    "shell": { "program": "cmd.exe" }
+    "shell": { "program": "cmd.exe" },
   },
   {
     // Opens the currently-focused file in Obsidian via its URI handler.
@@ -113,6 +131,6 @@
     "reveal": "never",
     "hide": "always",
     "allow_concurrent_runs": true,
-    "shell": { "program": "cmd.exe" }
-  }
+    "shell": { "program": "cmd.exe" },
+  },
 ]

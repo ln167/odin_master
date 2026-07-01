@@ -1,0 +1,3 @@
+tele=max
+enabled=true
+max=true

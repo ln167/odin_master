@@ -1,0 +1,14 @@
+# tele dial — the one project setting that decides what your runs compile in.
+# Read fresh on every run by zrun (the runner behind your run keybinds).
+# Every run prints its dial, so you always know what you're running.
+#
+#   off   no telemetry, nothing woven. This is what a release build ships.
+#   on    lean: hand-called tele primitives active, zero auto-capture.
+#   max   firehose (DEV ONLY): weave auto-captures every binding + whole-program
+#         execution hooks. The heavy instrumentation — never shipped, like a
+#         sanitizer/coverage build. Output is huge; use windowless → run.log.
+#
+# Changing the dial is a RARE action — that's why it lives here, not on a key.
+# Your run keybinds (console / windowless) never change; they just honor this.
+# Switch with:  just tele max   |   just tele on   |   just tele off
+on
