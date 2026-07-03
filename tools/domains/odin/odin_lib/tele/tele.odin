@@ -31,6 +31,18 @@ FILE :: #config(TELE_FILE, "")
 
 _FILE :: FILE != ""
 
+// NDJSON sink (spec §18, the analysis layer): -define:TELE_NDJSON=<path>. Empty (default) = no NDJSON.
+// When set, the spine flush writes one JSON object per record there -- Sink B's boring standard format,
+// beside the greppable machine lines -- so an agent gets DuckDB/polars over the records for free.
+NDJSON :: #config(TELE_NDJSON, "")
+
+_NDJSON :: NDJSON != ""
+
+// Spine per-thread buffer capacity (spec §18, gap #6). Each capturing thread holds up to this many
+// Records; a hot loop is already bounded per-site by TELE_CAP before it reaches here. -define to tune.
+SPINE_CAP     :: #config(TELE_SPINE_CAP, 4096)
+SPINE_THREADS :: 64 // max distinct threads that can register a buffer; exceeding it is an OOB crash (by design)
+
 // Woven-source path remap (spec 5.2): -define:TELE_SRC_ROOT=<source package dir>. At `max` the
 // run entrypoint (zrun) builds a throwaway woven MIRROR under .tele-woven/<pkg> and compiles
 // THAT, so a capture's #caller_location.file_path points into the mirror, not your source. zrun

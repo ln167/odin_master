@@ -2,6 +2,14 @@
 
 This is `odin_master` — a multi-domain technical-knowledge substrate. Spec: `docs/superpowers/specs/2026-05-04-substrate-redesign-design.md`.
 
+## Response length (non-negotiable)
+
+Never respond with more than 1–3 sentences unless the user explicitly asks for more. No multi-paragraph explanations, no lecture, no restating what they already know.
+
+## Observability (tele)
+
+We record telemetry ourselves and use profilers only as viewers: **Tracy is the rented real-time profiling sink** (live GUI; we forward flattened values, never rebuild it), and **our own postmortem sink** (per-thread buffers reassembled by timestamp) holds the full-fidelity, greppable/agent-readable **correlated Records** (value fused with execution context) that Tracy/Spall can't give back — it replaces Spall for us. Rationale: own the cheap-but-essential recorder because it must carry our enriched, queryable data; rent the expensive real-time viewer. Vocabulary: `CONTEXT.md`. Capture-layer intent + gap list: `docs/superpowers/specs/2026-06-28-tele-observability-redesign.md` §18.
+
 ## Bespoke game, not an engine
 
 The runnable side of this repo (`lab/` and the game it builds) is **one bespoke game — not a reusable engine, library, or framework, and it must never become one.** No generic code, no OOP-for-its-own-sake, no designing for other games or other people (Jonathan Blow / Casey Muratori style). Write exactly what *this* game needs, inline and specific; abstract only when the game itself forces it, never "for later." Don't propose reusable modules, an engine/game split, or generalization.

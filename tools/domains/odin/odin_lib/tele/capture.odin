@@ -6,69 +6,31 @@ import "core:strings"
 import "base:runtime"
 
 // The Value slice (CONTEXT.md). `capture` is the call the WEAVER injects -- `tele.capture("x", x)` --
-// so you never type it. One Record = a (name, value) copy tagged with its procedure (the Correlation
-// anchor, loc.procedure), source loc, a monotonic `seq`, and a deterministically rendered value.
-// The value firehose is the max tier, so the body is `when MAX`; at on/off `capture` is an empty
-// proc (compiles to nothing). The helpers below are compiled unconditionally -- that keeps the
-// core:fmt / core:reflect / core:strings imports used at every dial (a `when` around them would not).
+// so you never type it. It funnels into the capture SPINE (spine.odin): the call stamps coordinates
+// and copies the value into a per-thread buffer (the hot path), and `flush` renders every buffered
+// Record later. The value firehose is the max tier, so the body is `when MAX`; at on/off `capture` is
+// an empty proc (compiles to nothing). The helpers below are compiled unconditionally -- that keeps
+// core:fmt / core:reflect / core:strings used imports at every dial (a `when` around them would not).
 //
 // Determinism (spec 5.2): the stream must reproduce run-to-run, so a captured value never prints a
 // raw address. Typed pointers are peeled to the pointee; rawptr / multi-pointer / proc values and
 // slices/arrays of pointers are elided (`ptr` / `proc` / `[N]ptr`); maps are elided to an entry count
 // (iteration order is unspecified). Embedded newlines are escaped so one record stays one line (the
-// machine sink is line-oriented and sacred, §14.9). Per-site cap (spec 8) bounds a hot loop; `seq`
-// orders repeated same-name captures. Residual (forensic, not fixed): a pointer inside a struct
-// element or a `uintptr` address still prints raw -- the stream is never claim-diffed (spec 5.2).
+// machine sink is line-oriented and sacred, §14.9). Per-site cap (spec 8) bounds a hot loop; the
+// per-thread `seq` orders repeated same-name captures. Residual (forensic, not fixed): a pointer
+// inside a struct element or a `uintptr` address still prints raw -- the stream is never diffed.
 //
 // Reader (W5): both renderers remap the woven file path back to the source path via `_src_path`
 // (spec 5.2) -- at `max` the captured `loc` points into the .tele-woven mirror, not your source.
 // The human reader also groups by procedure (a header per proc, captures indented) so the firehose
 // folds by proc in an editor.
 
-// Max emits per capture SITE before it goes quiet -- the hot-loop guard. Override -define:TELE_CAP=N.
+// Max buffers per capture SITE before it goes quiet -- the hot-loop guard. Override -define:TELE_CAP=N.
 CAP_PER_SITE :: #config(TELE_CAP, 256)
 
 capture :: proc(name: string, value: any, loc := #caller_location) {
 	when MAX {
-		_capture(name, value, loc)
-	}
-}
-
-@(private) g_cap_seq: int
-@(private) g_cap_sites: map[u64]int
-@(private) g_last_proc: string // human reader: the proc the last header was printed for (W5 grouping)
-
-@(private, no_instrumentation)
-_capture :: proc(name: string, value: any, loc: runtime.Source_Code_Location) {
-	// Per-site cap. Key the site by the file_path string-data pointer (a static literal, so the
-	// same site shares one pointer) folded with the line -- no per-call allocation to find the key.
-	key := u64(uintptr(raw_data(loc.file_path))) * 1000003 + u64(loc.line)
-	if g_cap_sites[key] >= CAP_PER_SITE { // reading a nil map is fine; only assigning panics
-		return
-	}
-	if g_cap_sites == nil {
-		g_cap_sites = make(map[u64]int)
-	}
-	g_cap_sites[key] += 1
-	g_cap_seq += 1
-
-	v := _det_value(value)
-	when _HUMAN {
-		// Collapse-friendly grouping (W5): print a proc header once, when the proc changes, and
-		// indent the captures under it -- the firehose folds by procedure in an editor and the
-		// per-line "(in proc)" tag stops repeating. g_last_proc is render state, not a Record
-		// coordinate, so it doesn't touch §14's "no hidden state" (which is about the data, not how
-		// it's drawn).
-		if loc.procedure != g_last_proc {
-			fmt.printf("\n"+_CYAN+"%s"+_RST+_DIM+":"+_RST+"\n", loc.procedure)
-			g_last_proc = loc.procedure
-		}
-		fmt.printf("  "+_DIM+"%s:%d"+_RST+" "+_DIM+"[%d]"+_RST+" "+_CYAN+"%s"+_RST+" "+_DIM+"(%v)"+_RST+" = "+_YEL+"%s"+_RST+"\n",
-			_src_path(loc.file_path), loc.line, g_cap_seq, name, value.id, v)
-	}
-	when _MACHINE {
-		_machine_line(fmt.tprintf("tele cap seq=%d %s=%s type=%v proc=%s loc=%s:%d\n",
-			g_cap_seq, name, v, value.id, loc.procedure, _src_path(loc.file_path), loc.line))
+		_spine_push(name, value, loc)
 	}
 }
 

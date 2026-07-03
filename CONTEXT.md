@@ -17,7 +17,7 @@ One telemetry data point — the **measured value** (a single value, or a collec
 _Avoid_: sample, entry, event (and "a telemetry")
 
 **Cadence**:
-How often (or under what condition) a Record is created — every frame, on-change (delta), every N, or on-trigger (a predicate fires). It sets the temporal **resolution**: you can only ask over-time questions at the rate you sampled, so under-sampling *aliases away* transient values (a one-frame spike between samples is unrecoverable). This is why "record everything every frame" maximizes what's answerable. Implemented by the `every` / `rate` / `cond` gates.
+How often (or under what condition) a Record is created — every frame, on-change (delta), every N, or on-trigger (a predicate fires). It sets the temporal **resolution**: you can only ask over-time questions at the rate you sampled, so under-sampling *aliases away* transient values (a one-frame spike between samples is unrecoverable). This is why "record everything every frame" maximizes what's answerable — though the irreversibility holds only for *nondeterministic* runs: a deterministic sim can replay inputs+seed and re-capture at any resolution after the fact (tele spec §18, replay-on-demand). Implemented by the `every` / `rate` / `cond` gates.
 _Avoid_: "rate" as the umbrella term (that's just one gate); polling, frequency
 
 **Reader**:
@@ -81,4 +81,49 @@ Odin has **no macros / in-band metaprogramming, by design** (gingerBill's stance
 ## External tools
 
 **Profiler**:
-A downstream viewer over the Execution slice — **Tracy** (live; streams over a localhost socket to a separate GUI) and **Spall** (offline; emits a trace file opened in a viewer). A presentation target, not a Source; neither is agent- or claim-readable.
+A downstream viewer over the Execution slice — **Tracy** (live; streams over a localhost socket to a separate GUI) and **Spall** (offline; emits a trace file opened in a viewer). A presentation target, not a Source; neither is claim-readable. (Tracy's `tracy-csvexport` can dump aggregate zone stats/plots/zone text from a capture, but never our full-fidelity value Records — so it's a partial escape hatch, not a substitute for the owned sink.)
+
+## Capture architecture (decided 2026-07-01)
+
+**Spine**:
+The single capture path every measurement flows through. It stamps the shared **coordinates** (proc, call-id, depth, frame, high-res timestamp) onto each Record at capture time — the only moment correlation is possible, since separate logs can't be joined after the fact (Tracy's export returns only aggregate zone/plot data, never our full-fidelity Records). All feeders (Weaver, Hook, hand-called `dbg`/`observe`) funnel here.
+_Avoid_: bus, pipeline (that word is reserved for the swappable-technique sense in `CLAUDE.md`)
+
+**Sink**:
+A destination the spine fans a Record out to. Two roles: **Tracy** — the *real-time* sink, rented not rebuilt (forward a flattened value via `ZoneValue`/`TracyPlot` for its live GUI); **our postmortem recorder** — the *owned* sink (per-thread buffers reassembled by timestamp after the run), which alone carries full-fidelity values + coordinates and emits greppable/agent-readable records. The postmortem recorder **replaces Spall** for us (Spall is timing-only; ours is a superset). One woven `capture(x)` writes the full value to our sink and a flattened copy to Tracy.
+
+**Correlation is capture-time, and multithreaded** (the game *will* be multithreaded — 2D + 3D versions coming). Two irreducible concurrency problems: **safe concurrent writes** (→ per-thread buffers, no locks/atomics on the hot path) and **reassembly/ordering** (→ a shared monotonic timestamp per Record). These are not Tracy bloat — any multi-thread capture needs them. Going postmortem is what lets us skip Tracy's *real-time* concurrency machinery: record per thread, merge at flush. Hot path is a memcpy into the next thread-local slot; all formatting/join/I/O/forwarding is deferred.
+
+> **Why this split:** own the cheap-but-essential postmortem recorder (it must hold our enriched, queryable data — Tracy/Spall can't), rent the expensive real-time viewer (Tracy). Steal Tracy's *catalog* of what's worth recording, not its *engine*.
+
+**Status (2026-07-01):** the Value slice (Weaver) ships; the correlated spine, the postmortem sink, per-thread capture, hook *emission* (hooks only count today), frame-as-global-coordinate, GPU timestamps, and over-time cadence are the intended-but-unbuilt capture layer. Full intent + gap list: tele redesign spec §18.
+
+## Replay & time travel (recorded 2026-07-03 — intent in spec §18 gap 7 + §19)
+
+**Boundary**:
+The single recorded seam through which *all* nondeterminism enters the sim — inputs, RNG seed, time (the host passes dt/frame in; the sim never reads the clock). Determinism holds iff nothing leaks around it; the guard detects a leak, only an enumerated Boundary locates it.
+_Avoid_: input system (that's one tributary, not the seam)
+
+**Replay**:
+Re-running the sim from the recorded Boundary (inputs+seed). Determinism makes a Replay ≡ the original run, so any value you failed to capture is recoverable — weave *for the question*, replay, analyze (**replay-on-demand**). This is the qualifier on Cadence's "aliasing is irreversible."
+_Avoid_: rerun, playback
+
+**Snapshot**:
+A memcpy copy of the sim state block at one frame — possible only while that block stays pointer-free and self-contained (spec §19 constraint 1). Restore + Replay-forward is how you reach an arbitrary frame fast.
+_Avoid_: save point, checkpoint
+
+**Timeline** / **Rewind**:
+The Timeline is the whole run addressable by frame (snapshots every K frames + the input log); Rewind(N) = restore the nearest Snapshot ≤ N, Replay to N. A save point is just a bookmark on the Timeline — the Timeline is the general thing. Dev tool first; possibly a gameplay mechanic later (same substrate).
+_Avoid_: undo; "time travel" as the mechanism name (it's the experience, not the machinery)
+
+**Divergence**:
+The first Record at which two runs' streams differ (name, frame, proc) — the output of differential debugging (good run vs. bad run, exact because runs are deterministic). Across an *edit*, alignment breaks at renames — reported honestly, not papered over.
+_Avoid_: diff (that's the operation; Divergence is the finding)
+
+**Envelope**:
+A mined invariant — the observed range/ordering a value or event held across healthy runs (`vel.y ∈ [-600, 0]`). Violations upgrade the flight recorder's hand-written NaN/out-of-range triggers to learned ones.
+_Avoid_: bounds, threshold (hand-picked; an Envelope is inferred)
+
+**Analysis layer**:
+Where Records become answers: flush emits a boring standard format (NDJSON) beside the greppable lines, and existing engines (DuckDB/polars) do the querying — derivation happens at query time, never on the hot path. We build no query language and no viewer here.
+_Avoid_: query engine, dashboards

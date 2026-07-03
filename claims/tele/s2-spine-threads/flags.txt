@@ -1,0 +1,1 @@
+-define:TELE=max -define:TELE_FORMAT=machine -define:TELE_FILE=mt.log

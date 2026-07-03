@@ -104,3 +104,4 @@ tools/domains/odin/odin_lib/vendor/odin-tracy/tracy.obj
 tools/domains/odin/odin_lib/vendor/odin-tracy/tracy.a
 tools/domains/odin/odin_lib/vendor/odin-tracy/tracy.so
 tools/domains/odin/odin_lib/vendor/odin-tracy/tracy.dylib
+claims/tele/**/*.log

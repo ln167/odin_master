@@ -14,7 +14,8 @@ import "core:fmt"
 main :: proc() {
 	os.remove("cap.log") // append sink accumulates across runs; start clean
 	hp := 90
-	tele.capture("hp", hp) // machine -> cap.log (no console arm at FORMAT=machine)
+	tele.capture("hp", hp) // buffered into the spine (machine -> cap.log at flush)
+	tele.flush()           // drain the spine to the file sink before we read it back
 	data, _ := os.read_entire_file("cap.log", context.allocator)
 	fmt.print(string(data)) // echo the file's structured line back to stdout
 }

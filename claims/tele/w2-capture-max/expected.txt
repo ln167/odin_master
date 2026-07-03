@@ -1,6 +1,6 @@
-tele cap seq=1 x=42 type=int proc=main loc=<...>:12
-tele cap seq=2 nums=[2, 4, 6] type=[]int proc=main loc=<...>:14
-tele cap seq=3 p=P{hp = 90, pos = [400, 100]} type=P proc=main loc=<...>:16
-tele cap seq=4 px=42 type=^int proc=main loc=<...>:18
-tele cap seq=5 npx=nil type=^int proc=main loc=<...>:20
-tele cap seq=6 m=map[2] type=map[string]int proc=main loc=<...>:25
+tele cap seq=1 ts=<...> thread=<...> frame=0 x=42 type=int proc=main loc=<...>:12
+tele cap seq=2 ts=<...> thread=<...> frame=0 nums=[2, 4, 6] type=[]int proc=main loc=<...>:14
+tele cap seq=3 ts=<...> thread=<...> frame=0 p=P{hp = 90, pos = [400, 100]} type=P proc=main loc=<...>:16
+tele cap seq=4 ts=<...> thread=<...> frame=0 px=42 type=^int proc=main loc=<...>:18
+tele cap seq=5 ts=<...> thread=<...> frame=0 npx=nil type=^int proc=main loc=<...>:20
+tele cap seq=6 ts=<...> thread=<...> frame=0 m=map[2] type=map[string]int proc=main loc=<...>:25

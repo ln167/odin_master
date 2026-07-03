@@ -11,4 +11,4 @@
 # Changing the dial is a RARE action — that's why it lives here, not on a key.
 # Your run keybinds (console / windowless) never change; they just honor this.
 # Switch with:  just tele max   |   just tele on   |   just tele off
-on
+max

@@ -1,0 +1,2 @@
+{"seq":1,"ts":129242144768300,"thread":46004,"frame":0,"name":"hp","value":"90","type":"int","proc":"main","loc":"/src/pkg/main.odin:19"}
+{"seq":2,"ts":129242144842500,"thread":46004,"frame":0,"name":"mana","value":"30","type":"int","proc":"main","loc":"/src/pkg/main.odin:21"}
