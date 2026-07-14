@@ -1,1 +1,2 @@
-tele cap seq=1 ts=<...> thread=<...> frame=0 hp=90 type=int proc=main loc=/src/pkg/main.odin:17
+tele hook enter seq=1 ts=<...> thread=<...> frame=0 depth=1 call=1 proc=main loc=/src/pkg/main.odin:14
+tele cap seq=2 ts=<...> thread=<...> frame=0 depth=1 call=1 hp=90 type=int proc=main loc=/src/pkg/main.odin:17

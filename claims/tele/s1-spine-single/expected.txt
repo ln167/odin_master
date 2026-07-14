@@ -1,3 +1,5 @@
-tele cap seq=1 ts=<...> thread=<...> frame=0 a=10 type=int proc=main loc=/src/pkg/main.odin:16
-tele cap seq=2 ts=<...> thread=<...> frame=1 b=20 type=int proc=main loc=/src/pkg/main.odin:19
-tele cap seq=3 ts=<...> thread=<...> frame=2 c=30 type=int proc=main loc=/src/pkg/main.odin:22
+tele hook enter seq=1 ts=<...> thread=<...> frame=0 depth=1 call=1 proc=main loc=/src/pkg/main.odin:17
+tele cap seq=2 ts=<...> thread=<...> frame=0 depth=1 call=1 a=10 type=int proc=main loc=/src/pkg/main.odin:19
+tele cap seq=3 ts=<...> thread=<...> frame=1 depth=1 call=1 b=20 type=int proc=main loc=/src/pkg/main.odin:22
+tele cap seq=4 ts=<...> thread=<...> frame=2 depth=1 call=1 c=30 type=int proc=main loc=/src/pkg/main.odin:25
+tele hook exit seq=5 ts=<...> thread=<...> frame=2 depth=1 call=1 dur=<...> proc=main loc=/src/pkg/main.odin:17

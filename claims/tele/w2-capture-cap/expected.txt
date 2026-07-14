@@ -1,3 +1,5 @@
-tele cap seq=1 ts=<...> thread=<...> frame=0 i=0 type=int proc=main loc=<...>:7
-tele cap seq=2 ts=<...> thread=<...> frame=0 i=1 type=int proc=main loc=<...>:7
-tele cap seq=3 ts=<...> thread=<...> frame=0 i=2 type=int proc=main loc=<...>:7
+tele hook enter seq=1 ts=<...> thread=<...> frame=0 depth=1 call=1 proc=main loc=<...>:5
+tele cap seq=2 ts=<...> thread=<...> frame=0 depth=1 call=1 i=0 type=int proc=main loc=<...>:7
+tele cap seq=3 ts=<...> thread=<...> frame=0 depth=1 call=1 i=1 type=int proc=main loc=<...>:7
+tele cap seq=4 ts=<...> thread=<...> frame=0 depth=1 call=1 i=2 type=int proc=main loc=<...>:7
+tele hook exit seq=5 ts=<...> thread=<...> frame=0 depth=1 call=1 dur=<...> proc=main loc=<...>:5

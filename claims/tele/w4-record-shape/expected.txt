@@ -1,10 +1,12 @@
-tele cap seq=1 ts=<...> thread=<...> frame=0 rp=ptr type=rawptr proc=main loc=<...>:21
-tele cap seq=2 ts=<...> thread=<...> frame=0 mp=ptr type=[^]int proc=main loc=<...>:23
-tele cap seq=3 ts=<...> thread=<...> frame=0 ppp=7 type=^^int proc=main loc=<...>:25
-tele cap seq=4 ts=<...> thread=<...> frame=0 fn=proc type=proc() proc=main loc=<...>:27
-tele cap seq=5 ts=<...> thread=<...> frame=0 s=a=b c d type=string proc=main loc=<...>:29
-tele cap seq=6 ts=<...> thread=<...> frame=0 flag=true type=bool proc=main loc=<...>:31
-tele cap seq=7 ts=<...> thread=<...> frame=0 f=1.5 type=f32 proc=main loc=<...>:33
-tele cap seq=8 ts=<...> thread=<...> frame=0 col=Green type=Color proc=main loc=<...>:35
-tele cap seq=9 ts=<...> thread=<...> frame=0 nl=alpha\nbeta type=string proc=main loc=<...>:37
-tele cap seq=10 ts=<...> thread=<...> frame=0 xs=[1]ptr type=[]^int proc=main loc=<...>:39
+tele hook enter seq=1 ts=<...> thread=<...> frame=0 depth=1 call=1 proc=main loc=<...>:18
+tele cap seq=2 ts=<...> thread=<...> frame=0 depth=1 call=1 rp=ptr type=rawptr proc=main loc=<...>:21
+tele cap seq=3 ts=<...> thread=<...> frame=0 depth=1 call=1 mp=ptr type=[^]int proc=main loc=<...>:23
+tele cap seq=4 ts=<...> thread=<...> frame=0 depth=1 call=1 ppp=7 type=^^int proc=main loc=<...>:25
+tele cap seq=5 ts=<...> thread=<...> frame=0 depth=1 call=1 fn=proc type=proc() proc=main loc=<...>:27
+tele cap seq=6 ts=<...> thread=<...> frame=0 depth=1 call=1 s=a=b c d type=string proc=main loc=<...>:29
+tele cap seq=7 ts=<...> thread=<...> frame=0 depth=1 call=1 flag=true type=bool proc=main loc=<...>:31
+tele cap seq=8 ts=<...> thread=<...> frame=0 depth=1 call=1 f=1.5 type=f32 proc=main loc=<...>:33
+tele cap seq=9 ts=<...> thread=<...> frame=0 depth=1 call=1 col=Green type=Color proc=main loc=<...>:35
+tele cap seq=10 ts=<...> thread=<...> frame=0 depth=1 call=1 nl=alpha\nbeta type=string proc=main loc=<...>:37
+tele cap seq=11 ts=<...> thread=<...> frame=0 depth=1 call=1 xs=[1]ptr type=[]^int proc=main loc=<...>:39
+tele hook exit seq=12 ts=<...> thread=<...> frame=0 depth=1 call=1 dur=<...> proc=main loc=<...>:18

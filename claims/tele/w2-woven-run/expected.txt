@@ -1,20 +1,28 @@
 12
 6
-tele cap seq=1 ts=<...> thread=<...> frame=0 xs=[1, 2, 3] type=[]int proc=main loc=<...>:11
-tele cap seq=2 ts=<...> thread=<...> frame=0 acc=0 type=int proc=main loc=<...>:12
-tele cap seq=3 ts=<...> thread=<...> frame=0 x=1 type=int proc=main loc=<...>:13
-tele cap seq=4 ts=<...> thread=<...> frame=0 a=0 type=int proc=add loc=<...>:5
-tele cap seq=5 ts=<...> thread=<...> frame=0 b=1 type=int proc=add loc=<...>:5
-tele cap seq=6 ts=<...> thread=<...> frame=0 sum=1 type=int proc=add loc=<...>:6
-tele cap seq=7 ts=<...> thread=<...> frame=0 acc=1 type=int proc=main loc=<...>:14
-tele cap seq=8 ts=<...> thread=<...> frame=0 x=2 type=int proc=main loc=<...>:13
-tele cap seq=9 ts=<...> thread=<...> frame=0 a=1 type=int proc=add loc=<...>:5
-tele cap seq=10 ts=<...> thread=<...> frame=0 b=2 type=int proc=add loc=<...>:5
-tele cap seq=11 ts=<...> thread=<...> frame=0 sum=3 type=int proc=add loc=<...>:6
-tele cap seq=12 ts=<...> thread=<...> frame=0 acc=3 type=int proc=main loc=<...>:14
-tele cap seq=13 ts=<...> thread=<...> frame=0 x=3 type=int proc=main loc=<...>:13
-tele cap seq=14 ts=<...> thread=<...> frame=0 a=3 type=int proc=add loc=<...>:5
-tele cap seq=15 ts=<...> thread=<...> frame=0 b=3 type=int proc=add loc=<...>:5
-tele cap seq=16 ts=<...> thread=<...> frame=0 sum=6 type=int proc=add loc=<...>:6
-tele cap seq=17 ts=<...> thread=<...> frame=0 acc=6 type=int proc=main loc=<...>:14
-tele cap seq=18 ts=<...> thread=<...> frame=0 big=12 type=int proc=main loc=<...>:17
+tele hook enter seq=1 ts=<...> thread=<...> frame=0 depth=1 call=1 proc=main loc=<...>:10
+tele cap seq=2 ts=<...> thread=<...> frame=0 depth=1 call=1 xs=[1, 2, 3] type=[]int proc=main loc=<...>:11
+tele cap seq=3 ts=<...> thread=<...> frame=0 depth=1 call=1 acc=0 type=int proc=main loc=<...>:12
+tele cap seq=4 ts=<...> thread=<...> frame=0 depth=1 call=1 x=1 type=int proc=main loc=<...>:13
+tele hook enter seq=5 ts=<...> thread=<...> frame=0 depth=2 call=2 proc=add loc=<...>:5
+tele cap seq=6 ts=<...> thread=<...> frame=0 depth=2 call=2 a=0 type=int proc=add loc=<...>:5
+tele cap seq=7 ts=<...> thread=<...> frame=0 depth=2 call=2 b=1 type=int proc=add loc=<...>:5
+tele cap seq=8 ts=<...> thread=<...> frame=0 depth=2 call=2 sum=1 type=int proc=add loc=<...>:6
+tele hook exit seq=9 ts=<...> thread=<...> frame=0 depth=2 call=2 dur=<...> proc=add loc=<...>:5
+tele cap seq=10 ts=<...> thread=<...> frame=0 depth=1 call=1 acc=1 type=int proc=main loc=<...>:14
+tele cap seq=11 ts=<...> thread=<...> frame=0 depth=1 call=1 x=2 type=int proc=main loc=<...>:13
+tele hook enter seq=12 ts=<...> thread=<...> frame=0 depth=2 call=3 proc=add loc=<...>:5
+tele cap seq=13 ts=<...> thread=<...> frame=0 depth=2 call=3 a=1 type=int proc=add loc=<...>:5
+tele cap seq=14 ts=<...> thread=<...> frame=0 depth=2 call=3 b=2 type=int proc=add loc=<...>:5
+tele cap seq=15 ts=<...> thread=<...> frame=0 depth=2 call=3 sum=3 type=int proc=add loc=<...>:6
+tele hook exit seq=16 ts=<...> thread=<...> frame=0 depth=2 call=3 dur=<...> proc=add loc=<...>:5
+tele cap seq=17 ts=<...> thread=<...> frame=0 depth=1 call=1 acc=3 type=int proc=main loc=<...>:14
+tele cap seq=18 ts=<...> thread=<...> frame=0 depth=1 call=1 x=3 type=int proc=main loc=<...>:13
+tele hook enter seq=19 ts=<...> thread=<...> frame=0 depth=2 call=4 proc=add loc=<...>:5
+tele cap seq=20 ts=<...> thread=<...> frame=0 depth=2 call=4 a=3 type=int proc=add loc=<...>:5
+tele cap seq=21 ts=<...> thread=<...> frame=0 depth=2 call=4 b=3 type=int proc=add loc=<...>:5
+tele cap seq=22 ts=<...> thread=<...> frame=0 depth=2 call=4 sum=6 type=int proc=add loc=<...>:6
+tele hook exit seq=23 ts=<...> thread=<...> frame=0 depth=2 call=4 dur=<...> proc=add loc=<...>:5
+tele cap seq=24 ts=<...> thread=<...> frame=0 depth=1 call=1 acc=6 type=int proc=main loc=<...>:14
+tele cap seq=25 ts=<...> thread=<...> frame=0 depth=1 call=1 big=12 type=int proc=main loc=<...>:17
+tele hook exit seq=26 ts=<...> thread=<...> frame=0 depth=1 call=1 dur=<...> proc=main loc=<...>:10

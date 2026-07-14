@@ -1,0 +1,3 @@
+worker_threads=2
+per_thread_nesting=true
+dur_nonneg=true

@@ -6,8 +6,10 @@ import "core:os"
 // Where a machine-rendered line goes: the append-file sink if one is configured, else the
 // console. Shared by every machine renderer (dbg, levels, counters). The `if _FILE` is a
 // compile-time constant -- it folds away -- but type-checking both arms keeps `os` and `fmt`
-// used imports in every build, which a `when` would not.
-@(private)
+// used imports in every build, which a `when` would not. @(no_instrumentation): the spine flush
+// renders through here -- an instrumented sink would push hook records into the very buffers
+// being drained.
+@(private, no_instrumentation)
 _machine_line :: proc(s: string) {
 	if _FILE {
 		_sink_file(s)
@@ -18,7 +20,7 @@ _machine_line :: proc(s: string) {
 
 // Append-file sink. Opens / creates / appends per line, mirroring reload_diff.log -- simple
 // and proven; keeping the fd hot is an optimization deferred until a loop needs it.
-@(private)
+@(private, no_instrumentation)
 _sink_file :: proc(s: string) {
 	if !_FILE {
 		return

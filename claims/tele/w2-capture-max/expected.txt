@@ -1,6 +1,8 @@
-tele cap seq=1 ts=<...> thread=<...> frame=0 x=42 type=int proc=main loc=<...>:12
-tele cap seq=2 ts=<...> thread=<...> frame=0 nums=[2, 4, 6] type=[]int proc=main loc=<...>:14
-tele cap seq=3 ts=<...> thread=<...> frame=0 p=P{hp = 90, pos = [400, 100]} type=P proc=main loc=<...>:16
-tele cap seq=4 ts=<...> thread=<...> frame=0 px=42 type=^int proc=main loc=<...>:18
-tele cap seq=5 ts=<...> thread=<...> frame=0 npx=nil type=^int proc=main loc=<...>:20
-tele cap seq=6 ts=<...> thread=<...> frame=0 m=map[2] type=map[string]int proc=main loc=<...>:25
+tele hook enter seq=1 ts=<...> thread=<...> frame=0 depth=1 call=1 proc=main loc=<...>:10
+tele cap seq=2 ts=<...> thread=<...> frame=0 depth=1 call=1 x=42 type=int proc=main loc=<...>:12
+tele cap seq=3 ts=<...> thread=<...> frame=0 depth=1 call=1 nums=[2, 4, 6] type=[]int proc=main loc=<...>:14
+tele cap seq=4 ts=<...> thread=<...> frame=0 depth=1 call=1 p=P{hp = 90, pos = [400, 100]} type=P proc=main loc=<...>:16
+tele cap seq=5 ts=<...> thread=<...> frame=0 depth=1 call=1 px=42 type=^int proc=main loc=<...>:18
+tele cap seq=6 ts=<...> thread=<...> frame=0 depth=1 call=1 npx=nil type=^int proc=main loc=<...>:20
+tele cap seq=7 ts=<...> thread=<...> frame=0 depth=1 call=1 m=map[2] type=map[string]int proc=main loc=<...>:25
+tele hook exit seq=8 ts=<...> thread=<...> frame=0 depth=1 call=1 dur=<...> proc=main loc=<...>:10

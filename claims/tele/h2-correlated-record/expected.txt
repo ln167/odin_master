@@ -1,0 +1,9 @@
+tele hook enter seq=1 ts=<...> thread=<...> frame=0 depth=1 call=1 proc=main loc=/src/pkg/main.odin:27
+tele cap seq=2 ts=<...> thread=<...> frame=0 depth=1 call=1 x=5 type=int proc=main loc=/src/pkg/main.odin:29
+tele hook enter seq=3 ts=<...> thread=<...> frame=0 depth=2 call=2 proc=outer loc=/src/pkg/main.odin:21
+tele hook enter seq=4 ts=<...> thread=<...> frame=0 depth=3 call=3 proc=inner loc=/src/pkg/main.odin:16
+tele cap seq=5 ts=<...> thread=<...> frame=0 depth=3 call=3 y=7 type=int proc=inner loc=/src/pkg/main.odin:18
+tele hook exit seq=6 ts=<...> thread=<...> frame=0 depth=3 call=3 dur=<...> proc=inner loc=/src/pkg/main.odin:16
+tele cap seq=7 ts=<...> thread=<...> frame=0 depth=2 call=2 z=9 type=int proc=outer loc=/src/pkg/main.odin:24
+tele hook exit seq=8 ts=<...> thread=<...> frame=0 depth=2 call=2 dur=<...> proc=outer loc=/src/pkg/main.odin:21
+tele hook exit seq=9 ts=<...> thread=<...> frame=0 depth=1 call=1 dur=<...> proc=main loc=/src/pkg/main.odin:27

@@ -3,6 +3,7 @@ package main
 import "core:fmt"
 
 // Compile time alias
+// testing some changes
 Vec3 :: [3]f32
 
 main :: proc() {
@@ -17,9 +18,9 @@ main :: proc() {
 	fmt.println(my_fixed_array)
 	fmt.println("hahahahaha")
 
-	
 
-	
+
+
 	// 2. Print three things on one line: the array's length (use the
 	//    builtin `len`), its first element, and its last element. Use
 	//    `len(a) - 1` for "last" rather than hardcoding 3, so

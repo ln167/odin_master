@@ -4,9 +4,14 @@ package main
 // every replay / Divergence / rewind feature rests on "same seed + same inputs => same run". This
 // claim certifies the half an output claim can reach: a seeded sim captured through the full
 // recorder path (capture -> machine render -> file sink) produces a byte-identical record stream
-// on a second pass. The spine's nondeterministic coordinates (ts, thread) and the per-thread seq
-// (pass 2 continues numbering) are the only legitimate cross-pass deltas; normalize() strips exactly
-// those. pass_lines pins the stream length so an empty==empty run can never pass vacuously. If this claim ever reds, a
+// on a second pass. The compared stream is the CAP (value) stream: the hooks emit execution
+// records into the same log, but their run-cursor coordinates legitimately continue across passes
+// (call-ids keep counting) and pass 1 alone holds main's enter -- replay determinism is about the
+// recorded VALUES reproducing, so normalize() filters to `tele cap ` lines. On those it strips the
+// run-cursor / nondeterministic tokens -- seq and call (per-thread counters that continue into
+// pass 2), ts and thread -- and NOTHING else. Everything left (frame, DEPTH -- structural, identical
+// across passes -- name=value, type, proc, loc) must match byte-for-byte. pass_lines pins the stream
+// length so an empty==empty run can never pass vacuously. If this claim ever reds, a
 // nondeterminism leak got in front of the recorder -- find it before trusting any replay result.
 
 import "core:fmt"
@@ -37,17 +42,21 @@ sim_pass :: proc() {
 	}
 }
 
-// strip the legitimately-differing tokens (`seq=`, `ts=`, `thread=`) from every line -- and NOTHING
-// else. seq continues across passes; ts (QPC nanoseconds) and thread (OS id) are the spine's
-// nondeterministic coordinates. Everything left (frame, name=value, type, proc, loc) must match.
+// keep only the cap lines (see the header comment) and strip their legitimately-differing tokens
+// (`seq=`, `ts=`, `thread=`, `call=`) -- and NOTHING else. seq and call continue across passes
+// (per-thread counters); ts (QPC nanoseconds) and thread (OS id) are the spine's nondeterministic
+// coordinates. Everything left (frame, depth, name=value, type, proc, loc) must match.
 normalize :: proc(s: string) -> string {
 	b: strings.Builder
 	strings.builder_init(&b)
 	it := s
 	for line in strings.split_lines_iterator(&it) {
+		if !strings.has_prefix(line, "tele cap ") {
+			continue // execution records -- not the replayed value stream
+		}
 		first := true
 		for tok in strings.fields(line) {
-			if strings.has_prefix(tok, "seq=") || strings.has_prefix(tok, "ts=") || strings.has_prefix(tok, "thread=") {
+			if strings.has_prefix(tok, "seq=") || strings.has_prefix(tok, "ts=") || strings.has_prefix(tok, "thread=") || strings.has_prefix(tok, "call=") {
 				continue
 			}
 			if !first {

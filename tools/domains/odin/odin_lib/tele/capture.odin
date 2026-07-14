@@ -28,6 +28,9 @@ import "base:runtime"
 // Max buffers per capture SITE before it goes quiet -- the hot-loop guard. Override -define:TELE_CAP=N.
 CAP_PER_SITE :: #config(TELE_CAP, 256)
 
+// @(no_instrumentation): the recorder must not record itself -- an instrumented capture would emit
+// a hook enter/exit pair around every value it captures (capture is own code to the filter).
+@(no_instrumentation)
 capture :: proc(name: string, value: any, loc := #caller_location) {
 	when MAX {
 		_spine_push(name, value, loc)
