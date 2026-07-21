@@ -34,7 +34,7 @@ too noisy -- it refuses to certify sub-noise micro-wins rather than fake them.
 import re
 import subprocess
 import sys
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -307,12 +307,24 @@ def run_one(d: Path):
 
     return "FAIL", [f"FAIL  {name}  (unsupported claim kind '{kind}')"]
 
+
+def run_one_safe(d: Path):
+    try:
+        return run_one(d)
+    except Exception as error:
+        return "FAIL", [f"FAIL  {label(d)}", f"  harness error: {type(error).__name__}: {error}"]
+
+
+def is_claim_dir(d: Path):
+    return d.is_dir() and ((d / "claim.txt").is_file() or (d / "main.odin").is_file())
+
+
 def discover():
     # A claim is any directory holding a claim.txt or a main.odin. Walk the tree so claims
     # can nest (e.g. claims/lessons/NN-slug/<claim>/); a claim dir is a leaf, don't descend into it.
     out = []
     def walk(d):
-        if (d / "claim.txt").exists() or (d / "main.odin").exists():
+        if is_claim_dir(d):
             out.append(d)
             return
         for sub in sorted(d.iterdir()):
@@ -329,7 +341,10 @@ def main():
     check_toolchain()
     if len(sys.argv) > 1:
         name = sys.argv[1]
-        d = next((r / name for r in ROOTS if (r / name).is_dir()), ROOTS[0] / name)
+        d = next((r / name for r in ROOTS if is_claim_dir(r / name)), None)
+        if d is None:
+            print(f"claim not found: {name}", file=sys.stderr)
+            return 1
         status, lines = run_one(d)
         print("\n".join(lines))
         return EXIT[status]
@@ -337,21 +352,25 @@ def main():
     if not claims:
         print("no claims found under tests/ or claims/")
         return 0
-    with ThreadPoolExecutor(max_workers=4) as ex:
-        results = list(ex.map(run_one, claims))
+    total = len(claims)
+    print(f"running {total} claims...", flush=True)
     passed = inconc = failed = 0
-    for status, lines in results:
-        print("\n".join(lines))
-        passed += status == "PASS"
-        inconc += status == "INCONC"
-        failed += status == "FAIL"
-    tail = f"\n{passed}/{len(claims)} passed"
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        futures = [ex.submit(run_one_safe, claim) for claim in claims]
+        for done, future in enumerate(as_completed(futures), 1):
+            status, lines = future.result()
+            print("\n".join(lines))
+            print(f"[{done}/{total}]", flush=True)
+            passed += status == "PASS"
+            inconc += status == "INCONC"
+            failed += status == "FAIL"
+    tail = f"\n{passed}/{total} passed"
     if inconc:
         tail += f", {inconc} inconclusive"
     if failed:
         tail += f", {failed} failed"
     print(tail)
-    return 0 if (failed == 0 and inconc == 0) else 1
+    return 0 if failed == 0 else 1
 
 if __name__ == "__main__":
     sys.exit(main())

@@ -1,4 +1,4 @@
-{"kind":"enter","seq":1,"ts":131426286599800,"thread":39100,"frame":0,"depth":1,"call":1,"proc":"main","loc":"/src/pkg/main.odin:15"}
-{"kind":"cap","seq":2,"ts":131426287170900,"thread":39100,"frame":0,"depth":1,"call":1,"name":"hp","value":"90","type":"int","proc":"main","loc":"/src/pkg/main.odin:19"}
-{"kind":"cap","seq":3,"ts":131426287270400,"thread":39100,"frame":0,"depth":1,"call":1,"name":"mana","value":"30","type":"int","proc":"main","loc":"/src/pkg/main.odin:21"}
-{"kind":"exit","seq":4,"ts":131426296667700,"thread":39100,"frame":0,"depth":1,"call":1,"dur":10067900,"proc":"main","loc":"/src/pkg/main.odin:15"}
+{"kind":"enter","seq":1,"ts":127688663900000,"thread":20844,"frame":0,"depth":1,"call":1,"proc":"main","loc":"/src/pkg/main.odin:15"}
+{"kind":"cap","seq":2,"ts":127688664492000,"thread":20844,"frame":0,"depth":1,"call":1,"name":"hp","value":"90","type":"int","proc":"main","loc":"/src/pkg/main.odin:19"}
+{"kind":"cap","seq":3,"ts":127688664594100,"thread":20844,"frame":0,"depth":1,"call":1,"name":"mana","value":"30","type":"int","proc":"main","loc":"/src/pkg/main.odin:21"}
+{"kind":"exit","seq":4,"ts":127688673184200,"thread":20844,"frame":0,"depth":1,"call":1,"dur":9284200,"proc":"main","loc":"/src/pkg/main.odin:15"}

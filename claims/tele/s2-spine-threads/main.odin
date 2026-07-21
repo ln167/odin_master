@@ -5,10 +5,10 @@ package main
 // path); after they join, flush() MERGES the buffers by (ts, thread, seq) to mt.log. A cross-thread
 // interleaving is genuinely nondeterministic, so this NEVER asserts a global golden stream (spec §18):
 // it reads the merged file back and asserts the two things that MUST hold --
-//   * per-thread order: each thread's records carry seq 1..10 strictly increasing, value == seq, and
-//     they appear in that order within the merge (per-thread streams are golden via per-thread seq);
+//   * per-thread order: each thread's capture records carry seq 2..11 strictly increasing (the
+//     worker hook-enter is seq 1), value == seq-1, and appear in that order within the merge;
 //   * merge invariants: the merged timestamps are nondecreasing (the sort works) and the record count
-//     is conserved exactly (3 threads x 10 = 30, nothing lost or duplicated).
+//     is conserved exactly for captures (3 threads x 10 = 30, nothing lost or duplicated).
 // It prints derived booleans/counts, never the raw nondeterministic lines.
 
 import "odin_lib:tele"
@@ -50,7 +50,7 @@ main :: proc() {
 	data, _ := os.read_entire_file("mt.log", context.allocator)
 	lines := strings.split_lines(strings.trim_space(string(data)))
 
-	records := len(lines)
+	records := 0
 	next := make(map[int]int) // thread id -> the seq we expect next (1-based)
 	seen := make(map[int]bool)
 	per_thread_order := true
@@ -58,15 +58,19 @@ main :: proc() {
 	prev_ts := i64(-1)
 
 	for line in lines {
+		if !strings.has_prefix(line, "tele cap ") {
+			continue
+		}
+		records += 1
 		s, _ := field(line, "seq=")
 		ts, _ := field(line, "ts=")
 		th, _ := field(line, "thread=")
 		v, _ := field(line, "v=")
 		seen[th] = true
 		if _, ok := next[th]; !ok {
-			next[th] = 1
+			next[th] = 2 // seq 1 is the worker's hook-enter record
 		}
-		if s != next[th] || v != s {
+		if s != next[th] || v != s-1 {
 			per_thread_order = false
 		}
 		next[th] += 1

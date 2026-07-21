@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Build the Tracy client library for the current OS.
+"""Build Tracy for the current OS.
 
 Output: tracy.lib (Windows) / tracy.so (Linux) / tracy.dylib (macOS) placed
 next to vendor/odin-tracy/bindings.odin. Run once per machine; the lib is
 .gitignore'd. After this, build any Odin program with
 `-define:INSTRUMENT=tracy` and the foreign import in tele/scope_tracy.odin
 picks the lib up.
+
+On Windows this also builds the matching viewer as Tracy.exe in the repo root.
 """
 import platform
 import subprocess

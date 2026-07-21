@@ -90,10 +90,18 @@ Invoke via the relevant per-domain skill (`odin`, etc.) in Claude Code; the skil
 
 ### Profiler (Tracy)
 
-One-time build of the Tracy client library (auto-detects OS):
+One-time build of Tracy (on Windows this builds both the client library and
+the matching local viewer):
 
 ```sh
 just tracy-build
+```
+
+The first Windows build installs the viewer's native dependencies. After that,
+the viewer runs locally with no internet connection:
+
+```powershell
+Start-Process .\Tracy.exe
 ```
 
 Then build any program with zones live:

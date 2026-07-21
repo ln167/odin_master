@@ -2,6 +2,7 @@
     "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg/master/scripts/vcpkg.schema.json",
     "name": "tracy",
     "version-semver": "0.8.0",
+    "builtin-baseline": "8e8dfb4ba483886936ded5ca201b500b8d8b0096",
     "description": "C++ frame profiler",
     "homepage": "https://github.com/wolfpld/tracy",
     "dependencies": [
