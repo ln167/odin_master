@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Surface mesh toy</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;display:flex;height:100vh;background:#14161b;color:#d6d9e0;font:13px/1.45 system-ui,sans-serif}
+#side{width:320px;flex:none;padding:14px;overflow:auto;background:#1b1e25;border-right:1px solid #2c303a}
+#main{flex:1;min-width:0;position:relative}
+canvas{display:block;width:100%;height:100%;cursor:crosshair}
+a{color:#7fb4ff}h1{font-size:18px;margin:8px 0}h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#8a90a0;margin:14px 0 4px}
+ul{margin:0;padding-left:18px}label{display:block;margin:6px 0}input[type=range]{width:100%}
+button{background:#2a3040;color:#d6d9e0;border:1px solid #3c4356;padding:5px 9px;margin:2px 2px 2px 0;border-radius:4px;cursor:pointer}
+button.on{background:#3b5ea8;border-color:#6d95e8}
+#stats{font-family:monospace;background:#101216;padding:8px;border-radius:4px;white-space:pre-wrap}
+#panel{display:none;margin-top:8px;padding:8px;border:1px solid #c9a227;background:#2a2410;color:#f0dfa0;border-radius:4px}
+#selftest{font-size:10px;color:#667;margin:10px 0 0;white-space:pre-wrap}
+</style></head><body>
+<div id="side">
+<a href="index.html">← all toys</a>
+<h1>Surface mesh</h1>
+<h2>What it is</h2>
+<div>Points joined by edges (and in 3D, triangles) that trace only the skin of an object. The inside of the rock is not stored at all; it is just "the space the skin encloses".</div>
+<h2>Controls</h2>
+<label>Vertices (resolution): <b id="nv">24</b><input id="res" type="range" min="6" max="120" value="24"></label>
+<label>Carve radius: <b id="nr">0.30</b><input id="rad" type="range" min="5" max="60" value="30"></label>
+<button id="bCarve" class="on">Carve (drag)</button><button id="bAsk">Ask: what's inside?</button><button id="bReset">Reset rock</button>
+<div id="panel"></div>
+<h2>Live stats</h2>
+<div id="stats"></div>
+<h2>Good at</h2><ul><li>Compact, smooth or sharp surfaces</li><li>Render-ready as is</li><li>Cheap collision (test the skin only)</li></ul>
+<h2>Bad at</h2><ul><li>No interior: no material, damage or cracks</li><li>Repeated cuts leave slivers and rounding error</li><li>Topology changes (splits, holes) are hard</li></ul>
+<h2>In 3D / for our game</h2>
+<div>Good for the finished carved statue or block you render and collide with; not for deciding what a quarry cut reveals inside.</div>
+<pre id="selftest"></pre>
+</div>
+<div id="main"><canvas id="cv"></canvas></div>
+<script>
+// World: y-up, initial rock radius ~1. A rock is a list of loops; CCW loops are material, CW loops are holes.
+const TAU = Math.PI * 2, ARC_STEP = 0.2, TINY = 0.02;
+const $ = id => document.getElementById(id);
+const cv = $('cv'), ctx = cv.getContext('2d');
+let loops = [], mode = 'carve', radius = 0.3, probe = null, W = 800, H = 600, dragging = false, last = null;
+
+function makeRock(n) {
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const a = i / n * TAU;
+    const r = 0.92 + 0.08 * Math.sin(3 * a + 1) + 0.04 * Math.sin(7 * a); // lumpy but stays within 0.8..1.04
+    pts.push({ x: r * Math.cos(a), y: r * Math.sin(a) });
+  }
+  loops = [pts]; probe = null;
+}
+
+function area(l) { let s = 0; for (let i = 0; i < l.length; i++) { const a = l[i], b = l[(i + 1) % l.length]; s += a.x * b.y - b.x * a.y; } return s / 2; }
+
+function insideLoop(l, x, y) { // even-odd ray cast
+  let c = false;
+  for (let i = 0, j = l.length - 1; i < l.length; j = i++)
+    if ((l[i].y > y) !== (l[j].y > y) && x < (l[j].x - l[i].x) * (y - l[i].y) / (l[j].y - l[i].y) + l[i].x) c = !c;
+  return c;
+}
+function inside(x, y) { let c = false; for (const l of loops) if (insideLoop(l, x, y)) c = !c; return c; }
+
+// Subtract the circle (cx,cy,r) from one loop. Returns a list of loops.
+function clipLoop(l, cx, cy, r) {
+  const isIn = p => (p.x - cx) ** 2 + (p.y - cy) ** 2 < r * r;
+  const L = []; // outside vertices plus tagged crossings: tag 'S' = leaves circle, 'E' = enters circle
+  for (let i = 0; i < l.length; i++) {
+    const a = l[i], b = l[(i + 1) % l.length];
+    let state = isIn(a);
+    if (!state) L.push({ x: a.x, y: a.y });
+    const dx = b.x - a.x, dy = b.y - a.y, fx = a.x - cx, fy = a.y - cy;
+    const A = dx * dx + dy * dy, B = 2 * (dx * fx + dy * fy), C = fx * fx + fy * fy - r * r, D = B * B - 4 * A * C;
+    if (D <= 0 || A === 0) continue;
+    const s = Math.sqrt(D);
+    for (const t of [(-B - s) / (2 * A), (-B + s) / (2 * A)]) {
+      if (t <= 0 || t >= 1) continue;
+      L.push({ x: a.x + t * dx, y: a.y + t * dy, tag: state ? 'S' : 'E' });
+      state = !state;
+    }
+  }
+  if (!L.some(p => p.tag)) return L.length ? [l] : []; // untouched, or swallowed whole
+  const k = L.findIndex(p => p.tag === 'S'), R = L.slice(k).concat(L.slice(0, k));
+  const chains = []; let cur = null;
+  for (const p of R) {
+    if (p.tag === 'S') cur = [p]; else { cur.push(p); if (p.tag === 'E') { chains.push(cur); cur = null; } }
+  }
+  const ang = p => Math.atan2(p.y - cy, p.x - cx), mod = a => ((a % TAU) + TAU) % TAU;
+  // each chain's end joins the chain start that comes next going clockwise round the circle
+  const next = chains.map(c => {
+    let best = -1, bd = 9;
+    chains.forEach((d, j) => { const dd = mod(ang(c[c.length - 1]) - ang(d[0])); if (dd < bd) { bd = dd; best = j; } });
+    return best;
+  });
+  const out = [], seen = new Set();
+  for (let i = 0; i < chains.length; i++) {
+    if (seen.has(i)) continue;
+    const loop = []; let j = i;
+    while (!seen.has(j)) {
+      seen.add(j);
+      const c = chains[j], e = ang(c[c.length - 1]), n = chains[next[j]];
+      loop.push(...c);
+      const d = mod(e - ang(n[0]));
+      for (let a = ARC_STEP; a < d; a += ARC_STEP) loop.push({ x: cx + r * Math.cos(e - a), y: cy + r * Math.sin(e - a) });
+      j = next[j];
+    }
+    if (loop.length >= 3) out.push(loop);
+  }
+  return out;
+}
+
+function carve(cx, cy, r) {
+  const hit = loops.some(l => l.some(p => (p.x - cx) ** 2 + (p.y - cy) ** 2 < r * r) || clipLoop(l, cx, cy, r)[0] !== l);
+  if (!hit) { // circle fully inside the rock: punch a hole (clockwise loop)
+    if (!inside(cx, cy)) return;
+    const h = []; for (let a = 0; a < TAU; a += ARC_STEP) h.push({ x: cx + r * Math.cos(-a), y: cy + r * Math.sin(-a) });
+    loops.push(h); return;
+  }
+  loops = loops.flatMap(l => clipLoop(l, cx, cy, r));
+}
+function stroke(x0, y0, x1, y1, r) { // stamp circles along the drag so fast drags leave no gaps
+  const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / (r * 0.5)));
+  for (let i = 1; i <= n; i++) carve(x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n, r);
+}
+
+function stats() {
+  const v = loops.reduce((s, l) => s + l.length, 0), pieces = loops.filter(l => area(l) > 0).length, holes = loops.length - pieces;
+  let tiny = 0; for (const l of loops) for (let i = 0; i < l.length; i++) { const a = l[i], b = l[(i + 1) % l.length]; if (Math.hypot(a.x - b.x, a.y - b.y) < TINY) tiny++; }
+  return { v, e: v, pieces, holes, tiny, bytes: v * 8, tri: Math.max(0, 2 * v - 4) };
+}
+
+function draw() {
+  const s = Math.min(W, H) * 0.4, X = x => W / 2 + x * s, Y = y => H / 2 - y * s;
+  ctx.clearRect(0, 0, W, H);
+  ctx.beginPath();
+  for (const l of loops) { l.forEach((p, i) => i ? ctx.lineTo(X(p.x), Y(p.y)) : ctx.moveTo(X(p.x), Y(p.y))); ctx.closePath(); }
+  ctx.fillStyle = '#3a342c'; ctx.fill('evenodd'); ctx.strokeStyle = '#e8c27a'; ctx.lineWidth = 2; ctx.stroke();
+  for (const l of loops) for (const p of l) { ctx.beginPath(); ctx.arc(X(p.x), Y(p.y), 2.5, 0, TAU); ctx.fillStyle = '#7fd4ff'; ctx.fill(); }
+  if (probe) {
+    ctx.beginPath(); ctx.arc(X(probe.x), Y(probe.y), 6, 0, TAU);
+    ctx.fillStyle = probe.in ? '#5ad17a' : '#e0605a'; ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.fillText(probe.in ? 'inside' : 'outside', X(probe.x) + 10, Y(probe.y) + 4);
+  }
+  if (mode === 'carve' && last && !dragging) { ctx.beginPath(); ctx.arc(X(last.x), Y(last.y), radius * s, 0, TAU); ctx.strokeStyle = '#ffffff44'; ctx.lineWidth = 1; ctx.stroke(); }
+  const t = stats();
+  $('stats').textContent =
+    `vertices: ${t.v}\nedges:    ${t.e}\npieces:   ${t.pieces}` + (t.holes ? ` (+${t.holes} hole)` : '') +
+    `\ntiny edges (<${TINY}): ${t.tiny}\nbytes = vertices × 8 = ${t.bytes}\n3D equivalent: vertices × 12 + triangles × 12\n  = ${t.v} × 12 + ${t.tri} × 12 = ${t.v * 12 + t.tri * 12} bytes`;
+}
+
+function ask(x, y) {
+  probe = { x, y, in: inside(x, y) };
+  const p = $('panel'); p.style.display = 'block';
+  p.innerHTML = `<b>Answer: ${probe.in ? 'INSIDE' : 'OUTSIDE'}</b> (point-in-polygon, the only question a surface can answer).<br>` +
+    `Material? damage? cracks? <b>The mesh has NO data for any of them.</b> Only ${stats().v} skin points exist; nothing is stored in the interior.`;
+}
+function setMode(m) { mode = m; $('bCarve').classList.toggle('on', m === 'carve'); $('bAsk').classList.toggle('on', m === 'ask'); if (m === 'carve') { probe = null; $('panel').style.display = 'none'; } draw(); }
+function setRes(n) { makeRock(n); $('nv').textContent = n; draw(); }
+
+function world(e) { const r = cv.getBoundingClientRect(), s = Math.min(W, H) * 0.4; return { x: (e.clientX - r.left - W / 2) / s, y: -(e.clientY - r.top - H / 2) / s }; }
+cv.onmousedown = e => { const p = world(e); if (mode === 'ask') return (ask(p.x, p.y), draw()); dragging = true; last = p; carve(p.x, p.y, radius); draw(); };
+cv.onmousemove = e => { const p = world(e); if (dragging) stroke(last.x, last.y, p.x, p.y, radius); last = p; draw(); };
+window.onmouseup = () => { dragging = false; };
+$('res').oninput = e => setRes(+e.target.value);
+$('rad').oninput = e => { radius = e.target.value / 100; $('nr').textContent = radius.toFixed(2); };
+$('bCarve').onclick = () => setMode('carve'); $('bAsk').onclick = () => setMode('ask'); $('bReset').onclick = () => setRes(+$('res').value);
+function resize() { W = cv.clientWidth; H = cv.clientHeight; cv.width = W; cv.height = H; draw(); }
+window.onresize = resize;
+
+function selftest() {
+  const out = $('selftest'), fail = m => { out.textContent = 'FAIL ' + m; };
+  window.onerror = (m) => fail(m);
+  try {
+    setRes(24); const v0 = stats().v;
+    carve(1, 0, 0.3); const v1 = stats().v;
+    if (!(v1 > v0)) return fail(`carve did not add vertices ${v0}->${v1}`);
+    setRes(24); stroke(0, -1.6, 0, 1.6, 0.3);
+    const t = stats();
+    if (t.pieces !== 2) return fail(`pieces=${t.pieces}, expected 2`);
+    if (inside(0, 0) || !inside(0.6, 0) || !inside(-0.6, 0)) return fail('point-in-polygon wrong after split');
+    ask(0.6, 0); if (!probe.in || $('panel').style.display !== 'block') return fail('ask panel not shown');
+    setRes(60); const b = stats().bytes; setRes(30);
+    if (b !== 480 || stats().bytes !== 240) return fail('bytes formula');
+    carve(0, 0, 0.2); if (stats().holes !== 1) return fail('interior carve made no hole');
+    out.textContent = `PASS carve ${v0}->${v1} verts, split pieces=${t.pieces}, hole ok, inside query ok`;
+  } catch (e) { fail(e.message); }
+}
+
+makeRock(24); resize();
+if (location.search.includes('selftest')) selftest();
+</script></body></html>

@@ -1,5 +1,7 @@
 # Pivot to Odin via 2D Prototype
 
+> **SUPERSEDED 2026-10-06:** the 2D prototype is cancelled; the project goes straight to 3D. Current direction: `docs/game/DESIGN.md`. Kept for the vision/principles only.
+
 **Date:** 2026-05-06
 **Status:** Forward-looking. ultimate-flat (C++) is the research substrate. Active development pivots to Odin via a 2D prototype.
 

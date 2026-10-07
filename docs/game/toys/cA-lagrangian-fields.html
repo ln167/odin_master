@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Lagrangian implicit fields</title>
+<style>
+body{margin:0;display:flex;height:100vh;background:#14161b;color:#d8dbe2;font:13px/1.4 system-ui,sans-serif}
+#side{width:320px;box-sizing:border-box;padding:12px 14px;overflow-y:auto;background:#1b1e25;border-right:1px solid #2c303a}
+#main{flex:1;position:relative;min-width:0}
+canvas{position:absolute;left:0;top:0}
+h1{font-size:17px;margin:6px 0}h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#8a93a6;margin:14px 0 4px}
+a{color:#7fb2ff}p,ul{margin:4px 0}ul{padding-left:18px}
+button,select{background:#2a2f3a;color:#d8dbe2;border:1px solid #3b4150;border-radius:4px;padding:3px 8px;margin:2px 2px 2px 0}
+label{display:block;margin:3px 0}
+#stats{font-family:ui-monospace,Consolas,monospace;font-size:12px;white-space:pre;color:#a8e0b0}
+#selftest{font-size:10px;color:#667;margin:10px 0 0;white-space:pre-wrap}
+</style></head><body>
+<div id="side">
+<a href="index.html">← all toys</a>
+<h1>Lagrangian implicit fields</h1>
+<h2>What it is</h2>
+<p>Terrain is one formula; every broken-off chunk carries its own small grid of signed distances (distance to the surface, negative inside) in its own body frame. Making a chunk a rigid body just means giving that grid a position and angle. Drawing and collision are only "ask each field how far is this point".</p>
+<h2>Controls</h2>
+<label>Click does <select id="mode"><option value="break">break terrain</option><option value="carve">carve (fragment or terrain)</option></select></label>
+<label>Radius <input type="range" id="rad" min="10" max="60" value="35"> <span id="radv">35</span></label>
+<button id="bBreak">break at mound</button><button id="bPause">pause</button><button id="bReset">reset</button>
+<label><input type="checkbox" id="cFrames" checked> show frames (grid box + axes)</label>
+<label><input type="checkbox" id="cComp" checked> show min-composition (colour = which field wins)</label>
+<h2>Stats</h2>
+<div id="stats"></div>
+<h2>Good at</h2>
+<ul><li>Promotion to rigid body = add a transform, no meshing.</li><li>Carving happens in body frame, the cut rotates with the matter.</li><li>Collision is plain field queries.</li></ul>
+<h2>Bad at</h2>
+<ul><li>Every fragment pays for its whole grid, even if mostly empty.</li><li>Overlapping fragments need a min over all of them.</li><li>Resolution is fixed per fragment (32×32 here).</li></ul>
+<p><b>In 3D / for our game:</b> each rubble chunk would hold a small 3D distance volume (e.g. 32³×4 = 128 KB) plus a transform.</p>
+<pre id="selftest"></pre>
+</div>
+<div id="main"><canvas id="cv"></canvas></div>
+<script>
+const N = 32, FRAG_BYTES = N*N*4 + 24, OP_BYTES = 12, GRAV = 400, WW = 800, WH = 500;
+const $ = id => document.getElementById(id);
+const cv = $('cv'), ctx = cv.getContext('2d');
+const off = document.createElement('canvas'), octx = off.getContext('2d');
+const STEP = 4;
+let cuts, frags, paused = false, ms = 0, scale = 1, ox = 0, oy = 0, mouse = null, nextId;
+
+function reset() { cuts = []; frags = []; nextId = 1; }
+
+// ---- fields -------------------------------------------------------------
+function baseTerrain(x, y) {
+  const ground = y - (410 + 15*Math.sin(x/80));
+  const mound = Math.hypot(x-400, y-410) - 125;
+  return Math.min(ground, mound);                       // union = min
+}
+function terrain(x, y) {
+  let d = baseTerrain(x, y);
+  for (const c of cuts) d = Math.max(d, c.r - Math.hypot(x-c.x, y-c.y)); // subtract = max(d, -cut)
+  return d;
+}
+function worldToLocal(f, x, y) {
+  const dx = x-f.x, dy = y-f.y, c = Math.cos(f.a), s = Math.sin(f.a);
+  return [c*dx + s*dy, -s*dx + c*dy];
+}
+function fragSdf(f, x, y) {
+  const [qx, qy] = worldToLocal(f, x, y), h = f.h;
+  const cx = Math.min(h, Math.max(-h, qx)), cy = Math.min(h, Math.max(-h, qy));
+  const gx = (cx+h)/f.cell, gy = (cy+h)/f.cell;
+  const i = Math.min(N-2, gx|0), j = Math.min(N-2, gy|0), tx = gx-i, ty = gy-j, g = f.grid, k = j*N+i;
+  const d = (g[k]*(1-tx) + g[k+1]*tx)*(1-ty) + (g[k+N]*(1-tx) + g[k+N+1]*tx)*ty;
+  return d + Math.hypot(qx-cx, qy-cy);                  // outside the box: add distance to box
+}
+
+// ---- operations (UI handlers and selftest both call these) ---------------
+function doBreak(cx, cy, R) {
+  const L = 2*R + 16, h = L/2, cell = L/(N-1), grid = new Float32Array(N*N);
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const x = cx - h + i*cell, y = cy - h + j*cell;
+    grid[j*N+i] = Math.max(terrain(x, y), Math.hypot(x-cx, y-cy) - R); // copy samples, clip to region
+  }
+  cuts.push({x: cx, y: cy, r: R});                      // subtract region from terrain
+  const f = {id: nextId++, x: cx, y: cy-3, a: 0, vx: (Math.random()-.5)*60, vy: -60, w: (Math.random()-.5)*3, h, cell, grid, pts: []};
+  rebuildPts(f); frags.push(f); return f;
+}
+function rebuildPts(f) {  // surface sample points: inside nodes that touch an outside node
+  f.pts = [];
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const g = f.grid, k = j*N+i;
+    if (g[k] >= 0) continue;
+    if ((i>0 && g[k-1]>=0) || (i<N-1 && g[k+1]>=0) || (j>0 && g[k-N]>=0) || (j<N-1 && g[k+N]>=0))
+      f.pts.push([-f.h + i*f.cell, -f.h + j*f.cell]);
+  }
+}
+function doCarve(x, y, R) {
+  let best = null, bd = R;
+  for (const f of frags) { const d = fragSdf(f, x, y); if (d < bd) { bd = d; best = f; } }
+  if (!best) { cuts.push({x, y, r: R}); return null; }  // nothing there: carve terrain
+  const [qx, qy] = worldToLocal(best, x, y);            // edit in BODY frame
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const px = -best.h + i*best.cell, py = -best.h + j*best.cell, k = j*N+i;
+    best.grid[k] = Math.max(best.grid[k], R - Math.hypot(px-qx, py-qy));
+  }
+  rebuildPts(best); return best;
+}
+function gradT(x, y) {
+  const e = 1, gx = terrain(x+e, y) - terrain(x-e, y), gy = terrain(x, y+e) - terrain(x, y-e), l = Math.hypot(gx, gy) || 1;
+  return [gx/l, gy/l];
+}
+function step(dt) {
+  for (const f of frags) {
+    f.vy += GRAV*dt; f.x += f.vx*dt; f.y += f.vy*dt; f.a += f.w*dt;
+    const c = Math.cos(f.a), s = Math.sin(f.a), I = f.h*f.h/1.5;
+    let px = 0, py = 0;
+    const hits = [];
+    for (const [lx, ly] of f.pts) {                     // collision = terrain field queries at surface samples
+      const rx = c*lx - s*ly, ry = s*lx + c*ly, d = terrain(f.x+rx, f.y+ry);
+      if (d < 0) { const [nx, ny] = gradT(f.x+rx, f.y+ry); hits.push([rx, ry, nx, ny, d]); }
+    }
+    const k = hits.length; if (!k) continue;
+    for (const [rx, ry, nx, ny, d] of hits) {
+      px += -d*nx/k; py += -d*ny/k; f.a += (rx*(-d*ny) - ry*(-d*nx))/(I*k)*0.5;
+      const vnx = f.vx - f.w*ry, vny = f.vy + f.w*rx, vn = vnx*nx + vny*ny;
+      if (vn < 0) {
+        const rn = rx*ny - ry*nx, j = -1.2*vn/(1 + rn*rn/I)/k;
+        f.vx += j*nx; f.vy += j*ny; f.w += j*rn/I;
+      }
+    }
+    f.x += px; f.y += py; f.vx *= 0.995; f.w *= 0.98;
+  }
+}
+
+// ---- rendering: sample every field per pixel ------------------------------
+const HUES = [20, 200, 120, 290, 60, 330];
+function render() {
+  const W = cv.width, H = cv.height, w = Math.ceil(W/STEP), h = Math.ceil(H/STEP);
+  off.width = w; off.height = h;
+  const img = octx.createImageData(w, h), D = img.data, comp = $('cComp').checked;
+  for (let py = 0; py < h; py++) for (let px = 0; px < w; px++) {
+    const x = (px*STEP + STEP/2 - ox)/scale, y = (py*STEP + STEP/2 - oy)/scale;
+    let d = terrain(x, y), src = -1;
+    for (let i = 0; i < frags.length; i++) { const fd = fragSdf(frags[i], x, y); if (fd < d) { d = fd; src = i; } }
+    let r, g, b;
+    if (d < 0) {
+      if (comp && src >= 0) { [r, g, b] = hsl(HUES[frags[src].id % 6], .55, .55 + Math.max(-.2, d/200)); }
+      else if (comp) { r = 150 + d; g = 120 + d; b = 90 + d; }
+      else { r = g = b = 130 + Math.max(-60, d); }
+    } else {
+      const band = .5 + .5*Math.cos(d*.35), v = 22 + 14*band*Math.exp(-d/90);
+      r = v; g = v + 3; b = v + 10;
+      if (d < 1.2) { r = g = b = 235; }
+    }
+    const o = (py*w + px)*4; D[o] = r; D[o+1] = g; D[o+2] = b; D[o+3] = 255;
+  }
+  octx.putImageData(img, 0, 0);
+  ctx.imageSmoothing = false; ctx.imageSmoothingEnabled = false; ctx.drawImage(off, 0, 0, w*STEP, h*STEP);
+  ctx.save(); ctx.translate(ox, oy); ctx.scale(scale, scale);
+  if ($('cFrames').checked) for (const f of frags) {
+    ctx.save(); ctx.translate(f.x, f.y); ctx.rotate(f.a); ctx.lineWidth = 1/scale;
+    ctx.strokeStyle = '#ffd75e'; ctx.strokeRect(-f.h, -f.h, 2*f.h, 2*f.h);
+    ctx.strokeStyle = '#ff5555'; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(f.h, 0); ctx.stroke();
+    ctx.strokeStyle = '#55ff77'; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, f.h); ctx.stroke();
+    ctx.fillStyle = '#ffd75e'; ctx.font = (11/scale) + 'px sans-serif'; ctx.fillText('#' + f.id + ' local grid', -f.h, -f.h - 3/scale);
+    ctx.restore();
+  }
+  if (mouse) { ctx.strokeStyle = '#fff8'; ctx.beginPath(); ctx.arc(mouse[0], mouse[1], +$('rad').value, 0, 7); ctx.stroke(); }
+  ctx.restore();
+}
+function hsl(h, s, l) {
+  const a = s*Math.min(l, 1-l), f = n => { const k = (n + h/30) % 12; return 255*(l - a*Math.max(-1, Math.min(k-3, 9-k, 1))); };
+  return [f(0), f(8), f(4)];
+}
+function stats() {
+  const n = frags.length, ops = cuts.length;
+  $('stats').textContent =
+    'fragments        ' + n + '\nbytes / fragment ' + FRAG_BYTES + '\n  = ' + N + '² × 4 + 24 (transform)\nterrain ops      ' + ops + ' (' + ops*OP_BYTES + ' B)\nTOTAL memory     ' + (n*FRAG_BYTES + ops*OP_BYTES) + ' B\n  = frags × ' + FRAG_BYTES + ' + ops × ' + OP_BYTES + '\nms / frame       ' + ms.toFixed(1);
+}
+
+// ---- UI -------------------------------------------------------------------
+function resize() {
+  cv.width = $('main').clientWidth; cv.height = $('main').clientHeight;
+  scale = Math.min(cv.width/WW, cv.height/WH); ox = (cv.width - WW*scale)/2; oy = (cv.height - WH*scale)/2;
+}
+function toWorld(e) { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left - ox)/scale, (e.clientY - r.top - oy)/scale]; }
+cv.onmousemove = e => { mouse = toWorld(e); };
+cv.onmouseleave = () => { mouse = null; };
+cv.onclick = e => {
+  const [x, y] = toWorld(e), R = +$('rad').value;
+  if ($('mode').value === 'break') doBreak(x, y, R); else doCarve(x, y, R);
+  frame(0);
+};
+$('rad').oninput = () => { $('radv').textContent = $('rad').value; };
+$('bBreak').onclick = () => { doBreak(400, 290, +$('rad').value); frame(0); };
+$('bPause').onclick = () => { paused = !paused; $('bPause').textContent = paused ? 'resume' : 'pause'; };
+$('bReset').onclick = () => { reset(); frame(0); };
+$('cFrames').onchange = $('cComp').onchange = () => frame(0);
+window.onresize = () => { resize(); frame(0); };
+
+function frame(dt) {
+  const t0 = performance.now();
+  if (!paused && dt) { step(dt/2); step(dt/2); }
+  render(); ms = performance.now() - t0; stats();
+}
+let last = 0;
+function loop(t) { frame(Math.min(.033, (t - last)/1000)); last = t; requestAnimationFrame(loop); }
+
+// ---- selftest -------------------------------------------------------------
+function selftest() {
+  const out = $('selftest');
+  try {
+    reset();
+    const before = terrain(400, 290);
+    if (!(before < 0)) throw 'terrain at mound top should start solid, got ' + before;
+    const f = doBreak(400, 290, 35);
+    if (frags.length !== 1) throw 'break did not spawn a fragment';
+    const after = terrain(400, 290);
+    if (!(after > 0)) throw 'terrain at break centre not positive: ' + after;
+    if (!(f.grid[(N>>1)*N + (N>>1)] < 0)) throw 'fragment grid centre should be inside';
+    const x0 = f.x, y0 = f.y, a0 = f.a;
+    for (let i = 0; i < 90; i++) step(1/120);
+    if (Math.hypot(f.x-x0, f.y-y0) < 1) throw 'fragment did not move';
+    if (Math.abs(f.a - a0) < 1e-3) throw 'fragment did not rotate';
+    const g0 = f.grid.slice(), np = f.pts.length;
+    doCarve(f.x, f.y, 15);
+    let diff = 0; for (let i = 0; i < g0.length; i++) if (g0[i] !== f.grid[i]) diff++;
+    if (!diff) throw 'carve did not change local grid';
+    render(); stats();
+    out.textContent = 'PASS break->1 frag, terrain@centre ' + before.toFixed(0) + '->' + after.toFixed(0) + ', moved ' + Math.hypot(f.x-x0, f.y-y0).toFixed(1) + ', rotated ' + (f.a-a0).toFixed(2) + ' rad, carve changed ' + diff + ' grid cells (' + np + '->' + f.pts.length + ' surface pts)';
+  } catch (e) { out.textContent = 'FAIL ' + e; }
+}
+window.onerror = (m) => { $('selftest').textContent = 'FAIL ' + m; };
+reset(); resize();
+if (location.search.includes('selftest')) selftest();
+else requestAnimationFrame(loop);
+</script></body></html>

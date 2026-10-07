@@ -1,0 +1,460 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>P2G / G2P — Material Point Method</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #111418; color: #d8dde3; font: 13px/1.45 system-ui, sans-serif; }
+  body { display: flex; }
+  #side { width: 320px; flex: none; overflow-y: auto; padding: 10px 14px; box-sizing: border-box; background: #181c22; border-right: 1px solid #2a3038; }
+  #main { flex: 1; position: relative; min-width: 0; }
+  #cv { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; }
+  h1 { font-size: 17px; margin: 6px 0 8px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: #8fa0b3; margin: 14px 0 4px; }
+  a { color: #7fb8ff; }
+  p { margin: 4px 0; }
+  ul { margin: 2px 0; padding-left: 18px; }
+  label { display: block; margin: 5px 0; }
+  select, button { background: #232a33; color: #d8dde3; border: 1px solid #3a4450; border-radius: 4px; padding: 3px 7px; font: inherit; }
+  button { cursor: pointer; margin: 2px 2px 2px 0; }
+  button:hover { background: #2e3743; }
+  input[type=range] { width: 150px; vertical-align: middle; }
+  #stats { font: 12px/1.5 ui-monospace, monospace; background: #12161b; padding: 6px 8px; border-radius: 4px; white-space: pre; }
+  #phaseText { background: #1f2630; border-left: 3px solid #f0b94a; padding: 5px 8px; margin-top: 6px; min-height: 3em; }
+  .take { border-left: 3px solid #6fd08c; padding: 4px 8px; background: #17201a; }
+  #selftest { font: 10px ui-monospace, monospace; color: #6c7783; margin: 10px 0 0; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<div id="side">
+  <a href="index.html">← all toys</a>
+  <h1>P2G / G2P — Material Point Method</h1>
+
+  <h2>What it is</h2>
+  <p>MPM simulates matter as many <b>particles</b> (points that carry mass, velocity and deformation) plus a <b>background grid</b> (a fixed lattice of nodes) that is wiped and rebuilt every step.
+  Each step it spreads particle data onto the grid (P2G, "particle to grid"), solves forces on the grid, then reads the new velocities back (G2P, "grid to particle").
+  This is the 2D MLS-MPM scheme from the 88-line "mpm88" example, written from scratch.</p>
+
+  <p class="take"><b>Takeaway:</b> particles = the matter (identity, history); grid = scratch space rebuilt every step; P2G/G2P = the promotion maths, a template for every conversion we need.</p>
+
+  <h2>Controls</h2>
+  <label>Scene <select id="scene">
+    <option value="dam">Dam break</option>
+    <option value="crumbs">Pile of crumbs dropped</option>
+    <option value="block">Block hits sand</option>
+  </select></label>
+  <label>Material <select id="mat">
+    <option value="0">water (weakly compressible fluid)</option>
+    <option value="1">jelly (elastic)</option>
+    <option value="2">snow / mud (elasto-plastic)</option>
+    <option value="3">sand (Drucker-Prager friction)</option>
+  </select></label>
+  <label>Substeps per frame <input id="sub" type="range" min="1" max="60" value="25"> <span id="subV">25</span></label>
+  <label><input id="heat" type="checkbox"> show grid mass while playing</label>
+  <div>
+    <button id="play">Pause</button>
+    <button id="phaseBtn">Phase step: P2G ▸</button>
+    <button id="reset">Reset</button>
+  </div>
+  <div id="phaseText">Press "Phase step" to walk through one MPM step. Click the canvas to select a particle (yellow).</div>
+
+  <h2>Live stats</h2>
+  <div id="stats"></div>
+
+  <h2>Good at</h2>
+  <ul>
+    <li>Granular matter: crumbs, mud, sand and water in one method.</li>
+    <li>Mixing materials and topology change (splitting, merging) for free.</li>
+    <li>Particles keep history (how deformed, how compacted).</li>
+  </ul>
+  <h2>Bad at</h2>
+  <ul>
+    <li>Cost: every particle does P2G + G2P every substep.</li>
+    <li>Fine detail needs many particles (~4 per grid cell).</li>
+    <li>Tuning: stiffness forces tiny timesteps or it explodes.</li>
+  </ul>
+  <p><b>In 3D / for our game:</b> stencil becomes 3×3×3 = 27 nodes; use MPM only for active rubble/mud near the player, promote settled matter back to voxels.</p>
+  <pre id="selftest"></pre>
+</div>
+<div id="main"><canvas id="cv"></canvas></div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+window.onerror = (msg, src, line) => { $("selftest").textContent = "FAIL error: " + msg + " @" + line; };
+
+// ---------- simulation constants (mpm88 / mpm99 units: domain is the unit square) ----------
+const N = 64, dx = 1 / N, invDx = N;
+const dt = 1.5e-4, gravity = 50;
+const pVol = (dx * 0.5) ** 2, pRho = 1, pMass = pVol * pRho;
+const E = 5e3, nu = 0.2;
+const mu0 = E / (2 * (1 + nu)), la0 = E * nu / ((1 + nu) * (1 - 2 * nu));
+const sinPhi = Math.sin(35 * Math.PI / 180);
+const dpAlpha = Math.sqrt(2 / 3) * 2 * sinPhi / (3 - sinPhi); // Drucker-Prager friction coefficient
+const MAT_NAMES = ["water", "jelly", "snow/mud", "sand"];
+const MAT_COLORS = ["#4aa3ff", "#ff6b9a", "#c49a6c", "#e8c872"];
+const P_BYTES = 8 + 8 + 16 + 16 + 4 + 1; // pos, vel, C (2x2), F (2x2), Jp, material
+const G_BYTES = 4 + 8;                   // mass, velocity
+
+// ---------- state ----------
+const MAXP = 8000;
+const px = new Float32Array(MAXP), py = new Float32Array(MAXP), vx = new Float32Array(MAXP), vy = new Float32Array(MAXP);
+const C00 = new Float32Array(MAXP), C01 = new Float32Array(MAXP), C10 = new Float32Array(MAXP), C11 = new Float32Array(MAXP);
+const F00 = new Float32Array(MAXP), F01 = new Float32Array(MAXP), F10 = new Float32Array(MAXP), F11 = new Float32Array(MAXP);
+const Jp = new Float32Array(MAXP), mat = new Uint8Array(MAXP);
+const gm = new Float32Array(N * N), gvx = new Float32Array(N * N), gvy = new Float32Array(N * N);
+let n = 0, simTime = 0, steps = 0;
+
+let seed = 1;
+const rand = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
+
+function addParticle(x, y, m, ivx, ivy) {
+  px[n] = x; py[n] = y; vx[n] = ivx; vy[n] = ivy;
+  C00[n] = C01[n] = C10[n] = C11[n] = 0;
+  F00[n] = 1; F01[n] = 0; F10[n] = 0; F11[n] = 1; Jp[n] = 1; mat[n] = m;
+  n++;
+}
+// Fill a rectangle (or a disc when r>0) with ~4 particles per grid cell, jittered.
+function addRect(x0, y0, w, h, m, ivx = 0, ivy = 0) {
+  const s = dx / 2;
+  for (let x = x0; x < x0 + w; x += s) for (let y = y0; y < y0 + h; y += s)
+    addParticle(x + rand() * s, y + rand() * s, m, ivx, ivy);
+}
+function addDisc(cx, cy, r, m) {
+  const s = dx / 2;
+  for (let x = cx - r; x < cx + r; x += s) for (let y = cy - r; y < cy + r; y += s) {
+    const qx = x + rand() * s, qy = y + rand() * s;
+    if ((qx - cx) ** 2 + (qy - cy) ** 2 < r * r) addParticle(qx, qy, m, 0, 0);
+  }
+}
+
+const SCENE_MAT = { dam: 0, crumbs: 3, block: 3 };
+function setScene(name, m) {
+  n = 0; seed = 1; simTime = 0; steps = 0; phase = 0; lastPhase = -1;
+  if (name === "dam") addRect(0.06, 0.06, 0.34, 0.55, m);
+  if (name === "crumbs") for (let k = 0; k < 16; k++)
+    addDisc(0.3 + rand() * 0.4, 0.3 + rand() * 0.6, 0.035 + rand() * 0.02, m);
+  if (name === "block") { addRect(0.06, 0.06, 0.88, 0.2, m); addRect(0.42, 0.55, 0.16, 0.16, 1, 0, -4); }
+  sel = n >> 1;
+  p2g(); // so the grid is never stale for the picture
+}
+
+// ---------- 2x2 SVD via polar decomposition: F = U diag(s1,s2) V^T, U and V rotations ----------
+let Uc, Us, Vc, Vs, s1, s2;
+function svd(a, b, c, d) {
+  const th = Math.atan2(c - b, a + d), Rc = Math.cos(th), Rs = Math.sin(th);
+  const S00 = Rc * a + Rs * c, S01 = Rc * b + Rs * d, S10 = -Rs * a + Rc * c, S11 = -Rs * b + Rc * d;
+  const q = 0.5 * (S01 + S10), ph = 0.5 * Math.atan2(2 * q, S00 - S11);
+  Vc = Math.cos(ph); Vs = Math.sin(ph);
+  s1 = S00 * Vc * Vc + 2 * q * Vs * Vc + S11 * Vs * Vs;
+  s2 = S00 * Vs * Vs - 2 * q * Vs * Vc + S11 * Vc * Vc;
+  Uc = Math.cos(th + ph); Us = Math.sin(th + ph);
+}
+function setF(p, a, b) { // F = U diag(a,b) V^T
+  F00[p] = Uc * a * Vc + Us * b * Vs; F01[p] = Uc * a * Vs - Us * b * Vc;
+  F10[p] = Us * a * Vc - Uc * b * Vs; F11[p] = Us * a * Vs + Uc * b * Vc;
+}
+
+// Kirchhoff stress of particle p (tau = P F^T) into t00,t01,t10,t11
+let t00, t01, t10, t11;
+function stress(p) {
+  const a = F00[p], b = F01[p], c = F10[p], d = F11[p], J = a * d - b * c, m = mat[p];
+  if (m === 0) { t00 = t11 = la0 * J * (J - 1); t01 = t10 = 0; return; } // water: pressure only
+  if (m === 3) { // sand: Hencky (log) strain
+    svd(a, b, c, d);
+    const e1 = Math.log(s1), e2 = Math.log(s2), tr = e1 + e2;
+    const k1 = 2 * mu0 * e1 + la0 * tr, k2 = 2 * mu0 * e2 + la0 * tr;
+    t00 = Uc * Uc * k1 + Us * Us * k2; t11 = Us * Us * k1 + Uc * Uc * k2; t01 = t10 = Uc * Us * (k1 - k2);
+    return;
+  }
+  // jelly / snow: fixed corotated, snow hardens as it compacts
+  const h = m === 1 ? 0.3 : Math.min(Math.exp(10 * (1 - Jp[p])), 20);
+  const mu = mu0 * h, la = la0 * h;
+  const th = Math.atan2(c - b, a + d), Rc = Math.cos(th), Rs = Math.sin(th); // rotation part R of F
+  const A00 = a - Rc, A01 = b + Rs, A10 = c - Rs, A11 = d - Rc;             // F - R
+  const pr = la * J * (J - 1);
+  t00 = 2 * mu * (A00 * a + A01 * b) + pr; t01 = 2 * mu * (A00 * c + A01 * d);
+  t10 = 2 * mu * (A10 * a + A11 * b);      t11 = 2 * mu * (A10 * c + A11 * d) + pr;
+}
+
+// quadratic B-spline weights for a particle at grid coord g: base node and 3 weights
+const wx = new Float64Array(3), wy = new Float64Array(3);
+let bx, by, fx, fy;
+function weights(p) {
+  const gx = px[p] * invDx, gy = py[p] * invDx;
+  bx = Math.floor(gx - 0.5); by = Math.floor(gy - 0.5); fx = gx - bx; fy = gy - by;
+  wx[0] = 0.5 * (1.5 - fx) ** 2; wx[1] = 0.75 - (fx - 1) ** 2; wx[2] = 0.5 * (fx - 0.5) ** 2;
+  wy[0] = 0.5 * (1.5 - fy) ** 2; wy[1] = 0.75 - (fy - 1) ** 2; wy[2] = 0.5 * (fy - 0.5) ** 2;
+}
+
+// ---------- the four phases ----------
+// (1) P2G: scatter particle mass and momentum (+ stress and affine C) onto the 3x3 node stencil.
+function p2g() {
+  gm.fill(0); gvx.fill(0); gvy.fill(0);
+  const k = -dt * pVol * 4 * invDx * invDx;
+  for (let p = 0; p < n; p++) {
+    weights(p); stress(p);
+    const a00 = k * t00 + pMass * C00[p], a01 = k * t01 + pMass * C01[p];
+    const a10 = k * t10 + pMass * C10[p], a11 = k * t11 + pMass * C11[p];
+    const mvx = pMass * vx[p], mvy = pMass * vy[p];
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
+      const w = wx[i] * wy[j], ddx = (i - fx) * dx, ddy = (j - fy) * dx, g = (bx + i) * N + by + j;
+      gvx[g] += w * (mvx + a00 * ddx + a01 * ddy);
+      gvy[g] += w * (mvy + a10 * ddx + a11 * ddy);
+      gm[g] += w * pMass;
+    }
+  }
+}
+// (2) Grid update: momentum -> velocity, gravity, walls (3-node-thick slip boundary).
+function gridUpdate() {
+  for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
+    const g = i * N + j, m = gm[g];
+    if (m <= 0) { gvx[g] = gvy[g] = 0; continue; }
+    let u = gvx[g] / m, v = gvy[g] / m - dt * gravity;
+    if ((i < 3 && u < 0) || (i > N - 3 && u > 0)) u = 0;
+    if ((j < 3 && v < 0) || (j > N - 3 && v > 0)) v = 0;
+    gvx[g] = u; gvy[g] = v;
+  }
+}
+// (3) G2P: gather velocity + affine C back, update deformation F, apply plasticity.
+function g2p() {
+  for (let p = 0; p < n; p++) {
+    weights(p);
+    let nvx = 0, nvy = 0, b00 = 0, b01 = 0, b10 = 0, b11 = 0;
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
+      const w = wx[i] * wy[j], ddx = (i - fx) * dx, ddy = (j - fy) * dx, g = (bx + i) * N + by + j;
+      const u = gvx[g], v = gvy[g];
+      nvx += w * u; nvy += w * v;
+      b00 += w * u * ddx; b01 += w * u * ddy; b10 += w * v * ddx; b11 += w * v * ddy;
+    }
+    const s = 4 * invDx * invDx;
+    vx[p] = nvx; vy[p] = nvy;
+    C00[p] = s * b00; C01[p] = s * b01; C10[p] = s * b10; C11[p] = s * b11;
+    // F <- (I + dt C) F
+    const a00 = 1 + dt * C00[p], a01 = dt * C01[p], a10 = dt * C10[p], a11 = 1 + dt * C11[p];
+    const f00 = F00[p], f01 = F01[p], f10 = F10[p], f11 = F11[p];
+    F00[p] = a00 * f00 + a01 * f10; F01[p] = a00 * f01 + a01 * f11;
+    F10[p] = a10 * f00 + a11 * f10; F11[p] = a10 * f01 + a11 * f11;
+    const m = mat[p];
+    if (m === 0) { // water: forget shear, keep only volume change J
+      const r = Math.sqrt(F00[p] * F11[p] - F01[p] * F10[p]);
+      F00[p] = F11[p] = r; F01[p] = F10[p] = 0;
+    } else if (m === 2) { // snow/mud: clamp stretch, remember compaction in Jp
+      svd(F00[p], F01[p], F10[p], F11[p]);
+      const n1 = Math.min(Math.max(s1, 1 - 2.5e-2), 1 + 4.5e-3), n2 = Math.min(Math.max(s2, 1 - 2.5e-2), 1 + 4.5e-3);
+      Jp[p] *= (s1 / n1) * (s2 / n2);
+      setF(p, n1, n2);
+    } else if (m === 3) { // sand: Drucker-Prager return mapping in log-strain space
+      svd(F00[p], F01[p], F10[p], F11[p]);
+      let e1 = Math.log(Math.max(s1, 1e-4)), e2 = Math.log(Math.max(s2, 1e-4)); // ponytail: clamp guards inverted F; sand rarely inverts
+      const tr = e1 + e2;
+      if (tr >= 0) e1 = e2 = 0; // pulled apart: sand has no cohesion, becomes stress-free
+      else {
+        const h1 = e1 - tr / 2, h2 = e2 - tr / 2, hn = Math.hypot(h1, h2);
+        const dg = hn + (2 * la0 + 2 * mu0) / (2 * mu0) * tr * dpAlpha;
+        if (dg > 0) { e1 -= dg * h1 / hn; e2 -= dg * h2 / hn; }
+      }
+      setF(p, Math.exp(e1), Math.exp(e2));
+    }
+  }
+}
+// (4) Advect: move particles with their new velocity.
+function advect() {
+  for (let p = 0; p < n; p++) { px[p] += dt * vx[p]; py[p] += dt * vy[p]; }
+  simTime += dt; steps++;
+}
+function step() { p2g(); gridUpdate(); g2p(); advect(); }
+
+// ---------- UI state ----------
+const PHASES = [p2g, gridUpdate, g2p, advect];
+const PHASE_NAMES = ["P2G", "Grid update", "G2P", "Advect"];
+const PHASE_TEXT = [
+  "<b>1. P2G</b> — every particle splats its mass and momentum onto the 3×3 grid nodes around it, weighted by a smooth B-spline. The heatmap is grid mass; yellow lines are the selected particle's 9 weights (they sum to 1).",
+  "<b>2. Grid update</b> — on the grid, momentum ÷ mass = velocity, add gravity, stop velocity into walls. Arrows are node velocities. No particle is touched here.",
+  "<b>3. G2P</b> — each particle reads velocity back from the same 9 nodes (same weights), plus a local velocity gradient C. Its deformation F is updated and the material rule (plasticity) is applied. Green arrow = new velocity.",
+  "<b>4. Advect</b> — particles move: x += dt·v. The grid's job is done; next step it is wiped and rebuilt from the particles."
+];
+let phase = 0, lastPhase = -1, playing = true, sel = 0, selOld = [0, 0], msPerStep = 0;
+
+function runPhase() {
+  if (phase === 3) selOld = [px[sel], py[sel]];
+  PHASES[phase]();
+  lastPhase = phase; phase = (phase + 1) & 3;
+}
+function finishCycle() { while (phase !== 0) runPhase(); lastPhase = -1; }
+
+$("phaseBtn").onclick = () => {
+  playing = false; $("play").textContent = "Play";
+  runPhase();
+  $("phaseText").innerHTML = PHASE_TEXT[lastPhase];
+  $("phaseBtn").textContent = "Phase step: " + PHASE_NAMES[phase] + " ▸";
+  draw();
+};
+$("play").onclick = () => {
+  playing = !playing; $("play").textContent = playing ? "Pause" : "Play";
+  if (playing) { finishCycle(); $("phaseBtn").textContent = "Phase step: P2G ▸"; }
+};
+function resetScene() {
+  setScene($("scene").value, +$("mat").value);
+  $("phaseBtn").textContent = "Phase step: P2G ▸"; draw();
+}
+$("reset").onclick = resetScene;
+$("scene").onchange = () => { $("mat").value = SCENE_MAT[$("scene").value]; resetScene(); };
+$("mat").onchange = resetScene;
+$("sub").oninput = () => { $("subV").textContent = $("sub").value; draw(); };
+$("heat").onchange = () => draw();
+
+// ---------- drawing ----------
+const cv = $("cv"), ctx = cv.getContext("2d");
+const heatCv = document.createElement("canvas"); heatCv.width = heatCv.height = N;
+const heatCtx = heatCv.getContext("2d"), heatImg = heatCtx.createImageData(N, N);
+let S = 1, ox = 0, oy = 0; // sim square size and offset in pixels
+const toX = x => ox + x * S, toY = y => oy + (1 - y) * S;
+
+function resize() {
+  cv.width = cv.clientWidth; cv.height = cv.clientHeight;
+  S = Math.min(cv.width, cv.height) - 40; ox = (cv.width - S) / 2; oy = (cv.height - S) / 2;
+  draw();
+}
+window.addEventListener("resize", resize);
+cv.onclick = e => {
+  const r = cv.getBoundingClientRect(), mx = (e.clientX - r.left - ox) / S, my = 1 - (e.clientY - r.top - oy) / S;
+  let best = 1e9;
+  for (let p = 0; p < n; p++) { const d = (px[p] - mx) ** 2 + (py[p] - my) ** 2; if (d < best) { best = d; sel = p; } }
+  draw();
+};
+
+function drawHeat() {
+  let mx = 0; for (let g = 0; g < N * N; g++) mx = Math.max(mx, gm[g]);
+  for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
+    const t = gm[i * N + j] / mx, o = ((N - 1 - j) * N + i) * 4;
+    heatImg.data[o] = 255 * t; heatImg.data[o + 1] = 120 * t; heatImg.data[o + 2] = 40 * t; heatImg.data[o + 3] = t > 0 ? 60 + 195 * t : 0;
+  }
+  heatCtx.putImageData(heatImg, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  // node (i,j) sits at i*dx: its cell spans [i-0.5, i+0.5]*dx
+  ctx.drawImage(heatCv, toX(-0.5 * dx), toY((N - 0.5) * dx), S, S);
+}
+function arrow(x0, y0, x1, y1, col, w) {
+  ctx.strokeStyle = col; ctx.lineWidth = w; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1);
+  const a = Math.atan2(y1 - y0, x1 - x0), h = 4 + w * 2;
+  ctx.lineTo(x1 - h * Math.cos(a - 0.4), y1 - h * Math.sin(a - 0.4)); ctx.moveTo(x1, y1);
+  ctx.lineTo(x1 - h * Math.cos(a + 0.4), y1 - h * Math.sin(a + 0.4)); ctx.stroke();
+}
+function drawStencil() {
+  weights(sel);
+  ctx.font = "11px ui-monospace, monospace"; ctx.fillStyle = "#ffe066";
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
+    const w = wx[i] * wy[j], nx = toX((bx + i) * dx), ny = toY((by + j) * dx);
+    ctx.strokeStyle = "rgba(255,224,102," + (0.25 + w * 1.5) + ")"; ctx.lineWidth = 1 + w * 8;
+    ctx.beginPath(); ctx.moveTo(toX(px[sel]), toY(py[sel])); ctx.lineTo(nx, ny); ctx.stroke();
+    ctx.beginPath(); ctx.arc(nx, ny, 3, 0, 7); ctx.fill();
+    if (S / N > 18) ctx.fillText(w.toFixed(2), nx + 4, ny - 4);
+  }
+}
+
+function draw() {
+  ctx.fillStyle = "#0b0d10"; ctx.fillRect(0, 0, cv.width, cv.height);
+  ctx.fillStyle = "#14181d"; ctx.fillRect(ox, oy, S, S);
+  const showGrid = lastPhase === 0 || lastPhase === 1 || (playing && $("heat").checked);
+  if (showGrid) {
+    drawHeat();
+    ctx.strokeStyle = "rgba(255,255,255,0.05)"; ctx.lineWidth = 1; ctx.beginPath();
+    for (let i = 0; i <= N; i++) { const t = (i - 0.5) * dx; ctx.moveTo(toX(t), oy); ctx.lineTo(toX(t), oy + S); ctx.moveTo(ox, toY(t)); ctx.lineTo(ox + S, toY(t)); }
+    ctx.stroke();
+  }
+  // wall band
+  ctx.strokeStyle = "#3a4450"; ctx.lineWidth = 1; ctx.strokeRect(toX(3 * dx), toY(1 - 3 * dx), S * (1 - 6 * dx), S * (1 - 6 * dx));
+  // particles
+  const r = Math.max(1.5, S / N / 3.2);
+  for (let m = 0; m < 4; m++) {
+    ctx.fillStyle = MAT_COLORS[m];
+    for (let p = 0; p < n; p++) if (mat[p] === m) ctx.fillRect(toX(px[p]) - r / 2, toY(py[p]) - r / 2, r, r);
+  }
+  // phase overlays
+  if (lastPhase === 1) {
+    let vmax = 1e-6; for (let g = 0; g < N * N; g++) vmax = Math.max(vmax, Math.hypot(gvx[g], gvy[g]));
+    const len = 1.6 * S / N / vmax;
+    for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
+      const g = i * N + j; if (gm[g] <= 0) continue;
+      const x = toX(i * dx), y = toY(j * dx);
+      arrow(x, y, x + gvx[g] * len, y - gvy[g] * len, "rgba(140,220,255,0.8)", 1);
+    }
+  }
+  if (lastPhase === 0 || lastPhase === 2) drawStencil();
+  const sx = toX(px[sel]), sy = toY(py[sel]);
+  if (lastPhase === 2) { const sp = Math.hypot(vx[sel], vy[sel]) || 1; arrow(sx, sy, sx + vx[sel] / sp * 40, sy - vy[sel] / sp * 40, "#6fd08c", 2.5); }
+  if (lastPhase === 3) { // displacement magnified x200
+    const gx = sx + (selOld[0] - px[sel]) * S * 200, gy = sy - (selOld[1] - py[sel]) * S * 200;
+    ctx.setLineDash([4, 3]); arrow(gx, gy, sx, sy, "#6fd08c", 2); ctx.setLineDash([]);
+  }
+  ctx.strokeStyle = "#ffe066"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(sx, sy, 6, 0, 7); ctx.stroke();
+  if (lastPhase >= 0) {
+    ctx.fillStyle = "#f0b94a"; ctx.font = "bold 15px system-ui";
+    ctx.fillText("after " + (lastPhase + 1) + ". " + PHASE_NAMES[lastPhase] + (lastPhase === 3 ? "  (motion ×200)" : ""), ox + 8, oy + 20);
+  }
+  drawStats();
+}
+
+function drawStats() {
+  const pb = n * P_BYTES, gb = N * N * G_BYTES;
+  let gridMass = 0; for (let g = 0; g < N * N; g++) gridMass += gm[g];
+  $("stats").textContent =
+    `particles   ${n}\n` +
+    `grid nodes  ${N}×${N} = ${N * N}\n` +
+    `particle B  ${n} × ${P_BYTES} = ${pb.toLocaleString()}\n` +
+    `  (pos 8 + vel 8 + C 16 + F 16 + Jp 4 + mat 1)\n` +
+    `grid B      ${N * N} × ${G_BYTES} = ${gb.toLocaleString()}\n` +
+    `  (mass 4 + vel 8; rebuilt every step)\n` +
+    `total       ${(pb + gb).toLocaleString()} bytes\n` +
+    `ms/step     ${msPerStep.toFixed(2)}  ×${$("sub").value} substeps\n` +
+    `steps       ${steps}   t = ${simTime.toFixed(3)} s\n` +
+    `particle m  ${(n * pMass).toExponential(4)}\n` +
+    `grid m      ${gridMass.toExponential(4)}\n` +
+    `selected    #${sel} ${MAT_NAMES[mat[sel]]}  v=(${vx[sel].toFixed(2)}, ${vy[sel].toFixed(2)})`;
+}
+
+function frame() {
+  if (playing) {
+    const k = +$("sub").value, t0 = performance.now();
+    for (let i = 0; i < k; i++) step();
+    msPerStep = (performance.now() - t0) / k;
+    draw();
+  }
+  requestAnimationFrame(frame);
+}
+
+// ---------- self-test ----------
+function noNaN() {
+  for (let p = 0; p < n; p++)
+    if (!(Number.isFinite(px[p] + py[p] + vx[p] + vy[p] + F00[p] + F01[p] + F10[p] + F11[p]))) return false;
+  return true;
+}
+function selftest() {
+  const t0 = performance.now();
+  setScene("dam", 0);
+  let mean0 = 0; for (let p = 0; p < n; p++) mean0 += px[p]; mean0 /= n;
+  p2g();
+  let gmass = 0; for (let g = 0; g < N * N; g++) gmass += gm[g];
+  const pmass = n * pMass, rel = Math.abs(gmass - pmass) / pmass;
+  if (rel > 1e-3) return "FAIL P2G mass mismatch rel=" + rel;
+  for (let i = 0; i < 600; i++) step();
+  let mean1 = 0; for (let p = 0; p < n; p++) mean1 += px[p]; mean1 /= n;
+  if (!noNaN()) return "FAIL NaN in dam break";
+  if (!(mean1 > mean0 + 0.02)) return "FAIL dam mean x " + mean0.toFixed(3) + " -> " + mean1.toFixed(3);
+  for (const [sc, m] of [["crumbs", 3], ["block", 3], ["dam", 1], ["dam", 2]]) {
+    setScene(sc, m); for (let i = 0; i < 300; i++) step();
+    if (!noNaN()) return "FAIL NaN in " + sc + "/" + MAT_NAMES[m];
+  }
+  resetScene();
+  return `PASS dam mean x ${mean0.toFixed(3)}->${mean1.toFixed(3)}, P2G mass rel err ${rel.toExponential(1)}, ` +
+         `sand/jelly/snow stable, ${(performance.now() - t0).toFixed(0)} ms`;
+}
+
+setScene("dam", 0);
+resize();
+if (location.search.includes("selftest")) { playing = false; $("play").textContent = "Play"; $("selftest").textContent = selftest(); }
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>f09 - Signed distance fields</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;display:flex;height:100vh;background:#14161a;color:#d6d9de;font:13px/1.4 system-ui,sans-serif}
+aside{width:320px;flex:none;overflow-y:auto;padding:12px 14px;background:#1b1e24;border-right:1px solid #2c3038}
+main{flex:1;position:relative;min-width:0}
+canvas{position:absolute;inset:0;width:100%;height:100%;cursor:crosshair}
+h1{font-size:17px;margin:6px 0 8px}h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#8a93a3;margin:14px 0 4px}
+a{color:#7ab4ff}p,ul{margin:4px 0}ul{padding-left:18px}
+label{display:block;margin:6px 0 2px}label span{float:right;color:#9fb}
+input[type=range]{width:100%}
+.row{display:flex;gap:4px;margin:4px 0}.row button{flex:1}
+button{background:#272c35;color:#d6d9de;border:1px solid #3a404c;padding:4px 6px;cursor:pointer;border-radius:3px}
+button.on{background:#2f5fa8;border-color:#5b8fe0}
+table{width:100%;border-collapse:collapse}td{padding:1px 0}td:last-child{text-align:right;color:#ffd58a;font-family:monospace}
+#hov{color:#9fe3b0;font-family:monospace;min-height:1.4em}
+#selftest{font-size:10px;color:#667;margin:10px 0 0;white-space:pre-wrap}
+</style></head><body>
+<aside>
+<a href="index.html">&larr; all toys</a>
+<h1>f09 &mdash; Signed distance fields</h1>
+<h2>What it is</h2>
+<p>A signed distance field (SDF) is a function that gives, for any point, the distance to the nearest surface, negative inside the rock and positive outside. "Analytic" means the function is a formula (a list of shapes); "sampled" means those distances are baked into a grid and interpolated. Carving and adding are just max and min of distances.</p>
+<h2>Controls</h2>
+<div>Click = carve (subtract circle). Shift-click = add material (union).</div>
+<label>Brush radius <span id="vBrush"></span></label><input id="brush" type="range" min="10" max="120" value="40">
+<label>Smoothness (smooth min/max) <span id="vSmooth"></span></label><input id="smooth" type="range" min="0" max="80" value="0">
+<div class="row"><button data-mode="fill">Solid</button><button data-mode="bands">Bands</button><button data-mode="grad">Gradient</button></div>
+<label>Band spacing (px) <span id="vBand"></span></label><input id="band" type="range" min="8" max="60" value="20">
+<div class="row"><button data-src="analytic">Analytic</button><button data-src="sampled">Sampled</button></div>
+<label>Grid resolution (N&times;N) <span id="vRes"></span></label><input id="res" type="range" min="4" max="256" value="24">
+<div class="row"><button id="reset">Reset world</button></div>
+<h2>Hover</h2><div id="hov">move over the canvas</div>
+<h2>Live stats</h2>
+<table>
+<tr><td>Ops (edits)</td><td id="sOps"></td></tr>
+<tr><td>Analytic bytes (ops&times;16)</td><td id="sA"></td></tr>
+<tr><td>Sampled bytes (grid&sup2;&times;4)</td><td id="sS"></td></tr>
+<tr><td>Cost / query (ops evaluated)</td><td id="sQ"></td></tr>
+<tr><td>Last frame</td><td id="sT"></td></tr>
+</table>
+<h2>Good at</h2>
+<ul><li>Unlimited resolution; edits compose (union, subtract).</li><li>Inside/outside, distance and normal from one query.</li></ul>
+<h2>Bad at</h2>
+<ul><li>Per-query cost grows with edit count.</li><li>No list of "parts"; rendering needs ray-marching or meshing.</li></ul>
+<h2>In 3D / for our game</h2>
+<p>Same maths with spheres/boxes in 3D; a chunked baked grid is the fast cache, the op list is the cheap edit log.</p>
+<pre id="selftest"></pre>
+</aside>
+<main><canvas id="cv"></canvas></main>
+<script>
+const $ = id => document.getElementById(id);
+const cv = $('cv'), ctx = cv.getContext('2d');
+const S = 3;                       // render scale: 1 field pixel per S screen pixels
+const img = document.createElement('canvas');
+let W = 800, H = 600, ops = [], mode = 'bands', src = 'analytic';
+let grid = null, gridN = 0, gridDirty = true, mouse = null, lastMs = 0;
+
+// ---- the field: smooth min/max, one shape distance, the op list ----
+function smin(a, b, k) { if (k <= 0) return Math.min(a, b); const h = Math.max(k - Math.abs(a - b), 0) / k; return Math.min(a, b) - h * h * k / 4; }
+function smax(a, b, k) { return -smin(-a, -b, k); }
+function shapeD(s, x, y) {
+  if (s.t === 'ground') return s.y - y;
+  if (s.t === 'circle') return Math.hypot(x - s.x, y - s.y) - s.r;
+  const qx = Math.abs(x - s.x) - s.w, qy = Math.abs(y - s.y) - s.h;     // box
+  return Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0);
+}
+// op.m: 'set' | 'union' | 'sub'; op.k: smoothness frozen when the op was made
+function analyticD(x, y) {
+  let d = 1e9;
+  for (const o of ops) {
+    const c = shapeD(o.s, x, y);
+    d = o.m === 'set' ? c : o.m === 'union' ? smin(d, c, o.k) : smax(d, -c, o.k);
+  }
+  return d;
+}
+function bake() {
+  gridN = +$('res').value; grid = new Float32Array(gridN * gridN);
+  for (let j = 0; j < gridN; j++) for (let i = 0; i < gridN; i++)
+    grid[j * gridN + i] = analyticD(i * W / (gridN - 1), j * H / (gridN - 1));
+  gridDirty = false;
+}
+function sampledD(x, y) {
+  if (gridDirty) bake();
+  const n = gridN, fx = Math.min(Math.max(x / W * (n - 1), 0), n - 1.001), fy = Math.min(Math.max(y / H * (n - 1), 0), n - 1.001);
+  const i = fx | 0, j = fy | 0, u = fx - i, v = fy - j, g = grid, o = j * n + i;
+  return (g[o] * (1 - u) + g[o + 1] * u) * (1 - v) + (g[o + n] * (1 - u) + g[o + n + 1] * u) * v;
+}
+const F = (x, y) => src === 'analytic' ? analyticD(x, y) : sampledD(x, y);
+
+// ---- world edits (UI handlers call these) ----
+function reset() {
+  ops = [{ m: 'set', k: 0, s: { t: 'ground', y: H * 0.72 } },
+         { m: 'union', k: 0, s: { t: 'circle', x: W * 0.3, y: H * 0.5, r: H * 0.17 } },
+         { m: 'union', k: 0, s: { t: 'box', x: W * 0.7, y: H * 0.6, w: H * 0.14, h: H * 0.1 } }];
+  gridDirty = true;
+}
+function addOp(m, x, y, r) { ops.push({ m, k: +$('smooth').value, s: { t: 'circle', x, y, r } }); gridDirty = true; }
+function setRes(n) { $('res').value = n; gridDirty = true; }
+
+// ---- drawing ----
+function render() {
+  const t0 = performance.now(), w = Math.ceil(W / S), h = Math.ceil(H / S);
+  img.width = w; img.height = h;
+  const id = img.getContext('2d').createImageData(w, h), px = id.data, sp = +$('band').value;
+  for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+    const d = F(i * S + S / 2, j * S + S / 2); let r, g, b;
+    if (Math.abs(d) < 1.5) { r = g = b = 255; }
+    else if (mode === 'fill') { [r, g, b] = d < 0 ? [150, 130, 105] : [24, 28, 36]; }
+    else if (mode === 'grad') { [r, g, b] = d < 0 ? [50, 60, 80] : [26, 30, 38]; }
+    else {
+      const f = ((d % sp) + sp) % sp / sp, line = Math.min(f, 1 - f) * sp < 0.9, k = line ? 1 : 0.35 + 0.25 * (d < 0 ? 1 - f : f);
+      [r, g, b] = d < 0 ? [60, 130, 255] : [255, 150, 50]; r *= k; g *= k; b *= k;
+    }
+    const o = (j * w + i) * 4; px[o] = r; px[o + 1] = g; px[o + 2] = b; px[o + 3] = 255;
+  }
+  img.getContext('2d').putImageData(id, 0, 0);
+  lastMs = performance.now() - t0;
+}
+function arrow(x, y, dx, dy, len) {
+  const ex = x + dx * len, ey = y + dy * len, a = Math.atan2(dy, dx);
+  ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(ex, ey);
+  ctx.lineTo(ex - 5 * Math.cos(a - .5), ey - 5 * Math.sin(a - .5)); ctx.moveTo(ex, ey);
+  ctx.lineTo(ex - 5 * Math.cos(a + .5), ey - 5 * Math.sin(a + .5)); ctx.stroke();
+}
+function draw() {
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, W, H); ctx.drawImage(img, 0, 0, img.width * S, img.height * S);
+  if (src === 'sampled') {                       // show the stored grid nodes
+    ctx.fillStyle = 'rgba(255,255,255,.35)';
+    for (let j = 0; j < gridN; j++) for (let i = 0; i < gridN; i++) ctx.fillRect(i * W / (gridN - 1) - 1, j * H / (gridN - 1) - 1, 2, 2);
+  }
+  if (mode === 'grad') for (let y = 20; y < H; y += 36) for (let x = 20; x < W; x += 36) {
+    const gx = F(x + 1, y) - F(x - 1, y), gy = F(x, y + 1) - F(x, y - 1), m = Math.hypot(gx, gy) || 1;
+    ctx.strokeStyle = F(x, y) < 0 ? '#6fa8ff' : '#ffa755'; arrow(x, y, gx / m, gy / m, 14);
+  }
+  if (mouse) {
+    const d = F(mouse.x, mouse.y), gx = F(mouse.x + 1, mouse.y) - F(mouse.x - 1, mouse.y), gy = F(mouse.x, mouse.y + 1) - F(mouse.x, mouse.y - 1), m = Math.hypot(gx, gy) || 1;
+    ctx.strokeStyle = '#9fe3b0'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(mouse.x, mouse.y, Math.abs(d), 0, 7); ctx.stroke();
+    arrow(mouse.x, mouse.y, gx / m, gy / m, 18); ctx.lineWidth = 1;
+    $('hov').textContent = `d = ${d.toFixed(1)} px (${d < 0 ? 'inside' : 'outside'})  normal = (${(gx / m).toFixed(2)}, ${(gy / m).toFixed(2)})`;
+  }
+  const n = ops.length, N = +$('res').value;
+  $('vBrush').textContent = $('brush').value; $('vSmooth').textContent = $('smooth').value;
+  $('vBand').textContent = $('band').value; $('vRes').textContent = `${N}x${N}`;
+  $('sOps').textContent = n; $('sA').textContent = n * 16 + ' B';
+  $('sS').textContent = (N * N * 4).toLocaleString() + ' B';
+  $('sQ').textContent = src === 'analytic' ? n + ' ops' : '4 grid reads';
+  $('sT').textContent = lastMs.toFixed(0) + ' ms';
+  document.querySelectorAll('[data-mode]').forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
+  document.querySelectorAll('[data-src]').forEach(b => b.classList.toggle('on', b.dataset.src === src));
+}
+const redraw = () => { render(); draw(); };
+function resize() {
+  const r = cv.parentElement.getBoundingClientRect(), first = !ops.length;
+  W = cv.width = Math.max(200, Math.floor(r.width)); H = cv.height = Math.max(200, Math.floor(r.height));
+  if (first) reset(); else gridDirty = true;
+  redraw();
+}
+
+// ---- UI wiring ----
+const pos = e => { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) * W / r.width, y: (e.clientY - r.top) * H / r.height }; };
+cv.onmousemove = e => { mouse = pos(e); draw(); };
+cv.onmouseleave = () => { mouse = null; draw(); };
+cv.onclick = e => { const p = pos(e); addOp(e.shiftKey ? 'union' : 'sub', p.x, p.y, +$('brush').value); redraw(); };
+['brush', 'smooth', 'band'].forEach(i => $(i).oninput = redraw);
+$('res').oninput = () => { setRes($('res').value); redraw(); };
+document.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => { mode = b.dataset.mode; redraw(); });
+document.querySelectorAll('[data-src]').forEach(b => b.onclick = () => { src = b.dataset.src; redraw(); });
+$('reset').onclick = () => { reset(); redraw(); };
+window.onresize = resize;
+
+// ---- self test ----
+function err() { let m = 0; for (let y = 5; y < H; y += 17) for (let x = 5; x < W; x += 17) m = Math.max(m, Math.abs(analyticD(x, y) - sampledD(x, y))); return m; }
+function selftest() {
+  const out = $('selftest'), must = (c, m) => { if (!c) throw new Error(m); };
+  try {
+    src = 'analytic'; $('smooth').value = 0; reset();
+    const c = ops[1].s, n0 = ops.length, d0 = analyticD(c.x, c.y);
+    must(d0 < 0, 'boulder centre not inside');
+    addOp('sub', c.x, c.y, c.r + 30); redraw();
+    const d1 = analyticD(c.x, c.y);
+    must(d1 > 0 && ops.length === n0 + 1, 'carve did not flip d / add op');
+    addOp('union', c.x, c.y, 10);
+    must(analyticD(c.x, c.y) < 0, 'union did not add material');
+    must($('sOps').textContent == n0 + 1, 'stats not updated');
+    reset();
+    const sharp = analyticD(c.x, ops[0].s.y - 4); ops[1].k = 60; ops[0].k = 60;
+    must(analyticD(c.x, ops[0].s.y - 4) !== sharp, 'smoothness changed nothing');
+    reset();
+    src = 'sampled'; setRes(8); bake(); const b8 = gridN * gridN * 4, e8 = err();
+    setRes(128); bake(); const b128 = gridN * gridN * 4, e128 = err();
+    must(b128 > b8, 'sampled bytes independent of resolution');
+    must(e8 > e128, `coarse grid not lossier (${e8.toFixed(2)} vs ${e128.toFixed(2)})`);
+    src = 'analytic'; setRes(24); redraw();
+    out.textContent = `PASS carve flips d ${d0.toFixed(0)}->${d1.toFixed(0)}, ops ${n0}->${n0 + 2}, sampled ${b8}B->${b128}B, max err ${e8.toFixed(1)}px->${e128.toFixed(1)}px`;
+  } catch (e) { out.textContent = 'FAIL ' + e.message; }
+}
+window.onerror = (m) => { $('selftest').textContent = 'FAIL ' + m; };
+resize();
+if (location.search.includes('selftest')) selftest();
+</script></body></html>

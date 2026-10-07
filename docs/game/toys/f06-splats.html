@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Splats toy</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;display:flex;height:100vh;background:#14161a;color:#d6d9de;font:13px/1.45 system-ui,sans-serif}
+#side{width:320px;flex:none;padding:12px 14px;overflow:auto;border-right:1px solid #2a2e36}
+#main{flex:1;min-width:0;position:relative}
+canvas{position:absolute;inset:0;width:100%;height:100%;cursor:crosshair}
+a{color:#7fb0ff;text-decoration:none}
+h1{font-size:18px;margin:6px 0}h2{font-size:12px;text-transform:uppercase;color:#8a93a3;margin:14px 0 4px}
+p,ul{margin:4px 0}ul{padding-left:18px}
+label{display:block;margin:5px 0}
+input[type=range]{width:100%}
+button,select{background:#262b35;color:#d6d9de;border:1px solid #3a4150;border-radius:4px;padding:4px 8px;margin:2px 2px 2px 0}
+button:hover{background:#323947}
+#stats{font-family:Consolas,monospace;font-size:12px;background:#1b1f26;padding:6px;border-radius:4px}
+#selftest{font-size:10px;color:#667;margin:10px 0 0;white-space:pre-wrap}
+</style></head><body>
+<div id="side">
+<a href="index.html">← all toys</a>
+<h1>Gaussian splats</h1>
+<h2>What it is</h2>
+<p>A shape stored as thousands of unconnected soft blobs, each with a position, a size along two axes, a rotation, a colour and an opacity. The picture is made by blending the blobs directly, with no triangles or grid. Captured splat scenes only keep blobs near the visible surface.</p>
+<h2>Controls</h2>
+<label>Splat count (surface): <b id="nv"></b><input id="n" type="range" min="300" max="2000" step="100" value="800"></label>
+<label><input id="outl" type="checkbox"> show centres / ellipse outlines</label>
+<label><input id="fill" type="checkbox"> filled interior (else surface-only)</label>
+<button id="cut">Cut it open</button>
+<div>Brush: <select id="brush"><option value="carve">carve (delete)</option><option value="push">push (move)</option></select></div>
+<p style="color:#8a93a3">Drag on the rock. <button id="reset">Reset</button></p>
+<h2>Stats</h2>
+<div id="stats"></div>
+<h2>Good at</h2>
+<ul><li>Photoreal look from few parameters</li><li>No connectivity to maintain</li><li>Friendly to physics as particles (PhysGaussian 2024 ran MPM physics on splats)</li></ul>
+<h2>Bad at</h2>
+<ul><li>No inside/outside or solid query</li><li>Hollow by default; solid interiors need volume filling and many more splats</li><li>No explicit surface for collision</li></ul>
+<h2>In 3D / for our game</h2>
+<p>3D splats carry spherical-harmonic colour (~236 B each); great for showing a quarry, but we would still need a separate solid model for digging and collision.</p>
+<pre id="selftest"></pre>
+</div>
+<div id="main"><canvas id="cv"></canvas></div>
+<script>
+const W = 480, H = 360, CX = 240, CY = 185, RX = 170, RY = 120;
+const $ = id => document.getElementById(id);
+const cv = $('cv'), ctx = cv.getContext('2d');
+const off = document.createElement('canvas'); off.width = W; off.height = H;
+const octx = off.getContext('2d');
+let splats = [], cut = false, seed = 1;
+const rnd = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
+
+// normalised radius: <1 inside the wobbly rock, 1 on its edge
+function rn(x, y) {
+  const dx = (x - CX) / RX, dy = (y - CY) / RY, t = Math.atan2(dy, dx);
+  return Math.hypot(dx, dy) / (1 + 0.08 * Math.sin(3 * t) + 0.05 * Math.cos(5 * t));
+}
+const crackX = y => 235 + 18 * Math.sin(y * 0.08);
+
+function makeSplat(lo, hi, zmax, N) {
+  let x, y, r;
+  do { x = CX - RX + rnd() * 2 * RX; y = CY - RY + rnd() * 2 * RY; r = rn(x, y); } while (r < lo || r > hi);
+  const s = Math.sqrt(Math.PI * RX * RY / N) * 1.1;
+  const sp = { x, y, z: rnd() * zmax, sx: s * (0.8 + rnd() * 0.8), sy: s * (0.6 + rnd() * 0.4), rot: rnd() * Math.PI };
+  const n = (rnd() - 0.5) * 24, band = y < 180 ? [150, 112, 72] : [118, 124, 132];
+  [sp.r, sp.g, sp.b] = band.map(c => c + n);
+  sp.a = 0.9;
+  if (Math.abs(x - crackX(y)) < 4 && sp.z < 0.1) { // crack: thin dark splats along it
+    sp.r = sp.g = sp.b = 25; sp.sx = 2.5; sp.sy = 9; sp.rot = Math.PI / 2 + 0.4 * Math.cos(y * 0.08);
+  }
+  return sp;
+}
+
+function generate() {
+  const N = +$('n').value, filled = $('fill').checked;
+  seed = 7; splats = [];
+  for (let i = 0; i < N * 0.3; i++) splats.push(makeSplat(0.88, 1, 1, N));       // rim, all depths
+  for (let i = 0; i < N * 0.7; i++) splats.push(makeSplat(0, 0.88, 0.08, N));    // front skin only
+  if (filled) for (let i = 0; i < N * 2; i++) splats.push(makeSplat(0, 0.88, 1, N)); // volume fill
+}
+
+const hidden = s => cut && s.x > CX && s.z < 0.5; // cut removes the front half on the right side
+
+function render() {
+  const buf = new Float32Array(W * H * 4); // r*w, g*w, b*w, w
+  for (const s of splats) {
+    if (hidden(s)) continue;
+    const c = Math.cos(s.rot), sn = Math.sin(s.rot), R = Math.ceil(2.5 * Math.max(s.sx, s.sy));
+    for (let py = Math.max(0, (s.y - R) | 0); py < Math.min(H, s.y + R); py++)
+      for (let px = Math.max(0, (s.x - R) | 0); px < Math.min(W, s.x + R); px++) {
+        const dx = px - s.x, dy = py - s.y, u = (dx * c + dy * sn) / s.sx, v = (-dx * sn + dy * c) / s.sy;
+        const w = s.a * Math.exp(-0.5 * (u * u + v * v)), i = (py * W + px) * 4;
+        buf[i] += s.r * w; buf[i + 1] += s.g * w; buf[i + 2] += s.b * w; buf[i + 3] += w;
+      }
+  }
+  // blend over the background colour (27,31,38) by accumulated opacity
+  const img = octx.createImageData(W, H), bg = [27, 31, 38];
+  for (let i = 0; i < W * H * 4; i += 4) {
+    const w = buf[i + 3], a = Math.min(1, w), k = w > 0 ? a / w : 0;
+    for (let j = 0; j < 3; j++) img.data[i + j] = bg[j] * (1 - a) + buf[i + j] * k;
+    img.data[i + 3] = 255;
+  }
+  octx.putImageData(img, 0, 0);
+
+  const box = cv.getBoundingClientRect(); cv.width = box.width; cv.height = box.height;
+  const sc = view(); ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(off, sc.ox, sc.oy, W * sc.k, H * sc.k);
+  ctx.save(); ctx.translate(sc.ox, sc.oy); ctx.scale(sc.k, sc.k);
+  if (cut) { ctx.strokeStyle = '#f55'; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(CX, 0); ctx.lineTo(CX, H); ctx.stroke(); ctx.setLineDash([]); }
+  if ($('outl').checked) {
+    ctx.lineWidth = 0.6; ctx.strokeStyle = 'rgba(120,255,200,.7)'; ctx.fillStyle = '#ffd34d';
+    for (const s of splats) {
+      if (hidden(s)) continue;
+      ctx.beginPath(); ctx.ellipse(s.x, s.y, s.sx * 1.5, s.sy * 1.5, s.rot, 0, 7); ctx.stroke();
+      ctx.fillRect(s.x - 0.8, s.y - 0.8, 1.6, 1.6);
+    }
+  }
+  ctx.restore();
+  stats();
+}
+function view() { const k = Math.min(cv.width / W, cv.height / H); return { k, ox: (cv.width - W * k) / 2, oy: (cv.height - H * k) / 2 }; }
+
+function stats() {
+  const n = splats.length, vis = splats.filter(s => !hidden(s)).length;
+  $('nv').textContent = $('n').value;
+  $('stats').innerHTML = `splats: ${n} (${vis} visible)<br>mode: ${$('fill').checked ? 'filled' : 'surface-only'}${cut ? ', cut open' : ''}<br>` +
+    `2D: ${n} x 24 B = ${n * 24} B<br><span style="color:#8a93a3">(pos 8 + scale 8 + rot 4 + rgba 4)</span><br>` +
+    `same count in 3D: ${n} x 236 B = ${n * 236} B<br><span style="color:#8a93a3">(~59 floats incl. spherical harmonics)</span>`;
+}
+
+// --- editing: same functions the UI uses ---
+function carve(x, y, r) { splats = splats.filter(s => Math.hypot(s.x - x, s.y - y) > r); }
+function push(x, y, dx, dy, r) {
+  for (const s of splats) { const d = Math.hypot(s.x - x, s.y - y); if (d < r) { const f = 1 - d / r; s.x += dx * f; s.y += dy * f; } }
+}
+function toggleCut() { cut = !cut; $('cut').textContent = cut ? 'Close it' : 'Cut it open'; render(); }
+
+let last = null;
+const pos = e => { const b = cv.getBoundingClientRect(), v = view(); return [(e.clientX - b.left - v.ox) / v.k, (e.clientY - b.top - v.oy) / v.k]; };
+function drag(e) {
+  const [x, y] = pos(e);
+  if ($('brush').value === 'carve') carve(x, y, 22); else push(x, y, x - last[0], y - last[1], 40);
+  last = [x, y]; render();
+}
+cv.onmousedown = e => { last = pos(e); drag(e); };
+cv.onmousemove = e => { if (e.buttons && last) drag(e); };
+window.onmouseup = () => last = null;
+$('n').oninput = () => { generate(); render(); };
+$('fill').onchange = () => { generate(); render(); };
+$('outl').onchange = render;
+$('cut').onclick = toggleCut;
+$('reset').onclick = () => { cut = false; $('cut').textContent = 'Cut it open'; generate(); render(); };
+window.onresize = render;
+
+function selftest() {
+  const out = $('selftest'), fail = m => out.textContent = 'FAIL ' + m;
+  window.onerror = (m) => fail(m);
+  const ck = (c, m) => { if (!c) throw new Error(m); };
+  const interior = () => splats.filter(s => !hidden(s) && s.x > CX && rn(s.x, s.y) < 0.7).length;
+  try {
+    $('n').value = 600; $('fill').checked = false; generate(); render();
+    const surf = splats.length;
+    toggleCut(); const hollow = interior(); ck(hollow === 0, 'surface mode not hollow when cut: ' + hollow); toggleCut();
+    $('fill').checked = true; generate(); render();
+    const filled = splats.length; ck(filled > surf, 'filled not bigger');
+    toggleCut(); const solid = interior(); ck(solid > 0, 'filled mode empty when cut'); toggleCut();
+    const before = splats.length; carve(CX, CY, 40); ck(splats.length < before, 'carve did not delete');
+    const p = splats.find(s => Math.hypot(s.x - 100, s.y - 185) < 60) || splats[0], x0 = p.x;
+    push(p.x, p.y, 15, 0, 40); ck(p.x > x0 + 1, 'push did not move');
+    render(); const px = octx.getImageData(CX + 100, CY, 1, 1).data; ck(px[0] > 40, 'blank render ' + px[0]);
+    out.textContent = `PASS surface ${surf} < filled ${filled}; hollow when cut (${hollow} vs ${solid} interior); carve ${before}->${splats.length}; push moved`;
+  } catch (e) { fail(e.message); }
+}
+generate(); render();
+if (location.search.includes('selftest')) selftest();
+</script></body></html>

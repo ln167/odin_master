@@ -72,7 +72,7 @@ All five sit at repo root and are **foundational, not throwaway**.
 | `bench/<name>/` | one-shot | perf measurement; runs to completion, prints timings |
 | `tests/<slug>/` | one-shot | correctness check; diffs actual vs expected |
 | `scratch/<name>/` | throwaway | "I want to try a thing" |
-| `profiles/` | output | Spall traces dropped here; gitignored |
+| `profiles/` | output | profiler output; gitignored |
 
 `lab/` is the workshop you stay in. The others are isolated programs you
 fire off, get an answer, move on.

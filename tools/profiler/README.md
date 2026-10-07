@@ -1,7 +1,7 @@
 # Profiler walkthrough
 
-Two profilers are wired through one API. Switch which one is active with
-a compile flag; zero overhead when neither is on.
+One profiler (Tracy) is wired through one API, switched on with
+a compile flag; zero overhead when off.
 
 ## The API
 
@@ -28,61 +28,14 @@ No manual `_end`. Source: `tools/domains/odin/odin_lib/instrument/instrument.odi
 
 ```
 -define:INSTRUMENT=false   (default; zones compile to nothing)
--define:INSTRUMENT=spall   (Spall: offline trace, view after)
 -define:INSTRUMENT=tracy   (Tracy: live attach, view during)
--define:INSTRUMENT=both    (both backends; rarely useful, lets you sanity-check)
 ```
 
-The `bench` recipe in `justfile` builds with `-define:INSTRUMENT=spall -o:speed`
-by default:
+The `bench` recipe in `justfile` builds with `-o:speed`:
 
 ```
 just bench naive-vs-bresenham
 ```
-
-## Spall (offline trace)
-
-Spall captures a binary trace to disk and you open it in a viewer afterward.
-
-### Code
-
-In your program's startup:
-
-```odin
-import "odin_lib:instrument"
-
-main :: proc() {
-    instrument.spall_init("profiles/myapp.spall")
-    defer instrument.spall_shutdown()
-
-    instrument.SCOPE_NAMED("main")
-    // ...
-}
-```
-
-Annotate hot procs with `instrument.SCOPE()`. They become zones in the trace.
-
-### Run
-
-```
-odin run . -define:INSTRUMENT=spall -o:speed
-```
-
-Trace lands at the path you passed to `spall_init`. The `profile-run`
-justfile recipe sets `SPALL_OUT` for you:
-
-```
-just profile-run build/release/myapp
-```
-
-### View
-
-Download Spall viewer from `https://gravitymoth.itch.io/spall` or build the
-web build. Drag the `.spall` file in. Click a zone to see its duration; right-
-click to focus a stack.
-
-Caveat: zone buffer is 64 KiB (see `spall.odin`). Long runs with very fine-
-grained zones will overflow. Move the zone up a level if you see truncation.
 
 ## Tracy (live attach)
 
@@ -134,14 +87,6 @@ Start the Tracy server (`Tracy.exe` or `tracy-profiler` on linux) before or
 after the program; it connects on TCP 8086 by default. The client's hostname
 appears in Tracy's discovery list; double-click to attach.
 
-### When to prefer Tracy over Spall
-
-| Use Spall when | Use Tracy when |
-|---|---|
-| One-shot trace of a startup or single frame | Watching steady state for minutes |
-| Sharing a trace with someone else (file you can email) | You can run the viewer locally |
-| You don't want a GUI dep at run time | You need flamegraphs, plot variables, lock contention |
-
 ## Pairing with bench
 
 `tools/domains/odin/odin_lib/bench/bench.odin` measures min/median/max/stddev
@@ -155,8 +100,6 @@ import "odin_lib:bench"
 import "odin_lib:instrument"
 
 main :: proc() {
-    instrument.spall_init("profiles/bench.spall")
-    defer instrument.spall_shutdown()
     r := bench.run("name", run_once, runs = 1000)
     fmt.println(r)
     bench.write_json(r, "profiles/bench.json")
@@ -168,6 +111,4 @@ run_once :: proc() {
 }
 ```
 
-`bench.run` calls `run_once` N times under `core:time/tick_now`; each call's
-zones get recorded by Spall. Open the trace and look at the first vs the
-hundredth iteration to spot warm-up effects.
+`bench.run` calls `run_once` N times under `core:time/tick_now`.

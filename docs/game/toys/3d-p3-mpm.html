@@ -1,0 +1,655 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>3D P2G / G2P — Material Point Method</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #111418; color: #d8dde3; font: 13px/1.45 system-ui, sans-serif; }
+  body { display: flex; }
+  #side { width: 320px; flex: none; overflow-y: auto; padding: 10px 14px; box-sizing: border-box; background: #181c22; border-right: 1px solid #2a3038; }
+  #main { flex: 1; position: relative; min-width: 0; }
+  #cv { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; }
+  h1 { font-size: 17px; margin: 6px 0 8px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: #8fa0b3; margin: 14px 0 4px; }
+  a { color: #7fb8ff; }
+  p { margin: 4px 0; }
+  ul { margin: 2px 0; padding-left: 18px; }
+  label { display: block; margin: 5px 0; }
+  select, button { background: #232a33; color: #d8dde3; border: 1px solid #3a4450; border-radius: 4px; padding: 3px 7px; font: inherit; }
+  button { cursor: pointer; margin: 2px 2px 2px 0; }
+  button:hover { background: #2e3743; }
+  input[type=range] { width: 130px; vertical-align: middle; }
+  #stats, #inspect { font: 12px/1.5 ui-monospace, monospace; background: #12161b; padding: 6px 8px; border-radius: 4px; white-space: pre; overflow-x: auto; }
+  #inspect { min-height: 6em; }
+  #phaseText { background: #1f2630; border-left: 3px solid #f0b94a; padding: 5px 8px; margin-top: 6px; min-height: 3em; }
+  .take { border-left: 3px solid #6fd08c; padding: 4px 8px; background: #17201a; }
+  #selftest { font: 10px ui-monospace, monospace; color: #6c7783; margin: 10px 0 0; white-space: pre-wrap; }
+  #hud { position: absolute; left: 10px; top: 8px; color: #f0b94a; font: bold 14px system-ui; pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="side">
+  <a href="index.html">← all toys</a>
+  <h1>3D P2G / G2P — Material Point Method</h1>
+
+  <h2>What it is</h2>
+  <p>The 3D version of the 2D MPM toy. Matter is <b>particles</b> (each carries mass, velocity, a deformation matrix F and an affine velocity matrix C); a 32³ <b>background grid</b> is wiped and rebuilt every step.
+  Each step: P2G spreads particle mass and momentum onto the 3×3×3 = 27 surrounding nodes, the grid adds gravity and walls, G2P reads velocities back and applies the material rule. MLS-MPM on the CPU in plain JS.</p>
+  <p class="take"><b>Sand</b> uses Drucker-Prager friction: it can hold a slope (angle of repose) but has no cohesion. <b>Water</b> only resists volume change, so the same column spreads flat.</p>
+
+  <h2>Controls</h2>
+  <label>Scene <select id="scene">
+    <option value="pile">Sand pile (column released)</option>
+    <option value="ramp">Dirt dump on a ramp</option>
+    <option value="dam">Water dam break</option>
+  </select></label>
+  <label>Material <select id="mat">
+    <option value="0">water (weakly compressible)</option>
+    <option value="1">jelly (elastic)</option>
+    <option value="2">mud / snow (elasto-plastic)</option>
+    <option value="3" selected>sand (Drucker-Prager)</option>
+  </select></label>
+  <label>Particles <input id="count" type="range" min="2000" max="16000" step="1000" value="8000"> <span id="countV">8000</span></label>
+  <label>Substeps per frame (max, 16 ms budget) <input id="sub" type="range" min="1" max="30" value="2"> <span id="subV">2</span></label>
+  <label>Left-drag <select id="tool"><option value="cam">rotates camera</option><option value="shovel">drags the shovel (dig)</option></select></label>
+  <label>Shovel height <input id="shY" type="range" min="0.1" max="0.6" step="0.01" value="0.14"> <span id="shYV">0.14</span></label>
+  <label><input id="heat" type="checkbox"> show grid mass while playing</label>
+  <div>
+    <button id="play">Pause</button>
+    <button id="phaseBtn">Phase step: P2G ▸</button>
+    <button id="reset">Reset</button>
+  </div>
+  <div id="phaseText">Camera: left-drag rotate, wheel zoom, right-drag or shift-drag pan. Press "Phase step" to walk through one MPM step. Hover a particle to inspect it.</div>
+
+  <h2>Inspect</h2>
+  <div id="inspect">Hover a particle.</div>
+
+  <h2>Live stats</h2>
+  <div id="stats"></div>
+
+  <h2>Good at</h2>
+  <ul>
+    <li>Sand, dirt, mud and water in one method; piles keep a repose angle.</li>
+    <li>Splitting, merging, digging: no mesh to repair.</li>
+    <li>Particles keep history (compaction, plastic flow).</li>
+  </ul>
+  <h2>Bad at</h2>
+  <ul>
+    <li>Cost: 27 nodes per particle twice per substep, plus a 3×3 eigen-solve per particle.</li>
+    <li>Needs ~8 particles per grid cell; a big pile is a lot of particles.</li>
+    <li>Settled matter still costs full price every step.</li>
+  </ul>
+  <p><b>In 3D / for our game:</b> run MPM only where matter is loose and moving (a dump, a dig, a collapse); once rubble settles, fold it back into the world field and delete the particles (mentioned here, not implemented).</p>
+  <pre id="selftest"></pre>
+</div>
+<div id="main"><canvas id="cv"></canvas><div id="hud"></div></div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+window.onerror = (msg, src, line) => { $("selftest").textContent = "FAIL " + msg + " @" + line; };
+
+// SIM-BEGIN ---------- simulation (domain = unit cube, y up) ----------
+const N = 32, dx = 1 / N, invDx = N, NN = N * N * N, BND = 3, floorY = BND * dx;
+const dt = 4e-4, gravity = 20;
+const E = 1500, nu = 0.2, mu0 = E / (2 * (1 + nu)), la0 = E * nu / ((1 + nu) * (1 - 2 * nu));
+const sinPhi = Math.sin(40 * Math.PI / 180);
+const dpAlpha = Math.sqrt(2 / 3) * 2 * sinPhi / (3 - sinPhi); // Drucker-Prager friction coefficient
+const WALL_MU = 0.8;                                          // Coulomb friction on floor and ramp
+const rampY = x => 0.58 - 0.65 * x, RNX = 0.65 / Math.hypot(0.65, 1), RNY = 1 / Math.hypot(0.65, 1);
+const MAT_NAMES = ["water", "jelly", "mud/snow", "sand"];
+const P_BYTES = 12 + 12 + 36 + 36 + 24 + 4 + 1 + 1; // pos, vel, C, F, tau, plastic, state, material
+const G_BYTES = 4 + 12;                             // mass, velocity
+
+const MAXP = 17000;
+const px = new Float32Array(MAXP), py = new Float32Array(MAXP), pz = new Float32Array(MAXP);
+const vx = new Float32Array(MAXP), vy = new Float32Array(MAXP), vz = new Float32Array(MAXP);
+const C = new Float32Array(9 * MAXP), F = new Float32Array(9 * MAXP), T = new Float32Array(6 * MAXP); // T = Kirchhoff stress xx yy zz xy xz yz
+const pl = new Float32Array(MAXP), ps = new Uint8Array(MAXP), mat = new Uint8Array(MAXP); // pl: snow Jp / sand accumulated plastic shear; ps: 0 elastic 1 yield 2 tension
+const gm = new Float32Array(NN), gvx = new Float32Array(NN), gvy = new Float32Array(NN), gvz = new Float32Array(NN);
+let n = 0, pMass = 1, pVol = 1, ramp = false, simTime = 0, steps = 0;
+const shovel = { on: false, x: 0.5, y: 0.14, z: 0.5, vx: 0, vy: 0, vz: 0, r: 0.07 };
+const tms = [0, 0, 0]; // ms per step: P2G, grid, G2P+advect
+
+let seed = 1;
+const rand = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
+
+function addParticle(x, y, z, m) {
+  px[n] = x; py[n] = y; pz[n] = z; vx[n] = vy[n] = vz[n] = 0;
+  C.fill(0, 9 * n, 9 * n + 9); F.fill(0, 9 * n, 9 * n + 9); F[9 * n] = F[9 * n + 4] = F[9 * n + 8] = 1;
+  T.fill(0, 6 * n, 6 * n + 6); pl[n] = m === 2 ? 1 : 0; ps[n] = 0; mat[n] = m; n++;
+}
+// fill a box with jittered particles at spacing dx/2 (8 per cell), keeping those inside(x,y,z)
+function fill(x0, y0, z0, x1, y1, z1, m, inside) {
+  const s = dx / 2;
+  for (let x = x0; x < x1; x += s) for (let y = y0; y < y1; y += s) for (let z = z0; z < z1; z += s) {
+    const qx = x + rand() * s, qy = y + rand() * s, qz = z + rand() * s;
+    if (n < MAXP && (!inside || inside(qx, qy, qz))) addParticle(qx, qy, qz, m);
+  }
+}
+// shapes are sized so the scene holds about `count` particles
+function setScene(name, m, count) {
+  n = 0; seed = 1; simTime = 0; steps = 0; ramp = name === "ramp";
+  const V = count * (dx / 2) ** 3;
+  if (name === "pile") {
+    const r = Math.cbrt(V / (1.5 * Math.PI)), h = 1.5 * r;
+    fill(0.5 - r, floorY, 0.5 - r, 0.5 + r, floorY + h, 0.5 + r, m, (x, y, z) => (x - 0.5) ** 2 + (z - 0.5) ** 2 < r * r);
+  }
+  if (name === "ramp") { const a = Math.cbrt(V); fill(0.22 - a / 2, 0.62, 0.5 - a / 2, 0.22 + a / 2, 0.62 + a, 0.5 + a / 2, m); }
+  if (name === "dam") { const a = Math.sqrt(V / (0.8 * 2)); fill(floorY + 0.005, floorY, 0.1, floorY + 0.005 + a, floorY + 2 * a, 0.9, m); }
+  pVol = V / n; pMass = pVol; // density 1
+  p2g();
+}
+
+// ---------- symmetric 3x3 eigen-solve (cyclic Jacobi): A -> eigenvalues ev, eigenvectors = columns of Q ----------
+const A = new Float64Array(9), Q = new Float64Array(9), ev = new Float64Array(3);
+function rot(p, q) {
+  const apq = A[p * 3 + q];
+  if (Math.abs(apq) < 1e-30) return;
+  const th = (A[q * 4] - A[p * 4]) / (2 * apq);
+  const t = Math.sign(th || 1) / (Math.abs(th) + Math.sqrt(th * th + 1)), c = 1 / Math.sqrt(t * t + 1), s = t * c;
+  for (let k = 0; k < 3; k++) {
+    const akp = A[k * 3 + p], akq = A[k * 3 + q]; A[k * 3 + p] = c * akp - s * akq; A[k * 3 + q] = s * akp + c * akq;
+    const qkp = Q[k * 3 + p], qkq = Q[k * 3 + q]; Q[k * 3 + p] = c * qkp - s * qkq; Q[k * 3 + q] = s * qkp + c * qkq;
+  }
+  for (let k = 0; k < 3; k++) {
+    const apk = A[p * 3 + k], aqk = A[q * 3 + k]; A[p * 3 + k] = c * apk - s * aqk; A[q * 3 + k] = s * apk + c * aqk;
+  }
+}
+function eig3() {
+  Q.fill(0); Q[0] = Q[4] = Q[8] = 1;
+  for (let sw = 0; sw < 8; sw++) {
+    const off = A[1] * A[1] + A[2] * A[2] + A[5] * A[5], diag = A[0] * A[0] + A[4] * A[4] + A[8] * A[8];
+    if (off < 1e-14 * diag) break;
+    rot(0, 1); rot(0, 2); rot(1, 2);
+  }
+  ev[0] = A[0]; ev[1] = A[4]; ev[2] = A[8];
+}
+
+// quadratic B-spline weights: base node b*, fractional offset f*, 3 weights per axis
+const wx = new Float64Array(3), wy = new Float64Array(3), wz = new Float64Array(3);
+let bx, by, bz, fx, fy, fz;
+function weights(p) {
+  const gx = px[p] * invDx, gy = py[p] * invDx, gz = pz[p] * invDx;
+  bx = Math.floor(gx - 0.5); by = Math.floor(gy - 0.5); bz = Math.floor(gz - 0.5);
+  fx = gx - bx; fy = gy - by; fz = gz - bz;
+  wx[0] = 0.5 * (1.5 - fx) ** 2; wx[1] = 0.75 - (fx - 1) ** 2; wx[2] = 0.5 * (fx - 0.5) ** 2;
+  wy[0] = 0.5 * (1.5 - fy) ** 2; wy[1] = 0.75 - (fy - 1) ** 2; wy[2] = 0.5 * (fy - 0.5) ** 2;
+  wz[0] = 0.5 * (1.5 - fz) ** 2; wz[1] = 0.75 - (fz - 1) ** 2; wz[2] = 0.5 * (fz - 0.5) ** 2;
+}
+
+// (1) P2G: scatter mass and momentum (+ stress and affine C) onto the 27-node stencil.
+function p2g() {
+  gm.fill(0); gvx.fill(0); gvy.fill(0); gvz.fill(0);
+  const k = -dt * pVol * 4 * invDx * invDx, m = pMass;
+  for (let p = 0; p < n; p++) {
+    weights(p);
+    const c = 9 * p, t = 6 * p;
+    const a00 = k * T[t] + m * C[c], a01 = k * T[t + 3] + m * C[c + 1], a02 = k * T[t + 4] + m * C[c + 2];
+    const a10 = k * T[t + 3] + m * C[c + 3], a11 = k * T[t + 1] + m * C[c + 4], a12 = k * T[t + 5] + m * C[c + 5];
+    const a20 = k * T[t + 4] + m * C[c + 6], a21 = k * T[t + 5] + m * C[c + 7], a22 = k * T[t + 2] + m * C[c + 8];
+    const mvx = m * vx[p], mvy = m * vy[p], mvz = m * vz[p];
+    for (let i = 0; i < 3; i++) {
+      const di = (i - fx) * dx, gi = (bx + i) * N;
+      for (let j = 0; j < 3; j++) {
+        const wij = wx[i] * wy[j], dj = (j - fy) * dx, gij = (gi + by + j) * N + bz;
+        const ux = mvx + a00 * di + a01 * dj, uy = mvy + a10 * di + a11 * dj, uz = mvz + a20 * di + a21 * dj;
+        for (let l = 0; l < 3; l++) {
+          const w = wij * wz[l], dl = (l - fz) * dx, g = gij + l;
+          gvx[g] += w * (ux + a02 * dl); gvy[g] += w * (uy + a12 * dl); gvz[g] += w * (uz + a22 * dl);
+          gm[g] += w * m;
+        }
+      }
+    }
+  }
+}
+// (2) Grid update: momentum -> velocity, gravity, shovel, walls (slip) and floor/ramp (Coulomb friction).
+function gridUpdate() {
+  const s = shovel, r2 = s.r * s.r;
+  for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) for (let k = 0; k < N; k++) {
+    const g = (i * N + j) * N + k, m = gm[g];
+    if (m <= 0) { gvx[g] = gvy[g] = gvz[g] = 0; continue; }
+    let u = gvx[g] / m, v = gvy[g] / m - dt * gravity, w = gvz[g] / m;
+    const x = i * dx, y = j * dx, z = k * dx;
+    if (s.on && (x - s.x) ** 2 + (y - s.y) ** 2 + (z - s.z) ** 2 < r2) { u = s.vx; v = s.vy; w = s.vz; }
+    if ((i < BND && u < 0) || (i > N - 1 - BND && u > 0)) u = 0;
+    if ((k < BND && w < 0) || (k > N - 1 - BND && w > 0)) w = 0;
+    if (j > N - 1 - BND && v > 0) v = 0;
+    let nx = 0, ny = 0;
+    if (y < floorY) ny = 1; else if (ramp && y < rampY(x)) { nx = RNX; ny = RNY; }
+    const vn = u * nx + v * ny;
+    if (vn < 0) { // pushing into the ground: remove normal part, friction eats tangential speed
+      u -= vn * nx; v -= vn * ny;
+      const f = Math.max(0, 1 + WALL_MU * vn / Math.hypot(u, v, w));
+      u *= f; v *= f; w *= f;
+    }
+    gvx[g] = u; gvy[g] = v; gvz[g] = w;
+  }
+}
+// (3) G2P: gather velocity and C, update F, apply the material rule, cache stress for the next P2G.
+function g2p() {
+  const sc = 4 * invDx * invDx;
+  for (let p = 0; p < n; p++) {
+    weights(p);
+    let nvx = 0, nvy = 0, nvz = 0, b00 = 0, b01 = 0, b02 = 0, b10 = 0, b11 = 0, b12 = 0, b20 = 0, b21 = 0, b22 = 0;
+    for (let i = 0; i < 3; i++) {
+      const di = (i - fx) * dx, gi = (bx + i) * N;
+      for (let j = 0; j < 3; j++) {
+        const wij = wx[i] * wy[j], dj = (j - fy) * dx, gij = (gi + by + j) * N + bz;
+        for (let l = 0; l < 3; l++) {
+          const w = wij * wz[l], dl = (l - fz) * dx, g = gij + l;
+          const u = w * gvx[g], v = w * gvy[g], q = w * gvz[g];
+          nvx += u; nvy += v; nvz += q;
+          b00 += u * di; b01 += u * dj; b02 += u * dl;
+          b10 += v * di; b11 += v * dj; b12 += v * dl;
+          b20 += q * di; b21 += q * dj; b22 += q * dl;
+        }
+      }
+    }
+    vx[p] = nvx; vy[p] = nvy; vz[p] = nvz;
+    const c = 9 * p, t = 6 * p;
+    C[c] = sc * b00; C[c + 1] = sc * b01; C[c + 2] = sc * b02;
+    C[c + 3] = sc * b10; C[c + 4] = sc * b11; C[c + 5] = sc * b12;
+    C[c + 6] = sc * b20; C[c + 7] = sc * b21; C[c + 8] = sc * b22;
+    // F <- (I + dt C) F
+    const f0 = F[c], f1 = F[c + 1], f2 = F[c + 2], f3 = F[c + 3], f4 = F[c + 4], f5 = F[c + 5], f6 = F[c + 6], f7 = F[c + 7], f8 = F[c + 8];
+    for (let r = 0; r < 3; r++) {
+      const g0 = (r === 0 ? 1 : 0) + dt * C[c + 3 * r], g1 = (r === 1 ? 1 : 0) + dt * C[c + 3 * r + 1], g2 = (r === 2 ? 1 : 0) + dt * C[c + 3 * r + 2];
+      F[c + 3 * r] = g0 * f0 + g1 * f3 + g2 * f6; F[c + 3 * r + 1] = g0 * f1 + g1 * f4 + g2 * f7; F[c + 3 * r + 2] = g0 * f2 + g1 * f5 + g2 * f8;
+    }
+    material(p);
+  }
+}
+const sg = new Float64Array(3), kk = new Float64Array(3), Fo = new Float64Array(9);
+function material(p) {
+  const c = 9 * p, t = 6 * p, m = mat[p];
+  if (m === 0) { // water: forget shear, keep only volume change J
+    const J = detF(p), r = Math.cbrt(J);
+    F.fill(0, c, c + 9); F[c] = F[c + 4] = F[c + 8] = r;
+    T[t] = T[t + 1] = T[t + 2] = la0 * J * (J - 1); T[t + 3] = T[t + 4] = T[t + 5] = 0;
+    return;
+  }
+  // b = F F^T = U S^2 U^T: eigenvectors U (left), singular values S
+  for (let r = 0; r < 3; r++) for (let q = 0; q < 3; q++)
+    A[r * 3 + q] = F[c + 3 * r] * F[c + 3 * q] + F[c + 3 * r + 1] * F[c + 3 * q + 1] + F[c + 3 * r + 2] * F[c + 3 * q + 2];
+  eig3();
+  for (let i = 0; i < 3; i++) sg[i] = Math.sqrt(Math.max(ev[i], 1e-8));
+  let s0 = sg[0], s1 = sg[1], s2 = sg[2]; // plastic return gives new singular values s*, then F <- U diag(s*/S) U^T F
+  if (m === 2) { // mud/snow: clamp stretch, remember compaction
+    s0 = Math.min(Math.max(s0, 1 - 2.5e-2), 1 + 4.5e-3); s1 = Math.min(Math.max(s1, 1 - 2.5e-2), 1 + 4.5e-3); s2 = Math.min(Math.max(s2, 1 - 2.5e-2), 1 + 4.5e-3);
+    pl[p] *= (sg[0] / s0) * (sg[1] / s1) * (sg[2] / s2);
+  } else if (m === 3) { // sand: Drucker-Prager return mapping in log-strain (Hencky) space
+    let e0 = Math.log(s0), e1 = Math.log(s1), e2 = Math.log(s2);
+    const tr = e0 + e1 + e2;
+    if (tr >= 0) { pl[p] += Math.hypot(e0, e1, e2); e0 = e1 = e2 = 0; ps[p] = 2; } // pulled apart: no cohesion, stress-free
+    else {
+      const h0 = e0 - tr / 3, h1 = e1 - tr / 3, h2 = e2 - tr / 3, hn = Math.hypot(h0, h1, h2);
+      const dg = hn + (3 * la0 + 2 * mu0) / (2 * mu0) * tr * dpAlpha;
+      if (dg > 0) { e0 -= dg * h0 / hn; e1 -= dg * h1 / hn; e2 -= dg * h2 / hn; pl[p] += dg; ps[p] = 1; } else ps[p] = 0;
+    }
+    s0 = Math.exp(e0); s1 = Math.exp(e1); s2 = Math.exp(e2);
+  }
+  if (m === 2 || m === 3) {
+    kk[0] = s0 / sg[0]; kk[1] = s1 / sg[1]; kk[2] = s2 / sg[2]; // per-axis scale s*/S
+    for (let i = 0; i < 9; i++) Fo[i] = F[c + i];
+    for (let r = 0; r < 3; r++) for (let q = 0; q < 3; q++) { // M = U diag(scale) U^T
+      const M = Q[r * 3] * kk[0] * Q[q * 3] + Q[r * 3 + 1] * kk[1] * Q[q * 3 + 1] + Q[r * 3 + 2] * kk[2] * Q[q * 3 + 2];
+      A[r * 3 + q] = M;
+    }
+    for (let r = 0; r < 3; r++) for (let q = 0; q < 3; q++)
+      F[c + 3 * r + q] = A[r * 3] * Fo[q] + A[r * 3 + 1] * Fo[3 + q] + A[r * 3 + 2] * Fo[6 + q];
+  }
+  // Kirchhoff stress tau = U diag(k) U^T
+  if (m === 3) {
+    const e0 = Math.log(s0), e1 = Math.log(s1), e2 = Math.log(s2), ltr = e0 + e1 + e2;
+    kk[0] = 2 * mu0 * e0 + la0 * ltr; kk[1] = 2 * mu0 * e1 + la0 * ltr; kk[2] = 2 * mu0 * e2 + la0 * ltr;
+  } else { // jelly / mud: fixed corotated, mud hardens as it compacts
+    const h = m === 1 ? 0.3 : Math.min(Math.exp(10 * (1 - pl[p])), 20), mu = mu0 * h, la = la0 * h, J = s0 * s1 * s2;
+    kk[0] = 2 * mu * (s0 - 1) * s0 + la * J * (J - 1); kk[1] = 2 * mu * (s1 - 1) * s1 + la * J * (J - 1); kk[2] = 2 * mu * (s2 - 1) * s2 + la * J * (J - 1);
+  }
+  const tau = (r, q) => Q[r * 3] * kk[0] * Q[q * 3] + Q[r * 3 + 1] * kk[1] * Q[q * 3 + 1] + Q[r * 3 + 2] * kk[2] * Q[q * 3 + 2];
+  T[t] = tau(0, 0); T[t + 1] = tau(1, 1); T[t + 2] = tau(2, 2); T[t + 3] = tau(0, 1); T[t + 4] = tau(0, 2); T[t + 5] = tau(1, 2);
+}
+function detF(p) {
+  const c = 9 * p;
+  return F[c] * (F[c + 4] * F[c + 8] - F[c + 5] * F[c + 7]) - F[c + 1] * (F[c + 3] * F[c + 8] - F[c + 5] * F[c + 6]) + F[c + 2] * (F[c + 3] * F[c + 7] - F[c + 4] * F[c + 6]);
+}
+// (4) Advect: x += dt v (clamped inside the grid so the 27-node stencil never leaves it).
+function advect() {
+  const lo = dx, hi = 1 - 2 * dx;
+  for (let p = 0; p < n; p++) {
+    px[p] = Math.min(hi, Math.max(lo, px[p] + dt * vx[p]));
+    py[p] = Math.min(hi, Math.max(lo, py[p] + dt * vy[p]));
+    pz[p] = Math.min(hi, Math.max(lo, pz[p] + dt * vz[p]));
+  }
+  simTime += dt; steps++;
+}
+function step() {
+  const t0 = performance.now(); p2g();
+  const t1 = performance.now(); gridUpdate();
+  const t2 = performance.now(); g2p(); advect();
+  const t3 = performance.now();
+  tms[0] = 0.9 * tms[0] + 0.1 * (t1 - t0); tms[1] = 0.9 * tms[1] + 0.1 * (t2 - t1); tms[2] = 0.9 * tms[2] + 0.1 * (t3 - t2);
+}
+function kinetic() { let e = 0; for (let p = 0; p < n; p++) e += vx[p] * vx[p] + vy[p] * vy[p] + vz[p] * vz[p]; return 0.5 * pMass * e; }
+function gridMass() { let s = 0; for (let g = 0; g < NN; g++) s += gm[g]; return s; }
+function pileHeight() { // 98th percentile of particle height above the floor (ignores stray droplets)
+  const ys = py.slice(0, n).sort(); return ys[Math.floor(0.98 * (n - 1))] - floorY;
+}
+function noNaN() {
+  for (let p = 0; p < n; p++) if (!Number.isFinite(px[p] + py[p] + pz[p] + vx[p] + vy[p] + vz[p])) return false;
+  return true;
+}
+// SIM-END
+
+// ---------- UI state ----------
+const PHASES = [p2g, gridUpdate, g2p, advect];
+const PHASE_NAMES = ["P2G", "Grid update", "G2P", "Advect"];
+const PHASE_TEXT = [
+  "<b>1. P2G</b> — every particle splats its mass and momentum onto the 3×3×3 = 27 grid nodes around it, weighted by a smooth B-spline. Orange dots = grid mass (brighter = more). Yellow lines = the selected particle's 27 weights (they sum to 1).",
+  "<b>2. Grid update</b> — on the grid, momentum ÷ mass = velocity, add gravity, apply walls, floor/ramp friction and the shovel. Cyan lines = node velocities. No particle is touched here.",
+  "<b>3. G2P</b> — each particle reads velocity back from the same 27 nodes (same weights) plus a velocity gradient C. F is updated and the material rule runs (sand: Drucker-Prager return mapping on the singular values of F). Green line = new velocity.",
+  "<b>4. Advect</b> — particles move: x += dt·v. The grid's job is done; next step it is wiped and rebuilt."
+];
+const MAT_RGB = [[0.29, 0.64, 1], [1, 0.42, 0.6], [0.6, 0.45, 0.32], [0.91, 0.78, 0.45]];
+const SCENE_MAT = { pile: 3, ramp: 3, dam: 0 };
+let phase = 0, lastPhase = -1, playing = true, sel = 0, hover = -1, msFrame = 0, subDone = 1;
+
+function runPhase() { PHASES[phase](); lastPhase = phase; phase = (phase + 1) & 3; }
+function finishCycle() { while (phase !== 0) runPhase(); lastPhase = -1; }
+function resetScene() {
+  setScene($("scene").value, +$("mat").value, +$("count").value);
+  phase = 0; lastPhase = -1; sel = n >> 1;
+  $("phaseBtn").textContent = "Phase step: P2G ▸";
+  uploadMat();
+}
+$("phaseBtn").onclick = () => {
+  playing = false; $("play").textContent = "Play";
+  runPhase();
+  $("phaseText").innerHTML = PHASE_TEXT[lastPhase];
+  $("phaseBtn").textContent = "Phase step: " + PHASE_NAMES[phase] + " ▸";
+};
+$("play").onclick = () => {
+  playing = !playing; $("play").textContent = playing ? "Pause" : "Play";
+  if (playing) { finishCycle(); $("phaseBtn").textContent = "Phase step: P2G ▸"; }
+};
+$("reset").onclick = resetScene;
+$("scene").onchange = () => { $("mat").value = SCENE_MAT[$("scene").value]; resetScene(); };
+$("mat").onchange = resetScene;
+$("count").oninput = () => { $("countV").textContent = $("count").value; resetScene(); };
+$("sub").oninput = () => { $("subV").textContent = $("sub").value; };
+$("shY").oninput = () => { $("shYV").textContent = $("shY").value; };
+
+// ---------- camera (RTS orbit) ----------
+const cv = $("cv");
+const cam = { yaw: 0.7, pitch: 0.5, dist: 1.6, tx: 0.5, ty: 0.2, tz: 0.5, fov: 0.8 };
+let mvp = new Float32Array(16), eye = [0, 0, 0], camX = [1, 0, 0], camY = [0, 1, 0], camZ = [0, 0, 1];
+function updateCamera() {
+  const cp = Math.cos(cam.pitch);
+  eye = [cam.tx + cam.dist * cp * Math.sin(cam.yaw), cam.ty + cam.dist * Math.sin(cam.pitch), cam.tz + cam.dist * cp * Math.cos(cam.yaw)];
+  camZ = norm([eye[0] - cam.tx, eye[1] - cam.ty, eye[2] - cam.tz]); camX = norm(cross([0, 1, 0], camZ)); camY = cross(camZ, camX);
+  const view = [camX[0], camY[0], camZ[0], 0, camX[1], camY[1], camZ[1], 0, camX[2], camY[2], camZ[2], 0,
+    -dot(camX, eye), -dot(camY, eye), -dot(camZ, eye), 1];
+  const f = 1 / Math.tan(cam.fov / 2), asp = cv.width / cv.height, zn = 0.02, zf = 20;
+  const proj = [f / asp, 0, 0, 0, 0, f, 0, 0, 0, 0, (zf + zn) / (zn - zf), -1, 0, 0, 2 * zf * zn / (zn - zf), 0];
+  for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) {
+    let s = 0; for (let k = 0; k < 4; k++) s += proj[k * 4 + r] * view[c * 4 + k]; mvp[c * 4 + r] = s;
+  }
+}
+function norm(v) { const l = Math.hypot(v[0], v[1], v[2]); return [v[0] / l, v[1] / l, v[2] / l]; }
+function cross(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
+function dot(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+function mouseRay(e) { // world ray through the mouse
+  const r = cv.getBoundingClientRect(), t = Math.tan(cam.fov / 2);
+  const sx = ((e.clientX - r.left) / r.width * 2 - 1) * t * r.width / r.height, sy = (1 - (e.clientY - r.top) / r.height * 2) * t;
+  return norm([sx * camX[0] + sy * camY[0] - camZ[0], sx * camX[1] + sy * camY[1] - camZ[1], sx * camX[2] + sy * camY[2] - camZ[2]]);
+}
+function moveShovel(e, sub) { // put the shovel where the mouse ray meets the plane y = shovel height
+  const d = mouseRay(e), y = +$("shY").value, t = (y - eye[1]) / d[1];
+  if (!(t > 0)) return;
+  const x = Math.min(0.9, Math.max(0.1, eye[0] + t * d[0])), z = Math.min(0.9, Math.max(0.1, eye[2] + t * d[2]));
+  const ts = sub * dt, cap = 6, vxs = (x - shovel.x) / ts, vys = (y - shovel.y) / ts, vzs = (z - shovel.z) / ts, sp = Math.hypot(vxs, vys, vzs), k = sp > cap ? cap / sp : 1;
+  if (shovel.on) { shovel.vx = vxs * k; shovel.vy = vys * k; shovel.vz = vzs * k; }
+  shovel.x = x; shovel.y = y; shovel.z = z;
+}
+let drag = 0, lmx = 0, lmy = 0;
+cv.addEventListener("contextmenu", e => e.preventDefault());
+cv.addEventListener("mousedown", e => {
+  lmx = e.clientX; lmy = e.clientY;
+  drag = e.button === 2 || e.shiftKey ? 2 : e.button === 0 ? ($("tool").value === "shovel" ? 3 : 1) : 0;
+  if (drag === 3) { moveShovel(e, 1); shovel.on = true; shovel.vx = shovel.vy = shovel.vz = 0; }
+});
+window.addEventListener("mouseup", () => { drag = 0; shovel.on = false; });
+cv.addEventListener("mousemove", e => {
+  const ddx = e.clientX - lmx, ddy = e.clientY - lmy; lmx = e.clientX; lmy = e.clientY;
+  if (drag === 1) { cam.yaw -= ddx * 0.008; cam.pitch = Math.min(1.5, Math.max(0.05, cam.pitch + ddy * 0.008)); }
+  if (drag === 2) {
+    const s = cam.dist * 0.0015;
+    cam.tx += (-ddx * camX[0] + ddy * camY[0]) * s; cam.ty += (-ddx * camX[1] + ddy * camY[1]) * s; cam.tz += (-ddx * camX[2] + ddy * camY[2]) * s;
+  }
+  if (drag === 3) moveShovel(e, subDone);
+  if ($("tool").value === "shovel" && drag !== 3) moveShovel(e, 1);
+  if (!drag) pick(e);
+});
+cv.addEventListener("wheel", e => { e.preventDefault(); cam.dist = Math.min(6, Math.max(0.4, cam.dist * Math.exp(e.deltaY * 0.001))); }, { passive: false });
+function pick(e) { // nearest particle on screen within 8 px, front-most wins ties
+  const r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top, m = mvp;
+  let best = -1, bw = 1e9;
+  for (let p = 0; p < n; p++) {
+    const x = px[p], y = py[p], z = pz[p], w = m[3] * x + m[7] * y + m[11] * z + m[15];
+    const sx = ((m[0] * x + m[4] * y + m[8] * z + m[12]) / w * 0.5 + 0.5) * r.width;
+    const sy = (0.5 - (m[1] * x + m[5] * y + m[9] * z + m[13]) / w * 0.5) * r.height;
+    if ((sx - mx) ** 2 + (sy - my) ** 2 < 64 && w < bw) { bw = w; best = p; }
+  }
+  hover = best; if (best >= 0) sel = best;
+}
+
+// ---------- WebGL2 ----------
+const gl = cv.getContext("webgl2", { preserveDrawingBuffer: true, antialias: true });
+function program(vs, fs) {
+  const p = gl.createProgram();
+  for (const [type, src] of [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]]) {
+    const s = gl.createShader(type); gl.shaderSource(s, "#version 300 es\nprecision highp float;\n" + src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+    gl.attachShader(p, s);
+  }
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  return p;
+}
+// particles: lit sphere impostors coloured by material
+const progP = program(`
+layout(location=0) in vec3 aPos; layout(location=1) in float aMat;
+uniform mat4 uMVP; uniform float uScale; uniform vec3 uCol[4]; uniform int uSel;
+out vec3 vCol;
+void main() {
+  gl_Position = uMVP * vec4(aPos, 1.0); gl_PointSize = uScale / gl_Position.w;
+  vCol = uCol[int(aMat)];
+  if (gl_VertexID == uSel) { vCol = vec3(1.0, 0.95, 0.3); gl_PointSize *= 1.8; }
+}`, `
+in vec3 vCol; out vec4 o;
+void main() {
+  vec2 c = gl_PointCoord * 2.0 - 1.0; float r2 = dot(c, c); if (r2 > 1.0) discard;
+  vec3 nrm = vec3(c.x, -c.y, sqrt(1.0 - r2));
+  o = vec4(vCol * (0.3 + 0.7 * max(dot(nrm, normalize(vec3(0.4, 0.8, 0.5))), 0.0)), 1.0);
+}`);
+// overlays: coloured triangles / lines / round points
+const progS = program(`
+layout(location=0) in vec3 aPos; layout(location=1) in vec4 aCol;
+uniform mat4 uMVP; uniform float uPt; out vec4 vCol;
+void main() { gl_Position = uMVP * vec4(aPos, 1.0); gl_PointSize = max(1.0, uPt / gl_Position.w); vCol = aCol; }`, `
+in vec4 vCol; uniform bool uRound; out vec4 o;
+void main() { if (uRound && length(gl_PointCoord - 0.5) > 0.5) discard; o = vCol; }`);
+const uP = n => gl.getUniformLocation(progP, n), uS = n => gl.getUniformLocation(progS, n);
+const posBuf = gl.createBuffer(), matBuf = gl.createBuffer(), ovBuf = gl.createBuffer();
+const vaoP = gl.createVertexArray(), vaoS = gl.createVertexArray();
+gl.bindVertexArray(vaoP);
+gl.bindBuffer(gl.ARRAY_BUFFER, posBuf); gl.bufferData(gl.ARRAY_BUFFER, MAXP * 12, gl.DYNAMIC_DRAW);
+gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+gl.bindBuffer(gl.ARRAY_BUFFER, matBuf); gl.bufferData(gl.ARRAY_BUFFER, MAXP, gl.DYNAMIC_DRAW);
+gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 1, gl.UNSIGNED_BYTE, false, 0, 0);
+gl.bindVertexArray(vaoS);
+gl.bindBuffer(gl.ARRAY_BUFFER, ovBuf);
+gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 28, 0);
+gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 28, 12);
+gl.bindVertexArray(null);
+const posArr = new Float32Array(MAXP * 3);
+function uploadMat() { gl.bindBuffer(gl.ARRAY_BUFFER, matBuf); gl.bufferSubData(gl.ARRAY_BUFFER, 0, mat.subarray(0, n)); }
+
+// overlay vertex list: [x y z r g b a]*, drawn in three runs (triangles, lines, points)
+let ov = [];
+const V = (x, y, z, c) => ov.push(x, y, z, c[0], c[1], c[2], c[3]);
+function buildOverlay() {
+  ov = [];
+  const G = [0.16, 0.19, 0.23, 1], R = [0.27, 0.24, 0.2, 1], lo = floorY, hi = 1 - floorY;
+  V(lo, lo, lo, G); V(hi, lo, lo, G); V(hi, lo, hi, G); V(lo, lo, lo, G); V(hi, lo, hi, G); V(lo, lo, hi, G);
+  if (ramp) { // ramp surface from the wall down to where it meets the floor
+    const xe = (0.58 - floorY) / 0.65, y0 = rampY(lo);
+    V(lo, y0, lo, R); V(xe, lo, lo, R); V(xe, lo, hi, R); V(lo, y0, lo, R); V(xe, lo, hi, R); V(lo, y0, hi, R);
+  }
+  const tri = ov.length / 7, E = [0.35, 0.4, 0.47, 1];
+  for (const a of [lo, hi]) for (const b of [lo, hi]) {
+    V(lo, a, b, E); V(hi, a, b, E); V(a, lo, b, E); V(a, hi, b, E); V(a, b, lo, E); V(a, b, hi, E);
+  }
+  const stencil = lastPhase === 0 || lastPhase === 2, showGrid = lastPhase === 0 || lastPhase === 1 || (playing && $("heat").checked);
+  if (stencil && sel < n) {
+    weights(sel);
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) for (let l = 0; l < 3; l++) {
+      const w = wx[i] * wy[j] * wz[l];
+      V(px[sel], py[sel], pz[sel], [1, 0.88, 0.4, 0.3 + 2 * w]); V((bx + i) * dx, (by + j) * dx, (bz + l) * dx, [1, 0.88, 0.4, 0.3 + 2 * w]);
+    }
+  }
+  if (lastPhase === 2) { const s = 0.15 / (Math.hypot(vx[sel], vy[sel], vz[sel]) || 1), Gc = [0.43, 0.82, 0.55, 1]; V(px[sel], py[sel], pz[sel], Gc); V(px[sel] + vx[sel] * s, py[sel] + vy[sel] * s, pz[sel] + vz[sel] * s, Gc); }
+  let mmax = 0; for (let g = 0; g < NN; g++) mmax = Math.max(mmax, gm[g]);
+  if (lastPhase === 1) {
+    let vmax = 1e-6; for (let g = 0; g < NN; g++) if (gm[g] > 0) vmax = Math.max(vmax, Math.hypot(gvx[g], gvy[g], gvz[g]));
+    const s = 1.5 * dx / vmax;
+    for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) for (let k = 0; k < N; k++) {
+      const g = (i * N + j) * N + k; if (gm[g] < 0.02 * mmax) continue;
+      V(i * dx, j * dx, k * dx, [0.55, 0.86, 1, 0.8]); V(i * dx + gvx[g] * s, j * dx + gvy[g] * s, k * dx + gvz[g] * s, [0.55, 0.86, 1, 0.8]);
+    }
+  }
+  const lin = ov.length / 7 - tri;
+  if (showGrid) for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) for (let k = 0; k < N; k++) {
+    const g = (i * N + j) * N + k, t = gm[g] / mmax; if (t > 0.01) V(i * dx, j * dx, k * dx, [1, 0.55, 0.2, 0.15 + 0.85 * t]);
+  }
+  return [tri, lin, ov.length / 7 - tri - lin];
+}
+
+function render() {
+  const dpr = window.devicePixelRatio || 1, w = Math.max(1, Math.round(cv.clientWidth * dpr)), h = Math.max(1, Math.round(cv.clientHeight * dpr));
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+  updateCamera();
+  gl.viewport(0, 0, w, h); gl.clearColor(0.043, 0.051, 0.063, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST); gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  const f = 1 / Math.tan(cam.fov / 2) * h / 2;
+  const [tri, lin, pts] = buildOverlay();
+  gl.useProgram(progS); gl.uniformMatrix4fv(uS("uMVP"), false, mvp); gl.bindVertexArray(vaoS);
+  gl.bindBuffer(gl.ARRAY_BUFFER, ovBuf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(ov), gl.STREAM_DRAW);
+  gl.uniform1i(uS("uRound"), 0); gl.uniform1f(uS("uPt"), 0);
+  gl.drawArrays(gl.TRIANGLES, 0, tri);
+  // particles
+  for (let p = 0; p < n; p++) { posArr[3 * p] = px[p]; posArr[3 * p + 1] = py[p]; posArr[3 * p + 2] = pz[p]; }
+  gl.useProgram(progP); gl.uniformMatrix4fv(uP("uMVP"), false, mvp); gl.uniform1f(uP("uScale"), dx * 0.6 * f);
+  gl.uniform3fv(uP("uCol"), MAT_RGB.flat()); gl.uniform1i(uP("uSel"), lastPhase >= 0 || hover >= 0 ? sel : -1);
+  gl.bindVertexArray(vaoP); gl.bindBuffer(gl.ARRAY_BUFFER, posBuf); gl.bufferSubData(gl.ARRAY_BUFFER, 0, posArr.subarray(0, 3 * n));
+  gl.drawArrays(gl.POINTS, 0, n);
+  // lines and grid points on top
+  gl.useProgram(progS); gl.bindVertexArray(vaoS); gl.disable(gl.DEPTH_TEST);
+  gl.drawArrays(gl.LINES, tri, lin);
+  gl.uniform1i(uS("uRound"), 1); gl.uniform1f(uS("uPt"), dx * 0.45 * f);
+  gl.drawArrays(gl.POINTS, tri + lin, pts);
+  if ($("tool").value === "shovel") { // shovel sphere as one translucent point
+    ov = []; V(shovel.x, shovel.y, shovel.z, shovel.on ? [1, 1, 1, 0.35] : [1, 1, 1, 0.15]);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(ov), gl.STREAM_DRAW);
+    gl.uniform1f(uS("uPt"), 2 * shovel.r * f); gl.drawArrays(gl.POINTS, 0, 1);
+  }
+  gl.bindVertexArray(null);
+  $("hud").textContent = lastPhase >= 0 ? "after " + (lastPhase + 1) + ". " + PHASE_NAMES[lastPhase] : "";
+  drawStats(); drawInspect();
+}
+
+function drawStats() {
+  const pb = n * P_BYTES, gb = NN * G_BYTES, gmass = gridMass(), pmass = n * pMass;
+  $("stats").textContent =
+    `particles   ${n}\n` +
+    `grid nodes  ${N}³ = ${NN}\n` +
+    `particle B  ${n} × ${P_BYTES} = ${pb.toLocaleString()}\n` +
+    `  (pos 12 vel 12 C 36 F 36 τ 24 plastic 4\n   state 1 mat 1)\n` +
+    `grid B      ${NN} × ${G_BYTES} = ${gb.toLocaleString()}\n` +
+    `  (mass 4 + vel 12; rebuilt every step)\n` +
+    `total       ${(pb + gb).toLocaleString()} bytes\n` +
+    `ms/step     P2G ${tms[0].toFixed(2)}  grid ${tms[1].toFixed(2)}  G2P ${tms[2].toFixed(2)}\n` +
+    `            = ${(tms[0] + tms[1] + tms[2]).toFixed(2)}  ×${subDone}/frame (${msFrame.toFixed(0)} ms)\n` +
+    `steps       ${steps}   t = ${simTime.toFixed(3)} s\n` +
+    `total mass  ${pmass.toExponential(4)}\n` +
+    `P2G mass    rel err ${(Math.abs(gmass - pmass) / pmass).toExponential(1)}\n` +
+    `kinetic E   ${kinetic().toExponential(2)}`;
+}
+const PS_NAMES = ["elastic", "yielding (plastic flow)", "pulled apart (stress-free)"];
+function drawInspect() {
+  if (hover < 0) { $("inspect").textContent = "Hover a particle."; return; }
+  const p = hover, m = mat[p];
+  $("inspect").textContent =
+    `id        #${p}\nmaterial  ${MAT_NAMES[m]}\n` +
+    `pos       (${px[p].toFixed(3)}, ${py[p].toFixed(3)}, ${pz[p].toFixed(3)})\n` +
+    `vel       (${vx[p].toFixed(3)}, ${vy[p].toFixed(3)}, ${vz[p].toFixed(3)})\n` +
+    `det F     ${detF(p).toFixed(4)}  (volume ratio)\n` +
+    (m === 3 ? `plastic   shear ${pl[p].toFixed(3)}, now ${PS_NAMES[ps[p]]}` :
+     m === 2 ? `plastic   Jp ${pl[p].toFixed(4)} (compaction, <1 = packed)` :
+     m === 0 ? `plastic   none (fluid: F reset to J^(1/3) I)` : `plastic   none (purely elastic)`);
+}
+
+function frame() {
+  if (playing && !location.search.includes("selftest")) {
+    const k = +$("sub").value, t0 = performance.now();
+    let i = 0; for (; i < k && (i === 0 || performance.now() - t0 < 16); i++) step(); // ponytail: 16 ms frame budget caps substeps on slow machines
+    subDone = i;
+    msFrame = performance.now() - t0;
+    if (shovel.on) shovel.vx = shovel.vy = shovel.vz = 0; // shovel only pushes while it moves
+  }
+  render();
+  requestAnimationFrame(frame);
+}
+
+// ---------- self-test ----------
+function selftest() {
+  const t0 = performance.now(), cnt = $("count");
+  cnt.value = 1500; $("scene").value = "pile"; $("mat").value = 3; resetScene();
+  p2g();
+  const pm = n * pMass, rel = Math.abs(gridMass() - pm) / pm;
+  if (!(rel < 1e-5)) return "FAIL P2G mass rel err " + rel;
+  for (let i = 0; i < 1200; i++) step();
+  if (!noNaN()) return "FAIL NaN in sand pile";
+  const vrms = Math.sqrt(2 * kinetic() / pm), hs = pileHeight();
+  if (!(vrms < 0.02)) return "FAIL sand not at rest, v_rms " + vrms;
+  $("mat").value = 0; $("mat").onchange();
+  for (let i = 0; i < 1200; i++) step();
+  if (!noNaN()) return "FAIL NaN in water column";
+  const hw = pileHeight();
+  if (!(hs > hw + 0.02)) return `FAIL sand height ${hs.toFixed(3)} not above water ${hw.toFixed(3)}`;
+  for (const [sc, m] of [["ramp", 3], ["dam", 0], ["pile", 1], ["pile", 2]]) {
+    $("scene").value = sc; $("scene").onchange(); $("mat").value = m; $("mat").onchange();
+    shovel.on = true; shovel.x = 0.5; shovel.y = 0.14; shovel.z = 0.5; shovel.vx = 2; shovel.vy = shovel.vz = 0;
+    for (let i = 0; i < 200; i++) step();
+    shovel.on = false;
+    if (!noNaN()) return "FAIL NaN in " + sc + "/" + MAT_NAMES[m];
+  }
+  render();
+  const w = cv.width, h = cv.height, px8 = new Uint8Array(w * h * 4);
+  gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px8);
+  let lit = 0; for (let i = 0; i < px8.length; i += 4) if (px8[i] > 20 || px8[i + 1] > 20 || px8[i + 2] > 24) lit++;
+  const err = gl.getError();
+  if (err !== 0) return "FAIL gl error " + err;
+  if (lit < 500) return "FAIL only " + lit + " non-background pixels";
+  cnt.value = 8000; $("count").oninput(); $("scene").value = "pile"; $("scene").onchange();
+  return `PASS mass rel ${rel.toExponential(1)}, sand h ${hs.toFixed(3)} vs water h ${hw.toFixed(3)}, ` +
+         `sand v_rms ${vrms.toExponential(1)}, ${lit} lit px, ${(performance.now() - t0).toFixed(0)} ms`;
+}
+
+resetScene();
+if (location.search.includes("selftest")) { playing = false; $("play").textContent = "Play"; $("selftest").textContent = selftest(); }
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

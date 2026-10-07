@@ -17,7 +17,7 @@ check-odin-version:
 
 # ─── Clean / format ───────────────────────────────────────────────────────
 clean:
-    @rm -rf build target profiles/*.spall
+    @rm -rf build target
 
 format:
     @find . -name '*.odin' -not -path '*/build/*' -not -path '*/vendor/*' -print0 | xargs -0 -n1 odinfmt -overwrite
@@ -32,10 +32,7 @@ tele level="":
 
 # ─── Bench / profile ──────────────────────────────────────────────────────
 bench name:
-    @cd bench/{{name}} && odin run . -define:INSTRUMENT=spall -o:speed
-
-profile-run binary:
-    @SPALL_OUT=profiles/$(basename {{binary}}).spall {{binary}}
+    @cd bench/{{name}} && odin run . -o:speed
 
 # ─── Claims (compile / output / behavior verification) ────────────────────
 # A claim is a dir under tests/ or claims/. Its claim.txt picks the assertion
@@ -125,22 +122,6 @@ lab:
 
 lab-build:
     @cd lab && python build.py hot
-
-# headless input/sim test for lab (no window) — agent-runnable.
-# Also runs the determinism guard: -o:none vs -o:speed trajectory hashes must match.
-lab-test:
-    @cd lab && python build.py test
-
-# Headless runner (the agent's eyes: frames in → state lines, trajectory hash, PNGs out).
-#   just lab-run -frames:600 -png:out/shot -png-every:120 -arena -script:tape.txt
-lab-run *args:
-    @cd lab && python build.py labx {{args}}
-
-# Arena vote wait (the agent's half of the variant-tournament loop): blocks until
-# a NEW vote line lands in lab/arena/votes.log (offset-based — round counters
-# reset across lab restarts, so they are not used), prints it.
-arena-wait *args:
-    @python tools/arena/wait_vote.py {{args}}
 
 lab-clean:
     @cd lab && python build.py clean

@@ -1,5 +1,7 @@
 # Game (the bespoke, hot-reload dev side)
 
+> **SUPERSEDED 2026-10-06:** the 2D prototype is cancelled; the project goes straight to 3D. Current direction: `docs/game/DESIGN.md`. Kept for the vision/principles only.
+
 > **This is one bespoke game, not a reusable engine, library, or framework — and must never become one.** Nothing here is generic or meant for reuse by another game or person (Blow / Muratori style). The "engine-y" parts below (the hot-reload host, software raster, physics) are *this game's* specific machinery, grown from its needs. The only thing deliberately swappable is a **pipeline**: a function with a fixed input/output contract whose internal technique you can swap to trade accuracy/speed and benchmark — for experimenting on this game, never for genericity. See `CLAUDE.md` → "Bespoke game, not an engine."
 
 **Date:** 2026-05-06 (PLAYGROUND.md → ENGINE.md 2026-05-09 → reframed as GAME.md 2026-06-06)
@@ -185,9 +187,9 @@ The repo's runnable-code dirs hold **four peer roles** with deliberately separat
 | `bench/<name>/` | one-shot run | perf measurement; runs, prints timings, exits |
 | `tests/<slug>/` (live; graphics lessons 00–09) | one-shot run | correctness check; diffs actual vs expected output |
 | `scratch/<name>/` | throwaway | "I want to try a thing" — gitignored at the file level |
-| `profiles/` | output sink | Spall traces dropped here, gitignored |
+| `profiles/` | output sink | profiler output, gitignored |
 
-All four use the same Odin compiler, share `tools/domains/odin/odin_lib/instrument/` for Spall/Tracy zones, and route through the same `just` recipes (`just lab`, `just bench <name>`, `just verify <slug>` / `just verify-all`). The DX is uniform on purpose: one mental model, four lifecycles.
+All four use the same Odin compiler, share `tools/domains/odin/odin_lib/instrument/` for Tracy zones, and route through the same `just` recipes (`just lab`, `just bench <name>`, `just verify <slug>` / `just verify-all`). The DX is uniform on purpose: one mental model, four lifecycles.
 
 **Hot-reload `lab/` is the only persistent role.** The others are isolated programs that you fire off, read the answer, and move on.
 
@@ -196,8 +198,8 @@ All four use the same Odin compiler, share `tools/domains/odin/odin_lib/instrume
 Five overlapping concepts that confuse people on a cold read. The runnable-surface
 roles above describe *where programs live* and *their lifecycle*. This table cuts
 the same space differently: *what kind of question each tool answers*, and how
-you invoke it. Spall and Tracy are not directories, they are compile-time
-switches on `tools/domains/odin/odin_lib/instrument/` that any program (lab,
+you invoke it. Tracy is not a directory, it is a compile-time
+switch on `tools/domains/odin/odin_lib/instrument/` that any program (lab,
 bench, tests) can opt into.
 
 ```
@@ -212,10 +214,6 @@ bench, tests) can opt into.
 | (= "executable       |  output? (diff vs        |                       | just verify-all          | (claim-backed: TODO) |
 |   verification")     |  expected.txt)           |                       |                          |                      |
 +----------------------+--------------------------+-----------------------+--------------------------+----------------------+
-| Spall   (backend)    | where did time go?       | instrument.odin       | -define:INSTRUMENT=spall | shipped              |
-|                      |  offline .spall trace,   |  (compile-time switch)|                          |  bench uses this     |
-|                      |  load in viewer after    |                       |                          |                      |
-+----------------------+--------------------------+-----------------------+--------------------------+----------------------+
 | Tracy   (backend)    | live realtime frame      | instrument.odin       | -define:INSTRUMENT=tracy | shipped              |
 |                      |  profiler, attaches to a |  (compile-time switch)|                          |  intended for lab    |
 |                      |  running process via TCP |                       |                          |                      |
@@ -223,8 +221,8 @@ bench, tests) can opt into.
 ```
 
 **Mental model:** `odin test`, `bench`, and `tests` are *what kind of program
-you run*. Spall and Tracy are *how you observe any of them running*. Default
-`INSTRUMENT=false` means zero overhead, you only pay for Spall/Tracy when you
+you run*. Tracy is *how you observe any of them running*. Default
+`INSTRUMENT=false` means zero overhead, you only pay for Tracy when you
 opt in at compile time.
 
 ## Tying in `executable verification` (future)

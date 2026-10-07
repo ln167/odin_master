@@ -5,7 +5,7 @@ package main
 // The lib is .gitignore'd, so this claim FAILS on a fresh checkout until that runs.
 //
 // Tracy is a CONNECTED profiler: with no Tracy GUI attached it emits nothing to a file
-// (unlike spall's self-contained trace). So the meaningful check is that INSTRUMENT=tracy
+//. So the meaningful check is that INSTRUMENT=tracy
 // COMPILES, LINKS against the foreign tracy.lib, and RUNS the SCOPE begin/end round-trip
 // without crashing. Deterministic sentinel proves we reached the end.
 

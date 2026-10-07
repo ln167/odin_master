@@ -81,7 +81,7 @@ Odin has **no macros / in-band metaprogramming, by design** (gingerBill's stance
 ## External tools
 
 **Profiler**:
-A downstream viewer over the Execution slice — **Tracy** (live; streams over a localhost socket to a separate GUI) and **Spall** (offline; emits a trace file opened in a viewer). A presentation target, not a Source; neither is claim-readable. (Tracy's `tracy-csvexport` can dump aggregate zone stats/plots/zone text from a capture, but never our full-fidelity value Records — so it's a partial escape hatch, not a substitute for the owned sink.)
+A downstream viewer over the Execution slice — **Tracy** (live; streams over a localhost socket to a separate GUI). A presentation target, not a Source; neither is claim-readable. (Tracy's `tracy-csvexport` can dump aggregate zone stats/plots/zone text from a capture, but never our full-fidelity value Records — so it's a partial escape hatch, not a substitute for the owned sink.)
 
 ## Capture architecture (decided 2026-07-01)
 
@@ -90,11 +90,11 @@ The single capture path every measurement flows through. It stamps the shared **
 _Avoid_: bus, pipeline (that word is reserved for the swappable-technique sense in `CLAUDE.md`)
 
 **Sink**:
-A destination the spine fans a Record out to. Two roles: **Tracy** — the *real-time* sink, rented not rebuilt (forward a flattened value via `ZoneValue`/`TracyPlot` for its live GUI); **our postmortem recorder** — the *owned* sink (per-thread buffers reassembled by timestamp after the run), which alone carries full-fidelity values + coordinates and emits greppable/agent-readable records. The postmortem recorder **replaces Spall** for us (Spall is timing-only; ours is a superset). One woven `capture(x)` writes the full value to our sink and a flattened copy to Tracy.
+A destination the spine fans a Record out to. Two roles: **Tracy** — the *real-time* sink, rented not rebuilt (forward a flattened value via `ZoneValue`/`TracyPlot` for its live GUI); **our postmortem recorder** — the *owned* sink (per-thread buffers reassembled by timestamp after the run), which alone carries full-fidelity values + coordinates and emits greppable/agent-readable records. The postmortem recorder is our own (it replaced Spall). One woven `capture(x)` writes the full value to our sink and a flattened copy to Tracy.
 
-**Correlation is capture-time, and multithreaded** (the game *will* be multithreaded — 2D + 3D versions coming). Two irreducible concurrency problems: **safe concurrent writes** (→ per-thread buffers, no locks/atomics on the hot path) and **reassembly/ordering** (→ a shared monotonic timestamp per Record). These are not Tracy bloat — any multi-thread capture needs them. Going postmortem is what lets us skip Tracy's *real-time* concurrency machinery: record per thread, merge at flush. Hot path is a memcpy into the next thread-local slot; all formatting/join/I/O/forwarding is deferred.
+**Correlation is capture-time, and multithreaded** (the game *will* be multithreaded — 3D, see `docs/game/DESIGN.md`). Two irreducible concurrency problems: **safe concurrent writes** (→ per-thread buffers, no locks/atomics on the hot path) and **reassembly/ordering** (→ a shared monotonic timestamp per Record). These are not Tracy bloat — any multi-thread capture needs them. Going postmortem is what lets us skip Tracy's *real-time* concurrency machinery: record per thread, merge at flush. Hot path is a memcpy into the next thread-local slot; all formatting/join/I/O/forwarding is deferred.
 
-> **Why this split:** own the cheap-but-essential postmortem recorder (it must hold our enriched, queryable data — Tracy/Spall can't), rent the expensive real-time viewer (Tracy). Steal Tracy's *catalog* of what's worth recording, not its *engine*.
+> **Why this split:** own the cheap-but-essential postmortem recorder (it must hold our enriched, queryable data — Tracy can't), rent the expensive real-time viewer (Tracy). Steal Tracy's *catalog* of what's worth recording, not its *engine*.
 
 **Status (2026-07-01):** the Value slice (Weaver) ships; the correlated spine, the postmortem sink, per-thread capture, hook *emission* (hooks only count today), frame-as-global-coordinate, GPU timestamps, and over-time cadence are the intended-but-unbuilt capture layer. Full intent + gap list: tele redesign spec §18.
 

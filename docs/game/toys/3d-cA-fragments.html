@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>3D: fragments carry their own field</title>
+<style>
+body{margin:0;display:flex;height:100vh;background:#14161b;color:#d8dbe2;font:13px/1.4 system-ui,sans-serif}
+#side{width:320px;flex:none;box-sizing:border-box;padding:12px 14px;overflow-y:auto;background:#1b1e25;border-right:1px solid #2c303a}
+#main{flex:1;position:relative;min-width:0}
+canvas{position:absolute;left:0;top:0}
+h1{font-size:17px;margin:6px 0}h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#8a93a6;margin:14px 0 4px}
+a{color:#7fb2ff}p,ul{margin:4px 0}ul{padding-left:18px}
+button,select{background:#2a2f3a;color:#d8dbe2;border:1px solid #3b4150;border-radius:4px;padding:3px 8px;margin:2px 2px 2px 0}
+label{display:block;margin:3px 0}
+#stats{font-family:ui-monospace,Consolas,monospace;font-size:12px;white-space:pre;color:#a8e0b0}
+#hover{font-family:ui-monospace,Consolas,monospace;font-size:12px;background:#12141a;border:1px solid #2c303a;padding:6px;min-height:96px;white-space:pre-wrap}
+#selftest{font-size:10px;color:#667;margin:10px 0 0;white-space:pre-wrap}
+</style></head><body>
+<div id="side">
+<a href="index.html">← all toys</a>
+<h1>3D: fragments carry their own field</h1>
+<h2>What it is</h2>
+<p>The terrain is one formula (a signed distance field: distance to the surface, negative inside). Every block, log or statue carries its own small 24³ grid of signed distances in its own body frame, plus a transform. Collision is only "ask the other field how far this surface point is". Carving edits only that object's grid; splitting gives each half its own new grid and transform.</p>
+<h2>Controls</h2>
+<p>Left-drag rotate, wheel zoom, right-drag or shift-drag pan. Click an object to use the tool.</p>
+<label>Click does <select id="tool"><option value="carve">carve a notch</option><option value="split">split (plane through hit)</option><option value="push">push (impulse)</option></select></label>
+<label>Notch radius <input type="range" id="rad" min="0.1" max="0.5" step="0.02" value="0.22"> <span id="radv">0.22</span> m</label>
+<button id="bDrop">drop a block</button><button id="bPause">pause</button><button id="bReset">reset</button>
+<label><input type="checkbox" id="cFrames" checked> show each object's grid box</label>
+<h2>Inspect</h2>
+<div id="hover">Hover an object.</div>
+<h2>Stats</h2>
+<div id="stats"></div>
+<h2>Good at</h2>
+<ul><li>Promotion to rigid body = add a transform; the grid never moves, only the transform does.</li><li>Carving and splitting are local: only one small grid changes.</li><li>Collision and picking are plain field queries.</li></ul>
+<h2>Bad at</h2>
+<ul><li>Every object pays for its whole grid (55 KB here), even a thin sliver.</li><li>Fixed resolution per object: a big log gets coarse cells.</li><li>Contact by point sampling is approximate; stacks need sleeping to stay still.</li></ul>
+<p><b>In 3D / for our game:</b> every quarried block, felled log or fragment is a field + transform; when it settles it can be welded back into the world field (min into the terrain) and its grid freed (not implemented here).</p>
+<pre id="selftest"></pre>
+</div>
+<div id="main"><canvas id="cv"></canvas></div>
+<script>
+const $ = id => document.getElementById(id);
+window.onerror = m => { $('selftest').textContent = 'FAIL ' + m; };
+const N = 24, NN = N*N*N, GRID_BYTES = NN*4, XF_BYTES = 68, G = 9.8, MU = 0.6, DT = 1/120;
+const SELFTEST = location.search.includes('selftest');
+
+// ---- small vector / quaternion math --------------------------------------
+const add = (a, b) => [a[0]+b[0], a[1]+b[1], a[2]+b[2]], sub = (a, b) => [a[0]-b[0], a[1]-b[1], a[2]-b[2]];
+const scl = (a, s) => [a[0]*s, a[1]*s, a[2]*s], dot = (a, b) => a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
+const cross = (a, b) => [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+const len = a => Math.hypot(a[0], a[1], a[2]), norm = a => scl(a, 1/(len(a) || 1));
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+function quatMat(q) { // row-major 3x3
+  const [x, y, z, w] = q;
+  return [1-2*(y*y+z*z), 2*(x*y-z*w), 2*(x*z+y*w), 2*(x*y+z*w), 1-2*(x*x+z*z), 2*(y*z-x*w), 2*(x*z-y*w), 2*(y*z+x*w), 1-2*(x*x+y*y)];
+}
+const mv = (R, v) => [R[0]*v[0]+R[1]*v[1]+R[2]*v[2], R[3]*v[0]+R[4]*v[1]+R[5]*v[2], R[6]*v[0]+R[7]*v[1]+R[8]*v[2]];
+const mtv = (R, v) => [R[0]*v[0]+R[3]*v[1]+R[6]*v[2], R[1]*v[0]+R[4]*v[1]+R[7]*v[2], R[2]*v[0]+R[5]*v[1]+R[8]*v[2]];
+function qmul(a, b) {
+  return [a[3]*b[0]+a[0]*b[3]+a[1]*b[2]-a[2]*b[1], a[3]*b[1]-a[0]*b[2]+a[1]*b[3]+a[2]*b[0],
+          a[3]*b[2]+a[0]*b[1]-a[1]*b[0]+a[2]*b[3], a[3]*b[3]-a[0]*b[0]-a[1]*b[1]-a[2]*b[2]];
+}
+const axisAngle = (ax, a) => { const n = norm(ax), s = Math.sin(a/2); return [n[0]*s, n[1]*s, n[2]*s, Math.cos(a/2)]; };
+
+// ---- terrain: one analytic SDF -------------------------------------------
+function sdBox(x, y, z, bx, by, bz) {
+  const qx = Math.abs(x)-bx, qy = Math.abs(y)-by, qz = Math.abs(z)-bz;
+  return Math.hypot(Math.max(qx, 0), Math.max(qy, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qy, qz), 0);
+}
+function terrain(x, y, z) {
+  const ground = y - (x < -3 ? 0.15*(-3-x) : 0);              // flat floor, rising slope to the west
+  const ledge = sdBox(x-6, y-1, z, 3, 1, 6);                   // quarry ledge, top at y=2
+  const pit = sdBox(x-6, y-1.5, z-3, 1.5, 1, 1.5);             // a quarried-out pit in the ledge
+  return Math.max(Math.min(ground, ledge), -pit);              // union = min, subtract = max(d, -cut)
+}
+function gradT(x, y, z) {
+  const e = 0.01;
+  return norm([terrain(x+e, y, z)-terrain(x-e, y, z), terrain(x, y+e, z)-terrain(x, y-e, z), terrain(x, y, z+e)-terrain(x, y, z-e)]);
+}
+
+// ---- object fields: one N^3 grid per object, in its own body frame --------
+const smin = (a, b, k) => { const h = clamp(.5 + .5*(b-a)/k, 0, 1); return b + (a-b)*h - k*h*(1-h); };
+const SHAPES = {
+  block:  {ext: 0.6, dens: 2500, col: [0.72, 0.68, 0.6],  f: (x, y, z) => sdBox(x, y, z, 0.55, 0.35, 0.35) - 0.05},
+  small:  {ext: 0.4, dens: 2500, col: [0.62, 0.6, 0.56],  f: (x, y, z) => sdBox(x, y, z, 0.36, 0.26, 0.26) - 0.04},
+  log:    {ext: 0.9, dens: 700,  col: [0.55, 0.36, 0.2],  f: (x, y, z) => { const dx = Math.abs(x)-0.9, dr = Math.hypot(y, z)-0.3;
+            return Math.hypot(Math.max(dx, 0), Math.max(dr, 0)) + Math.min(Math.max(dx, dr), 0); }},
+  statue: {ext: 0.75, dens: 2600, col: [0.88, 0.87, 0.84], f: (x, y, z) => smin(smin(Math.hypot(x, y+0.2, z)-0.4, Math.hypot(x, y-0.42, z)-0.23, 0.12),
+            sdBox(x, y+0.62, z, 0.36, 0.08, 0.36), 0.08)},
+};
+let objs, nextId, contacts = 0, ms = 0, paused = false, hover = null;
+
+function idx(i, j, k) { return (k*N + j)*N + i; }
+function makeObj(kind, pos, q) {
+  const S = SHAPES[kind], h = S.ext*23/19, cell = 2*h/(N-1), g0 = [-h, -h, -h], grid = new Float32Array(NN); // 2-cell margin
+  for (let k = 0; k < N; k++) for (let j = 0; j < N; j++) for (let i = 0; i < N; i++)
+    grid[idx(i, j, k)] = S.f(g0[0]+i*cell, g0[1]+j*cell, g0[2]+k*cell);
+  const o = {id: nextId++, kind, parent: 0, col: S.col, dens: S.dens, grid, cell, g0, pos, q, R: quatMat(q), v: [0, 0, 0], w: [0, 0, 0], rest: 0, sleep: false};
+  rebuild(o); objs.push(o); return o;
+}
+function gsample(o, x, y, z) { // trilinear in the grid; outside the box add distance to the box
+  const c = o.cell, L = c*(N-1), lx = x-o.g0[0], ly = y-o.g0[1], lz = z-o.g0[2];
+  const cx = clamp(lx, 0, L), cy = clamp(ly, 0, L), cz = clamp(lz, 0, L);
+  const fx = cx/c, fy = cy/c, fz = cz/c, i = Math.min(N-2, fx|0), j = Math.min(N-2, fy|0), k = Math.min(N-2, fz|0);
+  const tx = fx-i, ty = fy-j, tz = fz-k, g = o.grid, a = idx(i, j, k), NJ = N, NK = N*N;
+  const l = (p, q) => p + (q-p)*tx;
+  const d = (l(g[a], g[a+1])*(1-ty) + l(g[a+NJ], g[a+NJ+1])*ty)*(1-tz) + (l(g[a+NK], g[a+NK+1])*(1-ty) + l(g[a+NK+NJ], g[a+NK+NJ+1])*ty)*tz;
+  return d + Math.hypot(lx-cx, ly-cy, lz-cz);
+}
+function ggrad(o, p) {
+  const e = o.cell*0.5, [x, y, z] = p;
+  return norm([gsample(o, x+e, y, z)-gsample(o, x-e, y, z), gsample(o, x, y+e, z)-gsample(o, x, y-e, z), gsample(o, x, y, z+e)-gsample(o, x, y, z-e)]);
+}
+function occSum(grid, c) { let m = 0; for (let n = 0; n < NN; n++) m += clamp(.5 - grid[n]/c, 0, 1); return m; }
+function rebuild(o) { // mass, centre of mass, inertia from the grid; re-centre frame on COM; surface points; mesh
+  const c = o.cell, g = o.grid, vol = c*c*c;
+  let m = 0, sx = 0, sy = 0, sz = 0, xx = 0, yy = 0, zz = 0;
+  for (let k = 0; k < N; k++) for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const w = clamp(.5 - g[idx(i, j, k)]/c, 0, 1); if (!w) continue;   // occupancy of the node's cell
+    const x = o.g0[0]+i*c, y = o.g0[1]+j*c, z = o.g0[2]+k*c;
+    m += w; sx += w*x; sy += w*y; sz += w*z; xx += w*x*x; yy += w*y*y; zz += w*z*z;
+  }
+  const com = [sx/m, sy/m, sz/m], s = vol*o.dens;
+  // ponytail: diagonal inertia only (products of inertia dropped); full tensor if lopsided pieces spin wrong
+  o.m = m*s; o.invI = [1/((yy+zz - m*(com[1]**2+com[2]**2))*s), 1/((xx+zz - m*(com[0]**2+com[2]**2))*s), 1/((xx+yy - m*(com[0]**2+com[1]**2))*s)];
+  o.g0 = sub(o.g0, com); o.pos = add(o.pos, mv(o.R, com));
+  const pts = []; let rad = 0;
+  for (let k = 1; k < N-1; k++) for (let j = 1; j < N-1; j++) for (let i = 1; i < N-1; i++) {
+    const n = idx(i, j, k);
+    if (g[n] >= 0 || (g[n-1] < 0 && g[n+1] < 0 && g[n-N] < 0 && g[n+N] < 0 && g[n-N*N] < 0 && g[n+N*N] < 0)) continue;
+    const p = [o.g0[0]+i*c, o.g0[1]+j*c, o.g0[2]+k*c], q = sub(p, scl(ggrad(o, p), g[n]));  // project onto the surface
+    pts.push(q[0], q[1], q[2]); rad = Math.max(rad, len(q));
+  }
+  o.pts = new Float32Array(pts); o.rad = rad;
+  upload(o, nets(g, N, N, N, o.g0, c));
+}
+
+// ---- rigid bodies ---------------------------------------------------------
+const toLocal = (o, p) => mtv(o.R, sub(p, o.pos));
+const Iinv = (o, u) => { const b = mtv(o.R, u); return mv(o.R, [b[0]*o.invI[0], b[1]*o.invI[1], b[2]*o.invI[2]]); };
+const velAt = (o, r) => add(o.v, cross(o.w, r));
+const kTerm = (o, r, n) => 1/o.m + dot(n, cross(Iinv(o, cross(r, n)), r));
+function wake(o) { o.sleep = false; o.rest = 0; }
+function applyImp(o, J, r) { o.v = add(o.v, scl(J, 1/o.m)); o.w = add(o.w, Iinv(o, cross(r, J))); if (o.sleep) wake(o); }
+function solve([A, B, p, n]) { // B = null means terrain (static); n points out of B / terrain
+  const rA = sub(p, A.pos), rB = B && sub(p, B.pos);
+  const rel = () => B ? sub(velAt(A, rA), velAt(B, rB)) : velAt(A, rA);
+  let vr = rel(); const vn = dot(vr, n); if (vn >= 0) return;
+  const jn = -vn/(kTerm(A, rA, n) + (B ? kTerm(B, rB, n) : 0));
+  applyImp(A, scl(n, jn), rA); if (B) applyImp(B, scl(n, -jn), rB);
+  vr = rel(); const vt = sub(vr, scl(n, dot(vr, n))), lt = len(vt); if (lt < 1e-6) return;
+  const t = scl(vt, 1/lt), jt = Math.min(lt/(kTerm(A, rA, t) + (B ? kTerm(B, rB, t) : 0)), MU*jn); // Coulomb clamp
+  applyImp(A, scl(t, -jt), rA); if (B) applyImp(B, scl(t, jt), rB);
+}
+function step(dt) {
+  for (const o of objs) {
+    if (o.sleep) continue;
+    o.v[1] -= G*dt; o.pos = add(o.pos, scl(o.v, dt));
+    const dq = qmul([o.w[0], o.w[1], o.w[2], 0], o.q);
+    o.q = o.q.map((x, i) => x + 0.5*dt*dq[i]); const ql = Math.hypot(...o.q); o.q = o.q.map(x => x/ql); o.R = quatMat(o.q);
+  }
+  const C = [];
+  for (const o of objs) {                         // object surface points against the terrain field
+    if (o.sleep) continue;
+    const R = o.R, P = o.pts, [px, py, pz] = o.pos;
+    for (let i = 0; i < P.length; i += 3) {
+      const lx = P[i], ly = P[i+1], lz = P[i+2];
+      const x = px + R[0]*lx + R[1]*ly + R[2]*lz, y = py + R[3]*lx + R[4]*ly + R[5]*lz, z = pz + R[6]*lx + R[7]*ly + R[8]*lz;
+      const d = terrain(x, y, z); if (d < 0) C.push([o, null, [x, y, z], gradT(x, y, z), d]);
+    }
+  }
+  for (let a = 0; a < objs.length; a++) for (let b = a+1; b < objs.length; b++) { // object-object: A's points in B's local field
+    const A = objs[a], B = objs[b];
+    if ((A.sleep && B.sleep) || len(sub(A.pos, B.pos)) > A.rad + B.rad) continue;
+    for (const [P, Q] of [[A, B], [B, A]]) {
+      const pts = P.pts;
+      for (let i = 0; i < pts.length; i += 3) {
+        const w = add(P.pos, mv(P.R, [pts[i], pts[i+1], pts[i+2]])), l = toLocal(Q, w), d = gsample(Q, l[0], l[1], l[2]);
+        if (d < 0) C.push([P, Q, w, mv(Q.R, ggrad(Q, l)), d]);
+      }
+    }
+  }
+  for (let it = 0; it < 4; it++) for (const c of C) solve(c);
+  const deep = new Map();                           // position fix: push each body out along its deepest contact
+  for (const c of C) if (!deep.has(c[0]) || c[4] < deep.get(c[0])[4]) deep.set(c[0], c);
+  for (const [A, [, B, , n, d]] of deep) {
+    const wa = B && !B.sleep ? (1/A.m)/(1/A.m + 1/B.m) : 1;
+    A.pos = add(A.pos, scl(n, -d*wa)); if (B && wa < 1) B.pos = add(B.pos, scl(n, d*(1-wa)));
+  }
+  for (const o of objs) {
+    if (o.sleep) continue;
+    o.v = scl(o.v, 0.999); o.w = scl(o.w, 0.995);
+    // ponytail: sleep threshold instead of a real resting-contact solver
+    if (deep.has(o) && len(o.v) < 0.12 && len(o.w) < 0.25) { if (++o.rest > 30) { o.sleep = true; o.v = [0, 0, 0]; o.w = [0, 0, 0]; } }
+    else o.rest = 0;
+  }
+  contacts = C.length;
+}
+
+// ---- tools (UI handlers and selftest both call these) ---------------------
+function doCarve(o, p, r) {
+  const q = toLocal(o, p), c = o.cell; let changed = 0;
+  for (let k = 0; k < N; k++) for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const n = idx(i, j, k), v = Math.max(o.grid[n], r - Math.hypot(o.g0[0]+i*c-q[0], o.g0[1]+j*c-q[1], o.g0[2]+k*c-q[2]));
+    if (v !== o.grid[n]) { o.grid[n] = v; changed++; }
+  }
+  rebuild(o); wake(o); return changed;
+}
+function doSplit(o, p, nW) {
+  const lp = toLocal(o, p), ln = mtv(o.R, nW), c = o.cell;
+  const grids = [1, -1].map(s => {
+    const g = new Float32Array(NN);
+    for (let k = 0; k < N; k++) for (let j = 0; j < N; j++) for (let i = 0; i < N; i++)
+      g[idx(i, j, k)] = Math.max(o.grid[idx(i, j, k)], s*((o.g0[0]+i*c-lp[0])*ln[0] + (o.g0[1]+j*c-lp[1])*ln[1] + (o.g0[2]+k*c-lp[2])*ln[2]));
+    return g;
+  });
+  const m0 = occSum(o.grid, c);
+  if (grids.some(g => occSum(g, c) < 0.02*m0)) return null;          // plane missed the object
+  const kids = grids.map((grid, n) => {
+    const k = {id: nextId++, kind: o.kind, parent: o.id, col: o.col, dens: o.dens, grid, cell: c, g0: o.g0.slice(),
+               pos: o.pos.slice(), q: o.q.slice(), R: o.R.slice(), v: add(o.v, scl(nW, n ? 0.4 : -0.4)), w: o.w.slice(), rest: 0, sleep: false};
+    rebuild(k); return k;
+  });
+  gl.deleteBuffer(o.buf); gl.deleteVertexArray(o.vao);
+  objs.splice(objs.indexOf(o), 1, ...kids); if (hover === o) hover = null;
+  return kids;
+}
+function doPush(o, p, dir) { applyImp(o, scl(dir, o.m*4), sub(p, o.pos)); wake(o); }
+function applyTool(tool, hit, rd) {
+  if (tool === 'carve') return doCarve(hit.o, hit.p, +$('rad').value);
+  if (tool === 'split') return doSplit(hit.o, hit.p, camBasis().r);
+  return doPush(hit.o, hit.p, rd);
+}
+function pick(ro, rd) { // sphere-trace the min of all fields
+  let t = 0.1;
+  for (let it = 0; it < 200 && t < 120; it++) {
+    const p = add(ro, scl(rd, t)); let d = terrain(...p), hit = null;
+    for (const o of objs) {
+      const bd = len(sub(p, o.pos)) - o.rad - o.cell;
+      const od = bd > 0.1 ? bd : (l => gsample(o, l[0], l[1], l[2]))(toLocal(o, p));
+      if (od < d) { d = od; hit = o; }
+    }
+    if (d < 0.003) return hit && {o: hit, p};
+    t += d;
+  }
+  return null;
+}
+function reset() {
+  objs = []; nextId = 1;
+  makeObj('block', [-1, 3, 0], axisAngle([1, 0, 1], 0.5));
+  makeObj('small', [-0.9, 5.5, 0.1], axisAngle([0, 1, 0], 0.7));
+  makeObj('log', [6, 3.5, -3], axisAngle([0, 1, 0.2], 0.6));
+  makeObj('statue', [-5, 2.2, 3], [0, 0, 0, 1]);
+  makeObj('small', [6.2, 3.2, 3], axisAngle([1, 1, 0], 0.4));
+}
+
+// ---- meshing: surface nets over any grid (terrain samples or an object grid) ----
+function nets(v, nx, ny, nz, o, c) {
+  const st = [1, nx, nx*ny], D = [nx, ny, nz], cid = new Int32Array(nx*ny*nz).fill(-1), V = [], out = [], cv = new Float32Array(8);
+  for (let k = 0; k < nz-1; k++) for (let j = 0; j < ny-1; j++) for (let i = 0; i < nx-1; i++) {
+    const base = (k*ny + j)*nx + i; let m = 0;
+    for (let b = 0; b < 8; b++) { cv[b] = v[base + (b&1) + (b>>1&1)*nx + (b>>2&1)*nx*ny]; if (cv[b] < 0) m |= 1 << b; }
+    if (m === 0 || m === 255) continue;
+    let sx = 0, sy = 0, sz = 0, n = 0;
+    for (let a = 0; a < 8; a++) for (const e of [1, 2, 4]) {
+      const b = a | e; if (a & e || (m >> a & 1) === (m >> b & 1)) continue;
+      const t = cv[a]/(cv[a]-cv[b]);
+      sx += (a&1) + ((b&1)-(a&1))*t; sy += (a>>1&1) + ((b>>1&1)-(a>>1&1))*t; sz += (a>>2&1) + ((b>>2&1)-(a>>2&1))*t; n++;
+    }
+    const gx = cv[1]-cv[0]+cv[3]-cv[2]+cv[5]-cv[4]+cv[7]-cv[6], gy = cv[2]-cv[0]+cv[3]-cv[1]+cv[6]-cv[4]+cv[7]-cv[5];
+    const gz = cv[4]-cv[0]+cv[5]-cv[1]+cv[6]-cv[2]+cv[7]-cv[3], gl = Math.hypot(gx, gy, gz) || 1;
+    cid[base] = V.length;
+    V.push([o[0]+(i+sx/n)*c, o[1]+(j+sy/n)*c, o[2]+(k+sz/n)*c, gx/gl, gy/gl, gz/gl]);
+  }
+  for (let k = 0; k < nz; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    const p = [i, j, k], n0 = (k*ny + j)*nx + i;
+    for (let ax = 0; ax < 3; ax++) {
+      const b = (ax+1)%3, e = (ax+2)%3;
+      if (p[ax] >= D[ax]-1 || p[b] < 1 || p[e] < 1 || p[b] > D[b]-2 || p[e] > D[e]-2) continue;
+      if ((v[n0] < 0) === (v[n0 + st[ax]] < 0)) continue;
+      const q = [cid[n0], cid[n0-st[b]], cid[n0-st[b]-st[e]], cid[n0-st[e]]].map(x => V[x]);
+      for (const t of [0, 1, 2, 0, 2, 3]) out.push(...q[t]);   // two-sided lighting, so winding is irrelevant
+    }
+  }
+  return new Float32Array(out);
+}
+
+// ---- GL -------------------------------------------------------------------
+const cv = $('cv'), gl = cv.getContext('webgl2', {preserveDrawingBuffer: true, antialias: false});
+function sh(type, src) { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw gl.getShaderInfoLog(s); return s; }
+const prog = gl.createProgram();
+gl.attachShader(prog, sh(gl.VERTEX_SHADER, `#version 300 es
+layout(location=0) in vec3 aP; layout(location=1) in vec3 aN;
+uniform mat4 uVP, uM; out vec3 vN, vW;
+void main(){ vec4 w = uM*vec4(aP,1.); vW = w.xyz; vN = mat3(uM)*aN; gl_Position = uVP*w; }`));
+gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, `#version 300 es
+precision highp float; in vec3 vN, vW; uniform vec3 uCol; uniform float uFlat, uTerr; out vec4 oC;
+void main(){
+  if (uFlat > .5) { oC = vec4(uCol,1.); return; }
+  vec3 n = normalize(vN), c = uCol;
+  if (uTerr > .5) c = mix(vec3(.45,.5,.32), vec3(.62,.56,.46)*(.88+.12*sin(vW.y*9.)), smoothstep(.75,.6,n.y)); // grass on flats, strata on faces
+  float d = max(dot(n, normalize(vec3(.4,1.,.3))), 0.);
+  oC = vec4(c*(.3 + .15*n.y + .7*d), 1.);
+}`));
+gl.linkProgram(prog); if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw gl.getProgramInfoLog(prog);
+const U = {}; for (const u of ['uVP', 'uM', 'uCol', 'uFlat', 'uTerr']) U[u] = gl.getUniformLocation(prog, u);
+function upload(o, data) {
+  if (!o.vao) { o.vao = gl.createVertexArray(); o.buf = gl.createBuffer(); gl.bindVertexArray(o.vao); gl.bindBuffer(gl.ARRAY_BUFFER, o.buf);
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 24, 0);
+    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 24, 12); }
+  gl.bindBuffer(gl.ARRAY_BUFFER, o.buf); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW); o.nv = data.length/6;
+}
+const TER = {};
+{ const c = 0.25, o = [-12, -2, -8], nx = 97, ny = 29, nz = 65, v = new Float32Array(nx*ny*nz);
+  for (let k = 0; k < nz; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) v[(k*ny + j)*nx + i] = terrain(o[0]+i*c, o[1]+j*c, o[2]+k*c);
+  upload(TER, nets(v, nx, ny, nz, o, c)); }
+const BOX = {vao: gl.createVertexArray()};
+{ const L = []; for (let a = 0; a < 8; a++) for (const e of [1, 2, 4]) if (!(a & e)) { const b = a | e; L.push(a&1, a>>1&1, a>>2&1, b&1, b>>1&1, b>>2&1); }
+  gl.bindVertexArray(BOX.vao); gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer()); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(L), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0); }
+
+// ---- camera (RTS orbit) ----------------------------------------------------
+const cam = {t: [1, 1, 0], yaw: 0.6, pitch: 0.55, dist: 18}, FOV = 0.9;
+function camBasis() {
+  const e = add(cam.t, scl([Math.cos(cam.pitch)*Math.sin(cam.yaw), Math.sin(cam.pitch), Math.cos(cam.pitch)*Math.cos(cam.yaw)], cam.dist));
+  const f = norm(sub(cam.t, e)), r = norm(cross(f, [0, 1, 0])), u = cross(r, f);
+  return {e, f, r, u};
+}
+function modelMat(R, p, s = 1, off = [0, 0, 0]) { // column-major: [R*s | p + R*off]
+  const t = add(p, mv(R, off));
+  return new Float32Array([R[0]*s, R[3]*s, R[6]*s, 0, R[1]*s, R[4]*s, R[7]*s, 0, R[2]*s, R[5]*s, R[8]*s, 0, t[0], t[1], t[2], 1]);
+}
+function viewProj() {
+  const {e, f, r, u} = camBasis(), a = cv.width/cv.height, F = 1/Math.tan(FOV/2), n = 0.1, fa = 300;
+  const V = [r[0], u[0], -f[0], 0, r[1], u[1], -f[1], 0, r[2], u[2], -f[2], 0, -dot(r, e), -dot(u, e), dot(f, e), 1];
+  const P = [F/a, 0, 0, 0, 0, F, 0, 0, 0, 0, (fa+n)/(n-fa), -1, 0, 0, 2*fa*n/(n-fa), 0], M = new Float32Array(16);
+  for (let c = 0; c < 4; c++) for (let rr = 0; rr < 4; rr++) { let s = 0; for (let k = 0; k < 4; k++) s += P[k*4+rr]*V[c*4+k]; M[c*4+rr] = s; }
+  return M;
+}
+function mouseRay(e) {
+  const b = cv.getBoundingClientRect(), x = (e.clientX - b.left)/cv.width*2 - 1, y = 1 - (e.clientY - b.top)/cv.height*2;
+  const {e: eye, f, r, u} = camBasis(), t = Math.tan(FOV/2);
+  return [eye, norm(add(f, add(scl(r, x*t*cv.width/cv.height), scl(u, y*t))))];
+}
+
+// ---- render ----------------------------------------------------------------
+const BG = [20, 22, 27];
+function render() {
+  gl.viewport(0, 0, cv.width, cv.height); gl.clearColor(BG[0]/255, BG[1]/255, BG[2]/255, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT); gl.enable(gl.DEPTH_TEST);
+  gl.useProgram(prog); gl.uniformMatrix4fv(U.uVP, false, viewProj());
+  const draw = (o, M, col, flat, terr, mode, n) => {
+    gl.uniformMatrix4fv(U.uM, false, M); gl.uniform3fv(U.uCol, col); gl.uniform1f(U.uFlat, flat); gl.uniform1f(U.uTerr, terr);
+    gl.bindVertexArray(o.vao); gl.drawArrays(mode, 0, n);
+  };
+  draw(TER, modelMat([1, 0, 0, 0, 1, 0, 0, 0, 1], [0, 0, 0]), [1, 1, 1], 0, 1, gl.TRIANGLES, TER.nv);
+  for (const o of objs) {
+    draw(o, modelMat(o.R, o.pos), o === hover ? o.col.map(x => Math.min(1, x*1.3 + 0.1)) : o.col, 0, 0, gl.TRIANGLES, o.nv);
+    if ($('cFrames').checked) draw(BOX, modelMat(o.R, o.pos, o.cell*(N-1), o.g0), o === hover ? [1, 1, 1] : [1, 0.84, 0.37], 1, 0, gl.LINES, 24);
+  }
+}
+function inspect() {
+  const o = hover, f = a => a.map(x => x.toFixed(2)).join(', ');
+  $('hover').textContent = !o ? 'Hover an object.' :
+    `#${o.id} ${o.kind}   parent ${o.parent ? '#' + o.parent : 'none'}\nmass     ${o.m.toFixed(0)} kg${o.sleep ? '  (asleep)' : ''}\npos      ${f(o.pos)}\nquat     ${f(o.q)}\nvel      ${f(o.v)}\nang vel  ${f(o.w)}\ngrid     ${N}³, cell ${(o.cell*100).toFixed(1)} cm\nbytes    ${GRID_BYTES} grid + ${XF_BYTES} transform\nsurface  ${o.pts.length/3} sample points`;
+}
+function stats() {
+  const n = objs.length;
+  $('stats').textContent = 'objects          ' + n + '\nbytes / grid     ' + GRID_BYTES + '  (' + N + '³ × 4)\n  + transform    ' + XF_BYTES +
+    '\nTOTAL memory     ' + n*(GRID_BYTES + XF_BYTES) + ' B\ncontacts / step  ' + contacts + '\nstep ms          ' + ms.toFixed(2);
+}
+
+// ---- UI --------------------------------------------------------------------
+function resize() { cv.width = $('main').clientWidth; cv.height = $('main').clientHeight; }
+let drag = null;
+cv.oncontextmenu = e => e.preventDefault();
+cv.onmousedown = e => { drag = {x: e.clientX, y: e.clientY, pan: e.button === 2 || e.shiftKey, moved: 0}; };
+window.onmouseup = e => {
+  if (drag && !drag.pan && drag.moved < 4 && e.target === cv) {
+    const [ro, rd] = mouseRay(e), hit = pick(ro, rd); if (hit) applyTool($('tool').value, hit, rd);
+  }
+  drag = null;
+};
+window.onmousemove = e => {
+  if (drag) {
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY; drag.moved += Math.abs(dx) + Math.abs(dy);
+    if (drag.pan) { const {r, f} = camBasis(), fh = norm([f[0], 0, f[2]]), k = cam.dist*0.002; cam.t = add(cam.t, add(scl(r, -dx*k), scl(fh, dy*k))); }
+    else { cam.yaw -= dx*0.006; cam.pitch = clamp(cam.pitch + dy*0.006, 0.05, 1.5); }
+  } else if (e.target === cv) { const [ro, rd] = mouseRay(e), h = pick(ro, rd); hover = h && h.o; }
+};
+cv.addEventListener('wheel', e => { e.preventDefault(); cam.dist = clamp(cam.dist*Math.exp(e.deltaY*0.001), 3, 80); }, {passive: false});
+$('rad').oninput = () => { $('radv').textContent = $('rad').value; };
+$('bDrop').onclick = () => makeObj('block', add(cam.t, [0, 5, 0]), axisAngle([Math.random(), 1, Math.random()], Math.random()*3));
+$('bPause').onclick = () => { paused = !paused; $('bPause').textContent = paused ? 'resume' : 'pause'; };
+$('bReset').onclick = () => { for (const o of objs) { gl.deleteBuffer(o.buf); gl.deleteVertexArray(o.vao); } hover = null; reset(); };
+window.onresize = resize;
+
+function frame() {
+  if (!paused && !SELFTEST) { const t0 = performance.now(); step(DT); step(DT); ms = (performance.now() - t0)/2; }
+  render(); inspect(); stats(); requestAnimationFrame(frame);
+}
+
+// ---- selftest --------------------------------------------------------------
+function selftest() {
+  const out = $('selftest');
+  try {
+    const o = objs[0];                                          // block dropped from y=3, tilted, with another block landing on it
+    let steps = 0;
+    while (steps < 2400 && !(o.sleep && objs.every(x => x.sleep))) { step(DT); steps++; }
+    let minT = 1e9; const P = o.pts;
+    for (let i = 0; i < P.length; i += 3) { const w = add(o.pos, mv(o.R, [P[i], P[i+1], P[i+2]])); minT = Math.min(minT, terrain(...w)); }
+    if (!(Math.abs(o.v[1]) < 0.05)) throw 'block did not come to rest, vy=' + o.v[1];
+    if (!(o.pos[1] < 2.5)) throw 'block did not fall, y=' + o.pos[1];
+    if (!(minT > -0.02)) throw 'block penetrates terrain by ' + (-minT).toFixed(3);
+    const p = add(o.pos, mv(o.R, [P[0], P[1], P[2]])), t0 = terrain(...p), g0 = o.grid.slice();
+    const changed = applyTool('carve', {o, p}, [0, -1, 0]);
+    let diff = 0; for (let i = 0; i < NN; i++) if (g0[i] !== o.grid[i]) diff++;
+    if (!changed || diff !== changed) throw 'carve did not change the local grid';
+    if (terrain(...p) !== t0) throw 'carve changed the terrain';
+    const n0 = objs.length, m0 = o.m, kids = applyTool('split', {o, p: o.pos.slice()}, [0, -1, 0]);
+    if (!kids || objs.length !== n0 + 1) throw 'split did not add one object';
+    const ms = kids[0].m + kids[1].m, err = Math.abs(ms - m0)/m0;
+    if (!(err < 0.02)) throw 'split masses ' + ms + ' vs ' + m0;
+    if (kids.some(k => k.parent !== o.id)) throw 'children do not record parent';
+    render(); stats();
+    const px = new Uint8Array(cv.width*cv.height*4); gl.readPixels(0, 0, cv.width, cv.height, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    let lit = 0; for (let i = 0; i < px.length; i += 4) if (Math.abs(px[i]-BG[0]) + Math.abs(px[i+1]-BG[1]) + Math.abs(px[i+2]-BG[2]) > 12) lit++;
+    if (lit < 100) throw 'render shows only background (' + lit + ' px)';
+    const ge = gl.getError(); if (ge !== gl.NO_ERROR) throw 'gl error ' + ge;
+    out.textContent = `PASS rest after ${steps} steps vy=${o.v[1].toFixed(3)} minSDF=${minT.toFixed(3)}, carve ${diff} cells terrain same, split ${n0}->${objs.length} mass err ${(err*100).toFixed(2)}%, ${lit} px`;
+  } catch (e) { out.textContent = 'FAIL ' + e; }
+}
+resize(); reset();
+requestAnimationFrame(frame);
+if (SELFTEST) selftest();
+</script></body></html>

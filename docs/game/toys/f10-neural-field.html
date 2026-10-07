@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>F10 · Neural field</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; display: flex; height: 100vh; background: #12141a; color: #d8dbe2;
+         font: 13px/1.4 system-ui, sans-serif; }
+  #side { width: 320px; flex: none; overflow-y: auto; padding: 12px 14px; background: #1a1d25;
+          border-right: 1px solid #2a2e3a; }
+  #side h1 { font-size: 17px; margin: 6px 0 8px; }
+  #side h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: #8a93a8;
+             margin: 14px 0 4px; }
+  #side p, #side ul { margin: 4px 0; }
+  #side ul { padding-left: 18px; }
+  a { color: #7fb0ff; }
+  label { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
+  label span.v { margin-left: auto; color: #fff; min-width: 28px; text-align: right; }
+  input[type=range] { flex: 1; }
+  button, select { background: #2a2f3d; color: #e4e7ee; border: 1px solid #3a4052; border-radius: 4px;
+                   padding: 4px 8px; font: inherit; cursor: pointer; }
+  button:hover { background: #343a4c; }
+  .row { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
+  #stats { font: 12px/1.5 ui-monospace, monospace; background: #12141a; padding: 6px 8px; border-radius: 4px;
+           white-space: pre-wrap; }
+  #note { color: #ffcf7a; min-height: 1em; }
+  #main { flex: 1; display: flex; flex-direction: column; padding: 12px; gap: 10px; min-width: 0; }
+  .views { display: flex; gap: 12px; justify-content: center; }
+  .view { display: flex; flex-direction: column; gap: 4px; }
+  .view canvas { width: min(calc((100vw - 380px) / 2), calc(100vh - 230px)); aspect-ratio: 1 / 1;
+                 image-rendering: pixelated; border: 1px solid #2a2e3a; background: #000; }
+  #target { cursor: crosshair; }
+  #lossc { width: 100%; height: 150px; border: 1px solid #2a2e3a; background: #0d0f14; }
+  #selftest { position: fixed; right: 4px; bottom: 2px; margin: 0; font-size: 10px; color: #6a7286; }
+</style>
+</head>
+<body>
+<div id="side">
+  <a href="index.html">← all toys</a>
+  <h1>F10 · Neural field</h1>
+  <h2>What it is</h2>
+  <p>A small neural network (a stack of multiply-add-then-bend layers) <b>is</b> the world: you ask it f(x,y) and it answers "how much rock is here".
+     We overfit it (train it until it memorises) to one hand-painted world, so its weights become a compressed copy of the grid.
+     The coordinates are first turned into wiggles (Fourier features: sines at many frequencies) or looked up in small learnable grids (hash grid) so the network can draw sharp detail.</p>
+
+  <h2>Controls</h2>
+  <div class="row">
+    <button id="play">▶ Play</button>
+    <button id="step">Step ×100</button>
+    <button id="reinit">Reset network</button>
+  </div>
+  <label>Encoding
+    <select id="enc"><option value="fourier">Fourier features</option><option value="hash">Hash grid (Instant-NGP style, simplified)</option></select></label>
+  <label>Frequencies <input type="range" id="nf" min="1" max="64" value="16"><span class="v" id="nfv"></span></label>
+  <label>Hidden width <input type="range" id="width" min="8" max="64" step="8" value="32"><span class="v" id="widthv"></span></label>
+  <label>Activation <select id="act"><option value="sine">sine</option><option value="relu">ReLU</option></select></label>
+  <label><input type="checkbox" id="half"> store weights as half floats (2 bytes)</label>
+  <h2>Paint the target (left canvas)</h2>
+  <label>Brush <select id="mat"><option value="1">rock A (hard)</option><option value="0.55">rock B (soft)</option><option value="0">erase (air)</option></select></label>
+  <label>Size <input type="range" id="brush" min="1" max="16" value="5"><span class="v" id="brushv"></span></label>
+  <div class="row">
+    <button id="edit">Edit after training (carve hole)</button>
+    <button id="resetT">Reset target</button>
+  </div>
+  <div id="note"></div>
+
+  <h2>Live stats</h2>
+  <div id="stats"></div>
+
+  <h2>Good at</h2>
+  <ul>
+    <li>High compression of one hand-crafted world (weights ≪ grid).</li>
+    <li>Continuous: sample at any resolution, between cells.</li>
+    <li>Smooth, plausible in-betweens instead of blocky cells.</li>
+  </ul>
+  <h2>Bad at</h2>
+  <ul>
+    <li>Edits: the network doesn't know until you retrain or add a patch on top.</li>
+    <li>Slow queries: thousands of multiply-adds vs one memory read.</li>
+    <li>Training time, and it never quite hits exact edges.</li>
+  </ul>
+  <p><b>In 3D / for our game:</b> bake the hand-built, untouched mountain into a network for storage/streaming; keep quarried and carved regions as a grid of residual patches on top.</p>
+</div>
+
+<div id="main">
+  <div class="views">
+    <div class="view"><div>Target: 128×128 hand-crafted grid (paint here)</div><canvas id="target" width="128" height="128"></canvas></div>
+    <div class="view"><div>Network reconstruction f(x,y)</div><canvas id="recon" width="128" height="128"></canvas></div>
+  </div>
+  <div>Loss (MSE per training step, log scale)</div>
+  <canvas id="lossc"></canvas>
+</div>
+<pre id="selftest"></pre>
+
+<script>
+"use strict";
+const N = 128;                 // target grid side
+const HASH_F = 2;              // features per grid entry
+const L0_RES = 16;             // dense coarse level: 17x17 vertices
+const L1_RES = 64, HASH_T = 2048; // fine level: 65x65 vertices hashed into 2048 slots
+const BATCH = 128, LR = 0.005, LR_GRID = 0.03, SIGMA = 6;
+
+const $ = id => document.getElementById(id);
+const target = new Float32Array(N * N);
+const pred = new Float32Array(N * N);
+
+// ---------- target ----------
+function makeDefaultTarget() {
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const surface = 40 + 12 * Math.sin(x * 0.05) + 6 * Math.sin(x * 0.17 + 1);
+    let v = 0;
+    if (y > surface && x > 6 && x < 122) {
+      const band = Math.floor((y + 5 * Math.sin(x * 0.08)) / 9) % 2;
+      v = band ? 1 : 0.55;
+    }
+    const dx = (x - 64) / 22, dy = (y - 128) / 42;   // arch carved from the bottom
+    if (dx * dx + dy * dy < 1) v = 0;
+    target[y * N + x] = v;
+  }
+}
+
+function paint(cx, cy, r, val) {
+  for (let y = Math.max(0, cy - r); y <= Math.min(N - 1, cy + r); y++)
+    for (let x = Math.max(0, cx - r); x <= Math.min(N - 1, cx + r); x++)
+      if ((x - cx) ** 2 + (y - cy) ** 2 <= r * r) target[y * N + x] = val;
+}
+
+// ---------- network state ----------
+let cfg = { enc: "fourier", nf: 16, W: 32, act: "sine", half: false };
+let D, P, G, M, V, adamT, B, off, lossHist;
+
+function rng(seed) { // mulberry32
+  return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+}
+
+function mlpParams(D, W) { return D * W + W + W * W + W + W + 1; }
+function gridEntries() { return (L0_RES + 1) ** 2 + HASH_T; }
+function paramCount() { return mlpParams(D, cfg.W) + (cfg.enc === "hash" ? gridEntries() * HASH_F : 0); }
+
+function build(seed = 1) {
+  const r = rng(seed), W = cfg.W;
+  D = cfg.enc === "fourier" ? 2 * cfg.nf : 2 * HASH_F;
+  // Fourier frequencies: fixed random 2D Gaussian vectors (not trained)
+  B = new Float32Array(cfg.nf * 2);
+  for (let i = 0; i < B.length; i++) {
+    const g = Math.sqrt(-2 * Math.log(r() + 1e-9)) * Math.cos(2 * Math.PI * r());
+    B[i] = g * SIGMA;
+  }
+  off = { W1: 0 }; off.b1 = off.W1 + D * W; off.W2 = off.b1 + W; off.b2 = off.W2 + W * W;
+  off.W3 = off.b2 + W; off.b3 = off.W3 + W; off.grid = off.b3 + 1;
+  const n = paramCount();
+  P = new Float32Array(n); G = new Float32Array(n); M = new Float32Array(n); V = new Float32Array(n); adamT = 0;
+  const u = (o, cnt, s) => { for (let i = 0; i < cnt; i++) P[o + i] = (r() * 2 - 1) * s; };
+  u(off.W1, D * W, cfg.enc === "fourier" ? Math.sqrt(6 / D) : 1);
+  u(off.W2, W * W, Math.sqrt(6 / W));
+  u(off.W3, W, Math.sqrt(6 / W));
+  if (cfg.enc === "hash") u(off.grid, n - off.grid, 0.1);
+  lossHist = [];
+  allocScratch();
+}
+
+// ---------- forward / backward ----------
+let e, a1, h1, a2, h2, da2, dh1, de, cIdx, cW;
+function allocScratch() {
+  const W = cfg.W;
+  e = new Float32Array(D); de = new Float32Array(D);
+  a1 = new Float32Array(W); h1 = new Float32Array(W); a2 = new Float32Array(W); h2 = new Float32Array(W);
+  da2 = new Float32Array(W); dh1 = new Float32Array(W);
+  cIdx = new Int32Array(8); cW = new Float32Array(8); // 2 levels x 4 corners
+}
+
+function hashSlot(ix, iy) { return ((ix * 1) ^ Math.imul(iy, 2654435761 | 0)) >>> 0 & (HASH_T - 1); }
+
+function encode(x, y) {
+  if (cfg.enc === "fourier") {
+    for (let k = 0; k < cfg.nf; k++) {
+      const t = 2 * Math.PI * (B[2 * k] * x + B[2 * k + 1] * y);
+      e[2 * k] = Math.sin(t); e[2 * k + 1] = Math.cos(t);
+    }
+    return;
+  }
+  e.fill(0);
+  for (let lv = 0; lv < 2; lv++) {
+    const R = lv ? L1_RES : L0_RES;
+    const px = x * R, py = y * R;
+    const ix = Math.min(R - 1, Math.floor(px)), iy = Math.min(R - 1, Math.floor(py));
+    const fx = px - ix, fy = py - iy;
+    for (let c = 0; c < 4; c++) {
+      const cx = ix + (c & 1), cy = iy + (c >> 1);
+      const slot = lv ? (L0_RES + 1) ** 2 + hashSlot(cx, cy) : cy * (L0_RES + 1) + cx;
+      const w = ((c & 1) ? fx : 1 - fx) * ((c >> 1) ? fy : 1 - fy);
+      cIdx[lv * 4 + c] = off.grid + slot * HASH_F; cW[lv * 4 + c] = w;
+      for (let f = 0; f < HASH_F; f++) e[lv * HASH_F + f] += w * P[off.grid + slot * HASH_F + f];
+    }
+  }
+}
+
+const sine = cfg => cfg.act === "sine";
+function forward(x, y) {
+  const W = cfg.W, s = sine(cfg);
+  encode(x, y);
+  for (let j = 0; j < W; j++) {
+    let a = P[off.b1 + j]; const o = off.W1 + j * D;
+    for (let i = 0; i < D; i++) a += P[o + i] * e[i];
+    a1[j] = a; h1[j] = s ? Math.sin(a) : (a > 0 ? a : 0);
+  }
+  let z = P[off.b3];
+  for (let j = 0; j < W; j++) {
+    let a = P[off.b2 + j]; const o = off.W2 + j * W;
+    for (let i = 0; i < W; i++) a += P[o + i] * h1[i];
+    a2[j] = a; h2[j] = s ? Math.sin(a) : (a > 0 ? a : 0);
+    z += P[off.W3 + j] * h2[j];
+  }
+  return 1 / (1 + Math.exp(-z));
+}
+
+// dz = dLoss/dz (pre-sigmoid). Accumulates into G.
+function backward(dz) {
+  const W = cfg.W, s = sine(cfg);
+  G[off.b3] += dz;
+  for (let j = 0; j < W; j++) {
+    G[off.W3 + j] += dz * h2[j];
+    const dh = dz * P[off.W3 + j];
+    da2[j] = dh * (s ? Math.cos(a2[j]) : (a2[j] > 0 ? 1 : 0));
+  }
+  dh1.fill(0);
+  for (let j = 0; j < W; j++) {
+    const d = da2[j], o = off.W2 + j * W; if (d === 0) continue;
+    G[off.b2 + j] += d;
+    for (let i = 0; i < W; i++) { G[o + i] += d * h1[i]; dh1[i] += d * P[o + i]; }
+  }
+  const hash = cfg.enc === "hash";
+  if (hash) de.fill(0);
+  for (let j = 0; j < W; j++) {
+    const d = dh1[j] * (s ? Math.cos(a1[j]) : (a1[j] > 0 ? 1 : 0)), o = off.W1 + j * D;
+    if (d === 0) continue;
+    G[off.b1 + j] += d;
+    for (let i = 0; i < D; i++) { G[o + i] += d * e[i]; if (hash) de[i] += d * P[o + i]; }
+  }
+  if (hash) for (let k = 0; k < 8; k++) {
+    const lv = k >> 2;
+    for (let f = 0; f < HASH_F; f++) G[cIdx[k] + f] += cW[k] * de[lv * HASH_F + f];
+  }
+}
+
+function adam(scale) {
+  adamT++;
+  const b1 = 0.9, b2 = 0.99, c1 = 1 - b1 ** adamT, c2 = 1 - b2 ** adamT;
+  for (let i = 0; i < P.length; i++) {
+    const g = G[i] * scale;
+    M[i] = b1 * M[i] + (1 - b1) * g; V[i] = b2 * V[i] + (1 - b2) * g * g;
+    const lr = i >= off.grid ? LR_GRID : LR;
+    P[i] -= lr * (M[i] / c1) / (Math.sqrt(V[i] / c2) + 1e-8);
+  }
+}
+
+// Train N minibatch steps; sigmoid + cross-entropy gradient (p - t), MSE reported.
+function trainSteps(n) {
+  let last = 0;
+  for (let s = 0; s < n; s++) {
+    G.fill(0); let loss = 0;
+    for (let b = 0; b < BATCH; b++) {
+      const k = (Math.random() * N * N) | 0, t = target[k];
+      const p = forward(((k % N) + 0.5) / N, (((k / N) | 0) + 0.5) / N);
+      loss += (p - t) ** 2;
+      backward(p - t);
+    }
+    adam(1 / BATCH);
+    last = loss / BATCH; lossHist.push(last);
+  }
+  if (lossHist.length > 4000) lossHist = lossHist.filter((_, i) => i % 2 === 0);
+  return last;
+}
+
+// Full-grid evaluation: fills pred[], returns {mse, err%}
+function evaluate() {
+  let mse = 0, abs = 0;
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const p = forward((x + 0.5) / N, (y + 0.5) / N), k = y * N + x;
+    pred[k] = p; mse += (p - target[k]) ** 2; abs += Math.abs(p - target[k]);
+  }
+  return { mse: mse / (N * N), err: 100 * abs / (N * N) };
+}
+
+// ---------- drawing ----------
+function color(v, out, o) {
+  const A = [15, 20, 35], Bm = [150, 110, 80], C = [215, 195, 160];
+  let c0, c1, t;
+  if (v < 0.55) { c0 = A; c1 = Bm; t = Math.max(0, v) / 0.55; } else { c0 = Bm; c1 = C; t = Math.min(1, (v - 0.55) / 0.45); }
+  for (let i = 0; i < 3; i++) out[o + i] = c0[i] + (c1[i] - c0[i]) * t;
+  out[o + 3] = 255;
+}
+function drawGrid(canvas, arr) {
+  const ctx = canvas.getContext("2d"), img = ctx.createImageData(N, N);
+  for (let k = 0; k < N * N; k++) color(arr[k], img.data, k * 4);
+  ctx.putImageData(img, 0, 0);
+}
+function drawLoss() {
+  const c = $("lossc"), ctx = c.getContext("2d");
+  c.width = c.clientWidth; c.height = c.clientHeight;
+  ctx.clearRect(0, 0, c.width, c.height);
+  if (lossHist.length < 2) return;
+  const lo = Math.log10(1e-4), hi = Math.log10(0.5);
+  ctx.strokeStyle = "#7fb0ff"; ctx.beginPath();
+  for (let i = 0; i < lossHist.length; i++) {
+    const x = i / (lossHist.length - 1) * c.width;
+    const yv = (Math.log10(Math.max(1e-4, lossHist[i])) - lo) / (hi - lo);
+    const y = c.height * (1 - Math.min(1, yv));
+    i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+  }
+  ctx.stroke();
+  ctx.fillStyle = "#8a93a8"; ctx.fillText(`steps: ${adamT}  last: ${lossHist[lossHist.length - 1].toFixed(4)}`, 6, 14);
+}
+
+let lastEval = { mse: 0, err: 0 };
+function render() {
+  lastEval = evaluate();
+  drawGrid($("target"), target);
+  drawGrid($("recon"), pred);
+  drawLoss();
+  updateStats();
+}
+
+function updateStats() {
+  const W = cfg.W, n = paramCount(), bpp = cfg.half ? 2 : 4, bytes = n * bpp, gridBytes = N * N;
+  const mlp = mlpParams(D, W);
+  const encMacs = cfg.enc === "fourier" ? 2 * cfg.nf : 2 * 4 * HASH_F;
+  const macs = encMacs + D * W + W * W + W;
+  const formula = cfg.enc === "fourier"
+    ? `D·W+W + W·W+W + W+1, D=2·${cfg.nf}`
+    : `MLP + ((17²)+${HASH_T})·${HASH_F} grid`;
+  $("stats").textContent =
+`params      ${n}  (${formula})
+  mlp ${mlp}${cfg.enc === "hash" ? `, grid ${n - mlp}` : `, +${cfg.nf * 2} fixed freqs`}
+net bytes   ${bytes} = ${n} × ${bpp}
+grid bytes  ${gridBytes} = 128² × 1
+compression ${(gridBytes / bytes).toFixed(2)}× ${bytes < gridBytes ? "smaller" : "(net is BIGGER)"}
+query cost  ~${macs} mult-adds + ${2 * W + (cfg.enc === "fourier" ? 2 * cfg.nf : 0)} sin/cos
+            vs grid: 1 memory read
+recon error ${lastEval.err.toFixed(2)} %  (mean |f - target|)
+MSE         ${lastEval.mse.toFixed(4)}   steps ${adamT}`;
+}
+
+// ---------- UI actions (selftest calls these too) ----------
+let running = false;
+function rebuild() { build(); render(); }
+function setEncoding(v) { cfg.enc = v; $("enc").value = v; rebuild(); }
+function setCfg(k, v) { cfg[k] = v; rebuild(); }
+function editAfterTraining() {
+  const before = lastEval.err;
+  paint(30, 82, 12, 0); paint(98, 70, 8, 0);
+  setRunning(false); render();
+  $("note").textContent = `Target edited: two holes carved. The network still draws the old rock — error ${before.toFixed(2)}% → ${lastEval.err.toFixed(2)}%. ` +
+    `It only learns the edit by retraining (press Play) or by storing a residual patch on top: the write-back problem.`;
+}
+function resetTarget() { makeDefaultTarget(); $("note").textContent = ""; render(); }
+function setRunning(r) { running = r; $("play").textContent = r ? "⏸ Pause" : "▶ Play"; }
+
+let lastRender = 0;
+function loop() {
+  if (running) {
+    trainSteps(15);
+    const now = performance.now();
+    if (now - lastRender > 200) { render(); lastRender = now; }
+  }
+  requestAnimationFrame(loop);
+}
+
+function syncLabels() {
+  $("nfv").textContent = cfg.nf; $("widthv").textContent = cfg.W; $("brushv").textContent = $("brush").value;
+  $("nf").disabled = cfg.enc !== "fourier";
+}
+
+$("play").onclick = () => setRunning(!running);
+$("step").onclick = () => { trainSteps(100); render(); };
+$("reinit").onclick = () => build(Math.random() * 1e9 | 0) || render();
+$("enc").onchange = ev => { setEncoding(ev.target.value); syncLabels(); };
+$("nf").oninput = ev => { setCfg("nf", +ev.target.value); syncLabels(); };
+$("width").oninput = ev => { setCfg("W", +ev.target.value); syncLabels(); };
+$("act").onchange = ev => setCfg("act", ev.target.value);
+$("half").onchange = ev => { cfg.half = ev.target.checked; updateStats(); };
+$("brush").oninput = syncLabels;
+$("edit").onclick = editAfterTraining;
+$("resetT").onclick = resetTarget;
+let painting = false;
+function paintAt(ev) {
+  const r = $("target").getBoundingClientRect();
+  const x = Math.floor((ev.clientX - r.left) / r.width * N), y = Math.floor((ev.clientY - r.top) / r.height * N);
+  paint(x, y, +$("brush").value, +$("mat").value);
+  drawGrid($("target"), target);
+}
+$("target").onpointerdown = ev => { painting = true; $("target").setPointerCapture(ev.pointerId); paintAt(ev); };
+$("target").onpointermove = ev => { if (painting) paintAt(ev); };
+$("target").onpointerup = () => { painting = false; render(); };
+window.onresize = drawLoss;
+
+// ---------- selftest ----------
+function selftest() {
+  const t0 = performance.now(), out = [];
+  const check = (c, msg) => { if (!c) throw new Error(msg); };
+  // Fourier + sine
+  cfg = { enc: "fourier", nf: 16, W: 32, act: "sine", half: false }; build(1);
+  const f0 = evaluate().mse; trainSteps(400); const f1 = evaluate().mse;
+  check(f1 < 0.5 * f0, `fourier loss ${f0.toFixed(4)} -> ${f1.toFixed(4)}`);
+  check(paramCount() === 2 * 16 * 32 + 32 + 32 * 32 + 32 + 32 + 1 && P.length === paramCount(), "fourier param count");
+  out.push(`fourier ${f0.toFixed(3)}->${f1.toFixed(3)}`);
+  // hash grid
+  setEncoding("hash"); build(1);
+  const h0 = evaluate().mse; trainSteps(400); const h1v = evaluate().mse;
+  check(h1v < 0.5 * h0, `hash loss ${h0.toFixed(4)} -> ${h1v.toFixed(4)}`);
+  check(paramCount() === 4 * 32 + 32 + 32 * 32 + 32 + 32 + 1 + (17 * 17 + HASH_T) * 2, "hash param count");
+  out.push(`hash ${h0.toFixed(3)}->${h1v.toFixed(3)}`);
+  // edit after training makes the network stale
+  render(); const before = lastEval.err; editAfterTraining();
+  check(lastEval.err > before, "edit did not raise error");
+  out.push(`edit err ${before.toFixed(1)}%->${lastEval.err.toFixed(1)}%`);
+  const ms = performance.now() - t0;
+  check(ms < 5000, `too slow ${ms | 0}ms`);
+  $("selftest").textContent = `PASS ${out.join(", ")}, params ${paramCount()}, ${ms | 0}ms`;
+}
+
+window.onerror = (m) => { $("selftest").textContent = "FAIL " + m; };
+makeDefaultTarget(); build(); syncLabels(); render();
+if (location.search.includes("selftest")) {
+  try { selftest(); } catch (err) { $("selftest").textContent = "FAIL " + err.message; }
+} else requestAnimationFrame(loop);
+</script>
+</body>
+</html>

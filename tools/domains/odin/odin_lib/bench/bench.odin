@@ -1,5 +1,5 @@
 // Microbenchmark wrapper. Runs `fn` N times under core:time, computes
-// min/median/max/stddev, and emits a JSON file alongside an optional spall trace.
+// min/median/max/stddev, and emits a JSON file.
 package bench
 
 import "core:encoding/json"

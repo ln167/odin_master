@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Tetrahedral mesh toy</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;display:flex;height:100vh;background:#14161a;color:#d8dce2;font:13px/1.45 system-ui,sans-serif}
+#side{width:320px;flex:none;padding:12px 14px;overflow-y:auto;background:#1c1f25;border-right:1px solid #2c3038}
+#main{flex:1;min-width:0}
+canvas{display:block;width:100%;height:100%;cursor:crosshair}
+h1{font-size:18px;margin:6px 0}
+h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#8a93a3;margin:14px 0 4px}
+a{color:#7fb0ff}
+p,ul{margin:4px 0}ul{padding-left:18px}
+label{display:block;margin:6px 0}
+input[type=range]{width:100%}
+button{background:#2d3340;color:#d8dce2;border:1px solid #444c5c;padding:5px 10px;border-radius:4px;cursor:pointer}
+button:hover{background:#3a4252}
+table{width:100%;border-collapse:collapse}td{padding:1px 0}td+td{text-align:right;font-variant-numeric:tabular-nums}
+.f{color:#9aa3b2;font-size:11px}
+#selftest{font-size:10px;color:#667;margin:10px 0 0;white-space:pre-wrap}
+</style></head><body>
+<div id="side">
+<a href="index.html">&larr; all toys</a>
+<h1>Tetrahedral mesh (2D: triangles)</h1>
+<h2>What it is</h2>
+<p>The rock's inside is filled with small elements (tetrahedra in 3D, triangles here), the way engineers mesh a part for finite-element (FEM) simulation. Each element carries its own data (material, damage), and the shared faces between elements are where cracks can run.</p>
+<h2>Controls</h2>
+<p class="f">Click the rock to strike it.</p>
+<label>Impact energy: <b id="ev">6</b><input id="energy" type="range" min="1" max="10" step="0.5" value="6"></label>
+<label><input id="explode" type="checkbox" checked> Explode view (pull pieces apart)</label>
+<label><input id="interior" type="checkbox" checked> Show interior data (damage heatmap; off = material)</label>
+<button id="reset">Reset rock</button>
+<h2>Live stats</h2>
+<table>
+<tr><td>Vertices</td><td id="sv"></td></tr>
+<tr><td>Triangles</td><td id="st"></td></tr>
+<tr><td>Bonds intact</td><td id="si"></td></tr>
+<tr><td>Bonds broken</td><td id="sb"></td></tr>
+<tr><td>Pieces</td><td id="sp"></td></tr>
+<tr><td>Memory (2D)</td><td id="sm"></td></tr>
+<tr><td>Memory (3D equiv.)</td><td id="s3"></td></tr>
+</table>
+<p class="f">2D bytes = verts &times; 8 + tris &times; (12 idx + 1 material + 4 damage).<br>3D bytes = verts &times; 12 + tets &times; (16 + 5).</p>
+<p class="f">Materials: <span style="color:#b98a5a">soft sandstone</span>, <span style="color:#8c98a8">granite</span>, <span style="color:#6d8a5c">hard flint</span>. A bond (shared edge) breaks when both triangles beside it are over 50% damaged.</p>
+<h2>Good at</h2>
+<ul><li>Interior data per element (material, damage, stress).</li><li>Cracks along element faces; exact-ish shape with few elements.</li></ul>
+<h2>Bad at</h2>
+<ul><li>Cracks limited to element faces: jaggy unless refined.</li><li>Building and refining tet meshes is hard.</li></ul>
+<h2>In 3D / for our game</h2>
+<p>Great for a few hero rocks that must break believably; too costly to mesh and refine for a whole mountain.</p>
+<pre id="selftest"></pre>
+</div>
+<div id="main"><canvas id="cv"></canvas></div>
+<script>
+const W = 800, H = 600, MAT_COL = ['#b98a5a', '#8c98a8', '#6d8a5c'], HARD = [1.3, 1.0, 0.6], THR = 0.5;
+const R0 = 30, RK = 5, PEAK = 0.9; // falloff radius = R0 + RK*energy; centre damage = energy/10*PEAK*HARD
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+const $ = id => document.getElementById(id);
+let rngState = 7;
+const rnd = () => (rngState = (Math.imul(rngState, 1664525) + 1013904223) >>> 0) / 4294967296;
+
+// irregular rock outline (world coords)
+const outline = [];
+for (let k = 0; k < 14; k++) {
+  const a = k / 14 * Math.PI * 2, r = 215 + Math.sin(k * 2.3) * 40 + rnd() * 25;
+  outline.push([400 + Math.cos(a) * r * 1.2, 300 + Math.sin(a) * r * 0.95]);
+}
+function inside(x, y) {
+  let c = false;
+  for (let i = 0, j = outline.length - 1; i < outline.length; j = i++) {
+    const [xi, yi] = outline[i], [xj, yj] = outline[j];
+    if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) c = !c;
+  }
+  return c;
+}
+
+let verts, tris, edgeList, centroid; // edge: {a,b,t:[tri ids],broken}
+let pieceOf, pieceCount, pieceOff;
+
+function build() {
+  rngState = 7;
+  const S = 38, cols = 19, rows = 16, x0 = 30, y0 = 0, grid = [];
+  for (let j = 0; j <= rows; j++) for (let i = 0; i <= cols; i++)
+    grid.push([x0 + i * S + (rnd() - .5) * S * .45, y0 + j * S + (rnd() - .5) * S * .45]);
+  const g = (i, j) => j * (cols + 1) + i, raw = [];
+  for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
+    const a = g(i, j), b = g(i + 1, j), c = g(i, j + 1), d = g(i + 1, j + 1);
+    if ((i + j) % 2) raw.push([a, b, d], [a, d, c]); else raw.push([a, b, c], [b, d, c]);
+  }
+  const keep = raw.filter(t => {
+    const cx = (grid[t[0]][0] + grid[t[1]][0] + grid[t[2]][0]) / 3, cy = (grid[t[0]][1] + grid[t[1]][1] + grid[t[2]][1]) / 3;
+    return inside(cx, cy);
+  });
+  const remap = new Map(); verts = [];
+  tris = keep.map(t => ({
+    v: t.map(id => { if (!remap.has(id)) { remap.set(id, verts.length); verts.push(grid[id]); } return remap.get(id); }),
+    mat: 0, dmg: 0
+  }));
+  tris.forEach(t => {
+    const x = (verts[t.v[0]][0] + verts[t.v[1]][0] + verts[t.v[2]][0]) / 3, y = (verts[t.v[0]][1] + verts[t.v[1]][1] + verts[t.v[2]][1]) / 3;
+    t.cx = x; t.cy = y;
+    const m = Math.sin(x * .016) + Math.cos(y * .02 + x * .006); // smooth patches of material
+    t.mat = m > .7 ? 2 : m < -.5 ? 0 : 1;
+  });
+  const edges = new Map();
+  tris.forEach((t, ti) => {
+    for (let k = 0; k < 3; k++) {
+      const a = t.v[k], b = t.v[(k + 1) % 3], key = a < b ? a + ',' + b : b + ',' + a;
+      if (!edges.has(key)) edges.set(key, { a, b, t: [], broken: false });
+      edges.get(key).t.push(ti);
+    }
+  });
+  edgeList = [...edges.values()];
+  centroid = [tris.reduce((s, t) => s + t.cx, 0) / tris.length, tris.reduce((s, t) => s + t.cy, 0) / tris.length];
+  findPieces();
+}
+
+// a bond = an edge shared by two triangles
+const isBond = e => e.t.length === 2;
+
+function impact(x, y, energy) {
+  const R = R0 + energy * RK;
+  for (const t of tris) {
+    const d = Math.hypot(t.cx - x, t.cy - y);
+    t.dmg = Math.min(1, t.dmg + energy / 10 * PEAK * Math.exp(-(d * d) / (R * R)) * HARD[t.mat]);
+  }
+  for (const e of edgeList)
+    if (isBond(e) && !e.broken && tris[e.t[0]].dmg > THR && tris[e.t[1]].dmg > THR) e.broken = true;
+  findPieces();
+}
+
+function findPieces() {
+  pieceOf = new Array(tris.length).fill(-1); pieceCount = 0;
+  const nbr = tris.map(() => []);
+  for (const e of edgeList) if (isBond(e) && !e.broken) { nbr[e.t[0]].push(e.t[1]); nbr[e.t[1]].push(e.t[0]); }
+  const sums = [];
+  for (let s = 0; s < tris.length; s++) {
+    if (pieceOf[s] >= 0) continue;
+    const stack = [s], sum = [0, 0, 0]; pieceOf[s] = pieceCount;
+    while (stack.length) {
+      const i = stack.pop(); sum[0] += tris[i].cx; sum[1] += tris[i].cy; sum[2]++;
+      for (const n of nbr[i]) if (pieceOf[n] < 0) { pieceOf[n] = pieceCount; stack.push(n); }
+    }
+    sums.push(sum); pieceCount++;
+  }
+  // explode offset: push each piece away from the rock centre
+  pieceOff = sums.map(([sx, sy, n]) => {
+    const dx = sx / n - centroid[0], dy = sy / n - centroid[1], l = Math.hypot(dx, dy) || 1;
+    return [dx / l * 22, dy / l * 22];
+  });
+  if (pieceCount === 1) pieceOff[0] = [0, 0];
+  updateStats();
+}
+
+function updateStats() {
+  const bonds = edgeList.filter(isBond), broken = bonds.filter(e => e.broken).length;
+  $('sv').textContent = verts.length; $('st').textContent = tris.length;
+  $('si').textContent = bonds.length - broken; $('sb').textContent = broken; $('sp').textContent = pieceCount;
+  $('sm').textContent = (verts.length * 8 + tris.length * 17) + ' B';
+  $('s3').textContent = (verts.length * 12 + tris.length * 21) + ' B';
+  draw();
+}
+
+let sc = 1, ox = 0, oy = 0;
+function resize() {
+  const r = cv.parentNode.getBoundingClientRect();
+  cv.width = r.width; cv.height = r.height;
+  sc = Math.min(cv.width / (W + 60), cv.height / (H + 60));
+  ox = (cv.width - W * sc) / 2; oy = (cv.height - H * sc) / 2;
+  draw();
+}
+function heat(d) { return 'hsl(' + (220 - d * 220) + ',75%,' + (28 + d * 25) + '%)'; }
+
+function draw() {
+  if (!tris) return;
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  ctx.save(); ctx.translate(ox, oy); ctx.scale(sc, sc);
+  const ex = $('explode').checked, hm = $('interior').checked;
+  const off = ti => ex ? pieceOff[pieceOf[ti]] : [0, 0];
+  tris.forEach((t, ti) => {
+    const [dx, dy] = off(ti), p = t.v.map(i => verts[i]);
+    ctx.beginPath(); ctx.moveTo(p[0][0] + dx, p[0][1] + dy);
+    ctx.lineTo(p[1][0] + dx, p[1][1] + dy); ctx.lineTo(p[2][0] + dx, p[2][1] + dy); ctx.closePath();
+    ctx.fillStyle = hm ? heat(t.dmg) : MAT_COL[t.mat]; ctx.fill();
+  });
+  ctx.lineCap = 'round';
+  for (const e of edgeList) {
+    const A = verts[e.a], B = verts[e.b];
+    if (e.broken) ctx.strokeStyle = '#ff3b30', ctx.lineWidth = 2.5;
+    else if (!isBond(e)) ctx.strokeStyle = '#e8ecf2', ctx.lineWidth = 1.5;
+    else ctx.strokeStyle = 'rgba(0,0,0,.35)', ctx.lineWidth = 0.8;
+    // a broken edge belongs to two triangles (maybe two pieces): draw each side
+    for (const ti of e.broken ? e.t : [e.t[0]]) {
+      const [dx, dy] = off(ti);
+      ctx.beginPath(); ctx.moveTo(A[0] + dx, A[1] + dy); ctx.lineTo(B[0] + dx, B[1] + dy); ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+cv.addEventListener('click', ev => {
+  const r = cv.getBoundingClientRect();
+  impact((ev.clientX - r.left - ox) / sc, (ev.clientY - r.top - oy) / sc, +$('energy').value);
+});
+$('energy').oninput = () => $('ev').textContent = $('energy').value;
+$('explode').onchange = $('interior').onchange = draw;
+$('reset').onclick = build;
+window.addEventListener('resize', resize);
+window.onerror = m => { $('selftest').textContent = 'FAIL ' + m; };
+
+build(); resize();
+
+if (location.search.includes('selftest')) {
+  try {
+    const probe = (x, y, e) => { build(); impact(x, y, e); return pieceCount; };
+    const rx = centroid[0] + 250, ry = centroid[1];
+    const lo = probe(rx, ry, 3), mid = probe(rx, ry, 6), mid2 = probe(centroid[0], centroid[1], 6), hi = probe(centroid[0], centroid[1], 10);
+    if (!(lo <= 3)) throw 'low strike should give <=3 pieces, got ' + lo;
+    if (!(mid >= 2 && mid <= 8)) throw 'medium strike should give 2..8 pieces, got ' + mid;
+    build();
+    const bonds0 = edgeList.filter(e => isBond(e) && !e.broken).length;
+    if (pieceCount !== 1) throw 'fresh rock should be 1 piece, got ' + pieceCount;
+    impact(centroid[0], centroid[1], 10); impact(centroid[0], centroid[1], 10);
+    const broken = edgeList.filter(e => e.broken).length, bonds1 = edgeList.filter(e => isBond(e) && !e.broken).length;
+    if (!(broken > 0 && bonds1 < bonds0)) throw 'big impact broke no bonds';
+    if (!tris.some(t => t.dmg > THR)) throw 'no damage deposited';
+    $('interior').checked = false; $('explode').checked = false; draw();
+    // a strike on the rim should split a piece off the edge
+    impact(centroid[0] + 250, centroid[1], 10); impact(centroid[0] - 250, centroid[1], 10);
+    if (!(pieceCount > 1)) throw 'no extra pieces after impacts';
+    const p = pieceCount; build();
+    if (pieceCount !== 1 || edgeList.some(e => e.broken)) throw 'reset failed';
+    $('selftest').textContent = 'PASS low ' + lo + ', mid ' + mid + ' (centre ' + mid2 + '), max ' + hi + '; ' + tris.length + ' tris, impacts broke ' + broken + '+ bonds -> ' + p + ' pieces, reset ok';
+  } catch (e) { $('selftest').textContent = 'FAIL ' + e; }
+}
+</script></body></html>

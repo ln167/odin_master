@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>f07 Particles: Lagrangian vs Eulerian</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;display:flex;height:100vh;background:#14161a;color:#d6d9de;font:13px/1.45 system-ui,sans-serif}
+#side{width:320px;flex:none;padding:12px 14px;overflow-y:auto;background:#1b1e24;border-right:1px solid #2c3038}
+#main{flex:1;min-width:0}canvas{display:block;width:100%;height:100%}
+a{color:#7fb4ff}h1{font-size:17px;margin:6px 0 8px}h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#8a93a3;margin:14px 0 4px}
+p,ul{margin:4px 0}ul{padding-left:18px}
+button{background:#2b313b;color:#d6d9de;border:1px solid #3d4552;border-radius:4px;padding:4px 9px;margin:0 3px 4px 0;cursor:pointer}
+button:hover{background:#38404c}input[type=range]{width:150px;vertical-align:middle}
+.stat{font-family:ui-monospace,Consolas,monospace;font-size:12px;margin:2px 0}
+#hover{font-family:ui-monospace,Consolas,monospace;font-size:12px;background:#12141a;border:1px solid #2c3038;padding:6px;min-height:78px;white-space:pre-wrap}
+#selftest{font-size:10px;color:#6b7280;margin:10px 0 0;white-space:pre-wrap}
+</style></head><body>
+<div id="side">
+<a href="index.html">&larr; all toys</a>
+<h1>Particles: Lagrangian vs Eulerian</h1>
+<h2>What it is</h2>
+<p>Both panels show the same swirling flow carrying the same stripes. On the left, 2000 particles each carry their own colour and mass (<b>Lagrangian</b>: data rides with the matter). On the right, a fixed grid stores colour per cell and the colour is passed from cell to cell (<b>Eulerian</b>: data stays put, matter flows through).</p>
+<p style="color:#9fb3cf"><i>Lagrangian = a boat riding the river carrying its own sensor (the data moves with the matter). Eulerian = a buoy anchored in place measuring whatever flows past (the data stays put; matter moves through it).</i></p>
+<h2>Controls</h2>
+<button id="bPlay">Pause</button><button id="bStep">Step</button><button id="bReset">Reset</button><button id="bSand">Drop sand</button>
+<div>Grid resolution <input id="res" type="range" min="16" max="128" step="8" value="48"> <span id="resv">48</span></div>
+<h2>Hover</h2>
+<div id="hover">Hover a particle (left) or a cell (right).</div>
+<h2>Live stats</h2>
+<div class="stat" id="sL"></div><div class="stat" id="sR"></div>
+<h2>Particles are good at</h2>
+<ul><li>Motion is free: just add velocity.</li><li>Identity survives: id and colour travel along.</li><li>No smearing: the pattern stays crisp.</li></ul>
+<h2>Particles are bad at</h2>
+<ul><li>Neighbour search needed every step.</li><li>No fixed home for queries ("what is at x?").</li><li>Density gets uneven (clumps, holes).</li></ul>
+<h2>In 3D / for our game:</h2>
+<p>Rubble, crumbs and sand as particles that keep their id and material; a grid only to look up or summarise density.</p>
+<pre id="selftest"></pre>
+</div>
+<div id="main"><canvas id="cv"></canvas></div>
+<script>
+// ---- state ----
+const NP = 2000, STRIPES = 8, DT = 0.02, R = 0.006;
+let N = 48, playing = true, sand = false, time = 0;
+const px = new Float32Array(NP), py = new Float32Array(NP), vx = new Float32Array(NP), vy = new Float32Array(NP);
+const pc = new Float32Array(NP), pm = new Float32Array(NP); // carried colour (0/1), mass
+let grid, grid2, dens;
+const pattern = x => Math.floor(x * STRIPES) % 2;
+
+// analytic flow: differential-rotation vortex around (.5,.5) plus a drift
+function flow(x, y) {
+  const dx = x - 0.5, dy = y - 0.5, w = 3.5 * Math.exp(-(dx * dx + dy * dy) / 0.08);
+  return [-dy * w + 0.04, dx * w];
+}
+const wrap = v => v - Math.floor(v);
+
+function reset() {
+  sand = false; time = 0;
+  for (let i = 0; i < NP; i++) {
+    px[i] = Math.random(); py[i] = Math.random(); vx[i] = vy[i] = 0;
+    pc[i] = pattern(px[i]); pm[i] = 0.5 + Math.random();
+  }
+  initGrid();
+}
+function initGrid() {
+  grid = new Float32Array(N * N); grid2 = new Float32Array(N * N); dens = new Float32Array(N * N);
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) grid[j * N + i] = pattern((i + 0.5) / N);
+}
+
+// ---- flow step ----
+function stepParticles() {
+  for (let i = 0; i < NP; i++) {
+    const [u, v] = flow(px[i], py[i]);
+    const [u2, v2] = flow(px[i] + 0.5 * DT * u, py[i] + 0.5 * DT * v); // midpoint
+    vx[i] = u2; vy[i] = v2;
+    px[i] = wrap(px[i] + DT * u2); py[i] = wrap(py[i] + DT * v2);
+  }
+}
+function sample(g, x, y) { // bilinear, periodic, cell centres at (i+.5)/N
+  const fx = x * N - 0.5, fy = y * N - 0.5, i0 = Math.floor(fx), j0 = Math.floor(fy), tx = fx - i0, ty = fy - j0;
+  const a = (i0 % N + N) % N, b = (i0 + 1) % N, c = (j0 % N + N) % N, d = (j0 + 1) % N;
+  return (g[c * N + a] * (1 - tx) + g[c * N + b] * tx) * (1 - ty) + (g[d * N + a] * (1 - tx) + g[d * N + b] * tx) * ty;
+}
+function stepGrid() { // semi-Lagrangian: look back along the flow
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const x = (i + 0.5) / N, y = (j + 0.5) / N, [u, v] = flow(x, y);
+    grid2[j * N + i] = sample(grid, wrap(x - DT * u), wrap(y - DT * v));
+  }
+  [grid, grid2] = [grid2, grid];
+}
+
+// ---- sand step: gravity + particle-particle repulsion via spatial hash ----
+function stepSand() { // position-based, 4 substeps: move, resolve overlaps, velocity = actual displacement / h
+  const SUB = 4, h = DT / SUB, H = Math.floor(1 / (2 * R)), head = new Int32Array(H * H), next = new Int32Array(NP);
+  const cell = v => Math.min(H - 1, Math.max(0, Math.floor(v * H)));
+  for (let sub = 0; sub < SUB; sub++) {
+    const px0 = px.slice(), py0 = py.slice();
+    for (let i = 0; i < NP; i++) { vy[i] += 1.5 * h; px[i] += vx[i] * h; py[i] += vy[i] * h; }
+    for (let it = 0; it < 2; it++) {
+      head.fill(-1);
+      for (let i = 0; i < NP; i++) { const k = cell(py[i]) * H + cell(px[i]); next[i] = head[k]; head[k] = i; }
+      for (let i = 0; i < NP; i++) {
+        const cx = cell(px[i]), cy = cell(py[i]);
+        for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
+          const X = cx + ox, Y = cy + oy; if (X < 0 || Y < 0 || X >= H || Y >= H) continue;
+          for (let j = head[Y * H + X]; j >= 0; j = next[j]) {
+            if (j <= i) continue;
+            const dx = px[j] - px[i], dy = py[j] - py[i], d2 = dx * dx + dy * dy;
+            if (d2 > 4 * R * R || d2 === 0) continue;
+            const d = Math.sqrt(d2), s = (2 * R - d) / d * 0.5;
+            px[i] -= dx * s; py[i] -= dy * s; px[j] += dx * s; py[j] += dy * s;
+          }
+        }
+      }
+      for (let i = 0; i < NP; i++) { // walls and floor
+        px[i] = Math.min(1 - R, Math.max(R, px[i])); py[i] = Math.min(1 - R, Math.max(R, py[i]));
+      }
+    }
+    for (let i = 0; i < NP; i++) { vx[i] = (px[i] - px0[i]) / h * 0.98; vy[i] = (py[i] - py0[i]) / h * 0.98; }
+  }
+  dens.fill(0); // Eulerian view of the sand: just count mass per cell
+  for (let i = 0; i < NP; i++) dens[Math.min(N - 1, Math.floor(py[i] * N)) * N + Math.min(N - 1, Math.floor(px[i] * N))] += pm[i];
+}
+function step() {
+  time += DT;
+  if (sand) stepSand(); else { stepParticles(); stepGrid(); }
+  updateStats(); draw();
+}
+function dropSand() {
+  sand = true; for (let i = 0; i < NP; i++) { vx[i] = vy[i] = 0; }
+  stepSand(); updateStats(); draw();
+}
+
+// ---- stats ----
+const crisp = v => v < 0.1 || v > 0.9;
+function sharp(a) { let n = 0; for (let i = 0; i < a.length; i++) if (crisp(a[i])) n++; return n / a.length; }
+let sharpP = 1, sharpG = 1;
+function updateStats() {
+  sharpP = sharp(pc); sharpG = sharp(grid);
+  const $ = id => document.getElementById(id);
+  $('sL').innerHTML = `LEFT particles: ${NP}<br>bytes: ${NP} x 21 B = ${NP * 21} B<br>(pos 8 + vel 8 + mass 4 + material 1)<br>sharpness ${(sharpP * 100).toFixed(1)}%  smear ${((1 - sharpP) * 100).toFixed(1)}%`;
+  $('sR').innerHTML = `RIGHT cells: ${N * N} (${N}x${N})<br>bytes: ${N * N} x 1 channel x 4 B = ${N * N * 4} B<br>` +
+    (sand ? 'showing density only (no colour advected)' : `sharpness ${(sharpG * 100).toFixed(1)}%  smear ${((1 - sharpG) * 100).toFixed(1)}%`);
+}
+
+// ---- drawing ----
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d'), off = document.createElement('canvas');
+let S = 100, OX = [0, 0], OY = 0;
+function layout() {
+  cv.width = cv.clientWidth; cv.height = cv.clientHeight;
+  S = Math.max(50, Math.min((cv.width - 60) / 2, cv.height - 80));
+  const gap = (cv.width - 2 * S) / 3; OX = [gap, 2 * gap + S]; OY = (cv.height - S) / 2 + 10;
+}
+const col = c => c > 0.5 ? [230, 140, 50] : [60, 150, 220];
+function draw() {
+  ctx.fillStyle = '#14161a'; ctx.fillRect(0, 0, cv.width, cv.height);
+  ctx.fillStyle = '#0b0c0f'; ctx.fillRect(OX[0], OY, S, S); ctx.fillRect(OX[1], OY, S, S);
+  for (let i = 0; i < NP; i++) {
+    const [r, g, b] = col(pc[i]); ctx.fillStyle = `rgb(${r},${g},${b})`;
+    ctx.fillRect(OX[0] + px[i] * S - 1.5, OY + py[i] * S - 1.5, 3, 3);
+  }
+  off.width = off.height = N; const ic = off.getContext('2d'), im = ic.createImageData(N, N);
+  for (let k = 0; k < N * N; k++) {
+    let r, g, b;
+    if (sand) { const t = Math.min(1, dens[k] / (NP / (N * N) * 3)); r = g = 40 + 200 * t; b = 40 + 120 * t; }
+    else { const c = Math.min(1, Math.max(0, grid[k])); r = 60 + 170 * c; g = 150 - 10 * c; b = 220 - 170 * c; }
+    im.data.set([r, g, b, 255], k * 4);
+  }
+  ic.putImageData(im, 0, 0); ctx.imageSmoothingEnabled = false; ctx.drawImage(off, OX[1], OY, S, S);
+  ctx.fillStyle = '#d6d9de'; ctx.font = '14px system-ui';
+  ctx.fillText('Lagrangian: particles carry their data', OX[0], OY - 10);
+  ctx.fillText('Eulerian: grid cells hold the data', OX[1], OY - 10);
+  ctx.fillStyle = '#8a93a3'; ctx.font = '12px system-ui';
+  ctx.fillText(`${NP} particles, sharpness ${(sharpP * 100).toFixed(0)}%`, OX[0], OY + S + 18);
+  ctx.fillText(sand ? 'density only' : `${N}x${N} cells, sharpness ${(sharpG * 100).toFixed(0)}%`, OX[1], OY + S + 18);
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+  if (hl >= 0) { ctx.beginPath(); ctx.arc(OX[0] + px[hl] * S, OY + py[hl] * S, 6, 0, 7); ctx.stroke(); }
+  if (hc >= 0) ctx.strokeRect(OX[1] + (hc % N) * S / N, OY + Math.floor(hc / N) * S / N, S / N, S / N);
+}
+
+// ---- hover ----
+let hl = -1, hc = -1;
+cv.addEventListener('mousemove', e => {
+  const r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top, h = document.getElementById('hover');
+  hl = hc = -1;
+  const u = (mx - OX[0]) / S, v = (my - OY) / S;
+  if (u >= 0 && u <= 1 && v >= 0 && v <= 1) {
+    let best = 1e9;
+    for (let i = 0; i < NP; i++) { const d = (px[i] - u) ** 2 + (py[i] - v) ** 2; if (d < best) { best = d; hl = i; } }
+    if (Math.sqrt(best) * S > 10) hl = -1;
+  }
+  const u2 = (mx - OX[1]) / S;
+  if (u2 >= 0 && u2 < 1 && v >= 0 && v < 1) hc = Math.floor(v * N) * N + Math.floor(u2 * N);
+  if (hl >= 0) h.textContent = `PARTICLE record\nid: ${hl}  (survives all motion)\nmass: ${pm[hl].toFixed(2)}  material: ${pc[hl] ? 'granite' : 'limestone'}\nvelocity: (${vx[hl].toFixed(3)}, ${vy[hl].toFixed(3)})`;
+  else if (hc >= 0) h.textContent = `CELL record\ncell (${hc % N}, ${Math.floor(hc / N)}): NO id, it is just a place\n` + (sand ? `density: ${dens[hc].toFixed(2)} mass` : `colour value: ${grid[hc].toFixed(3)}  (blurred if not 0 or 1)\nvelocity: ${flow(((hc % N) + .5) / N, (Math.floor(hc / N) + .5) / N).map(a => a.toFixed(3)).join(', ')} (from the field)\nDifferent matter occupies it each step.`);
+  else h.textContent = 'Hover a particle (left) or a cell (right).';
+  draw();
+});
+
+// ---- ui ----
+const $b = id => document.getElementById(id);
+$b('bPlay').onclick = () => { playing = !playing; $b('bPlay').textContent = playing ? 'Pause' : 'Play'; };
+$b('bStep').onclick = step;
+$b('bReset').onclick = () => { reset(); updateStats(); draw(); };
+$b('bSand').onclick = dropSand;
+$b('res').oninput = e => { N = +e.target.value; $b('resv').textContent = N; initGrid(); if (sand) stepSand(); updateStats(); draw(); };
+addEventListener('resize', () => { layout(); draw(); });
+
+// ---- selftest ----
+function selftest() {
+  const out = document.getElementById('selftest');
+  try {
+    reset(); const x0 = px[0];
+    for (let i = 0; i < 200; i++) step();
+    if (px[0] === x0) throw new Error('particles did not move');
+    if (!(sharpP > 0.99)) throw new Error('particle sharpness dropped ' + sharpP);
+    if (!(sharpG < sharpP - 0.05)) throw new Error('grid sharpness did not drop: ' + sharpG);
+    const g1 = sharpG; $b('res').value = 96; $b('res').oninput({ target: $b('res') });
+    if (grid.length !== 96 * 96 || sharp(grid) < 0.99) throw new Error('resize failed');
+    $b('res').value = 48; $b('res').oninput({ target: $b('res') });
+    let my = 0; for (let i = 0; i < NP; i++) my += py[i];
+    dropSand();
+    for (let i = 0; i < 150; i++) step();
+    let my2 = 0, dsum = 0; for (let i = 0; i < NP; i++) my2 += py[i]; for (const d of dens) dsum += d;
+    if (!(my2 > my + 10)) throw new Error('sand did not fall');
+    if (dsum <= 0) throw new Error('no density');
+    out.textContent = `PASS particles moved, sharpness particle 100% vs grid ${(g1 * 100).toFixed(0)}% after 200 steps, sand fell, density ok`;
+  } catch (e) { out.textContent = 'FAIL ' + e.message; }
+}
+window.onerror = (m) => { document.getElementById('selftest').textContent = 'FAIL ' + m; };
+layout(); reset(); updateStats(); draw();
+(function loop() { if (playing && !location.search.includes('selftest')) { step(); step(); } requestAnimationFrame(loop); })();
+if (location.search.includes('selftest')) setTimeout(selftest, 0);
+</script></body></html>

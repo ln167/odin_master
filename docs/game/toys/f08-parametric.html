@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>f08 Parametric surfaces</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;display:flex;height:100vh;background:#14161b;color:#d6d9e0;font:13px/1.4 system-ui,sans-serif;overflow:hidden}
+#side{width:320px;flex:none;padding:12px 14px;overflow-y:auto;background:#1b1e26;border-right:1px solid #2c303b}
+#main{flex:1;position:relative;min-width:0}
+canvas{display:block;width:100%;height:100%;cursor:crosshair}
+h1{font-size:17px;margin:6px 0}h2{font-size:12px;text-transform:uppercase;color:#8fa0c8;margin:14px 0 4px;letter-spacing:.05em}
+a{color:#8fb4ff}p,ul{margin:4px 0}ul{padding-left:18px}
+label{display:block;margin:6px 0 2px}input[type=range]{width:100%}
+button{background:#2b3142;color:#d6d9e0;border:1px solid #444c63;padding:5px 9px;border-radius:4px;cursor:pointer;margin:2px 2px 2px 0}
+button:hover{background:#38405a}
+#stats{font-family:Consolas,monospace;font-size:12px;background:#12141a;padding:6px 8px;border-radius:4px}
+.good{color:#7fd88f}.bad{color:#ef8a8a}
+#selftest{position:fixed;right:4px;bottom:2px;margin:0;font-size:9px;color:#667;opacity:.7}
+</style></head><body>
+<div id="side">
+<a href="index.html">&larr; all toys</a>
+<h1>Parametric surfaces (NURBS / B-spline)</h1>
+<h2>What it is</h2>
+<p>A smooth skin defined by a few control points; the curve is a formula you can evaluate at any density. It is a boundary only, not a filled volume like goo: nothing is stored inside.</p>
+<h2>Controls</h2>
+<p>Drag the white control points. Click empty space to ask "what's inside?".</p>
+<label>Zoom <span id="zv"></span> (centered on the last point you touched)</label>
+<input id="zoom" type="range" min="0" max="100" value="0">
+<label><input id="sub" type="checkbox"> Subdivision curve (Chaikin corner-cutting)</label>
+<label>Subdivision level <span id="lv">0</span></label>
+<input id="level" type="range" min="0" max="6" value="0">
+<button id="carve">Try to carve a hole</button><button id="reset">Reset</button>
+<h2>Live stats</h2>
+<div id="stats"></div>
+<h2>Good at</h2>
+<ul class="good"><li>Tiny data, smooth at any zoom</li><li>Designed / carved art and architecture</li></ul>
+<h2>Bad at</h2>
+<ul class="bad"><li>Topology changes and arbitrary damage</li><li>No interior; booleans need trim curves</li></ul>
+<p><b>In 3D / for our game:</b> use for hand-designed columns and statues, not for rock that gets quarried.</p>
+</div>
+<div id="main"><canvas id="cv"></canvas></div>
+<pre id="selftest"></pre>
+<script>
+const START = [[.30,.95],[.30,.60],[.55,.30],[.60,-.10],[.40,-.55],[.40,-.90],
+               [-.40,-.90],[-.40,-.55],[-.60,-.10],[-.55,.30],[-.30,.60],[-.30,.95]];
+let P = START.map(p => p.slice());
+let zoomV = 0, level = 0, subMode = false, carved = false, focus = 2, drag = -1;
+let probe = null;                       // {x,y,inside}
+const CIRCLE = {x: .56, y: -.05, r: .22};
+let lastCount = 0;                      // evaluated vertices at current zoom
+const cv = document.getElementById('cv'), g = cv.getContext('2d');
+const $ = id => document.getElementById(id);
+const n = () => P.length;
+
+// ---- math ----
+function bsp(i, t) {                    // closed uniform cubic B-spline, segment i
+  const a = P[i % n()], b = P[(i + 1) % n()], c = P[(i + 2) % n()], d = P[(i + 3) % n()];
+  const t2 = t * t, t3 = t2 * t;
+  const w0 = (1 - t) ** 3 / 6, w1 = (3 * t3 - 6 * t2 + 4) / 6, w2 = (-3 * t3 + 3 * t2 + 3 * t + 1) / 6, w3 = t3 / 6;
+  return [w0 * a[0] + w1 * b[0] + w2 * c[0] + w3 * d[0], w0 * a[1] + w1 * b[1] + w2 * c[1] + w3 * d[1]];
+}
+function sampleAll(per) {               // whole curve, per samples per segment
+  const out = [];
+  for (let i = 0; i < n(); i++) for (let k = 0; k < per; k++) out.push(bsp(i, k / per));
+  return out;
+}
+function chaikin(pts, L) {
+  for (; L > 0; L--) {
+    const o = [];
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i], b = pts[(i + 1) % pts.length];
+      o.push([.75 * a[0] + .25 * b[0], .75 * a[1] + .25 * b[1]], [.25 * a[0] + .75 * b[0], .25 * a[1] + .75 * b[1]]);
+    }
+    pts = o;
+  }
+  return pts;
+}
+function inPoly(pts, x, y) {
+  let c = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const [xi, yi] = pts[i], [xj, yj] = pts[j];
+    if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) c = !c;
+  }
+  return c;
+}
+const zoom = () => Math.pow(200, zoomV / 100);
+const scale = () => Math.min(cv.width, cv.height) / 2.4 * zoom();
+function viewCenter() {                 // curve point at the knot of the focused control point
+  const f = (focus + n() - 1) % n(), p = bsp(f, 1), w = Math.min(1, Math.log(zoom()) / Math.log(4));
+  return [p[0] * w, p[1] * w];
+}
+function toScreen(p) { const c = viewCenter(), s = scale(); return [cv.width / 2 + (p[0] - c[0]) * s, cv.height / 2 - (p[1] - c[1]) * s]; }
+function toWorld(x, y) { const c = viewCenter(), s = scale(); return [(x - cv.width / 2) / s + c[0], -(y - cv.height / 2) / s + c[1]]; }
+
+// ---- state changes (UI handlers call these) ----
+function movePoint(i, x, y) { P[i] = [x, y]; focus = i; draw(); }
+function setLevel(l) { level = l; $('level').value = l; draw(); }
+function setZoom(v) { zoomV = v; $('zoom').value = v; draw(); }
+function setSub(b) { subMode = b; $('sub').checked = b; draw(); }
+function doCarve() { carved = true; draw(); }
+function doReset() { P = START.map(p => p.slice()); carved = false; probe = null; focus = 2; zoomV = 0; level = 0; subMode = false; $('zoom').value = 0; $('level').value = 0; $('sub').checked = false; draw(); }
+function askInside(x, y) { probe = {x, y, inside: inPoly(sampleAll(16), x, y)}; draw(); return probe.inside; }
+
+// ---- drawing ----
+function poly(pts, close) { g.beginPath(); pts.forEach((p, i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); if (close) g.closePath(); }
+function resize() { cv.width = cv.clientWidth || 800; cv.height = cv.clientHeight || 600; draw(); }
+function draw() {
+  g.fillStyle = '#14161b'; g.fillRect(0, 0, cv.width, cv.height);
+  const W = cv.width, H = cv.height, pad = 40;
+  const ctrl = P.map(toScreen);
+  let texts = [];
+  if (subMode) {
+    const pts = chaikin(P, level).map(toScreen);
+    lastCount = pts.length;
+    g.strokeStyle = '#3a4258'; g.setLineDash([4, 4]); g.lineWidth = 1; poly(ctrl, true); g.stroke(); g.setLineDash([]);
+    g.strokeStyle = '#3a6a4a'; poly(sampleAll(24).map(toScreen), true); g.stroke();
+    g.strokeStyle = '#ffb454'; g.lineWidth = 2; poly(pts, true); g.stroke();
+    if (pts.length <= 400) { g.fillStyle = '#ffb454'; pts.forEach(p => g.fillRect(p[0] - 2, p[1] - 2, 4, 4)); }
+    texts.push('Chaikin level ' + level + ': ' + pts.length + ' vertices (green = true limit curve)');
+  } else {
+    // per-segment sample count from on-screen length, only for segments touching the view
+    let count = 0, drawn = [];
+    for (let i = 0; i < n(); i++) {
+      const cs = [0, 1, 2, 3].map(k => ctrl[(i + k) % n()]);
+      const minx = Math.min(...cs.map(c => c[0])), maxx = Math.max(...cs.map(c => c[0]));
+      const miny = Math.min(...cs.map(c => c[1])), maxy = Math.max(...cs.map(c => c[1]));
+      if (maxx < -pad || minx > W + pad || maxy < -pad || miny > H + pad) { drawn.push(null); continue; }
+      let len = 0; for (let k = 0; k < 3; k++) len += Math.hypot(cs[k + 1][0] - cs[k][0], cs[k + 1][1] - cs[k][1]);
+      const per = Math.min(4000, Math.max(8, Math.ceil(len / 3)));
+      const seg = []; for (let k = 0; k <= per; k++) seg.push(toScreen(bsp(i, k / per)));
+      count += per; drawn.push(seg);
+    }
+    lastCount = count;
+    g.strokeStyle = '#3a4258'; g.setLineDash([4, 4]); g.lineWidth = 1; poly(ctrl, true); g.stroke(); g.setLineDash([]);
+    g.lineWidth = 2;
+    const cs = toScreen([CIRCLE.x, CIRCLE.y]), cr = CIRCLE.r * scale();
+    const inC = p => Math.hypot(p[0] - cs[0], p[1] - cs[1]) < cr;
+    drawn.forEach(seg => {
+      if (!seg) return;
+      g.strokeStyle = '#6cb6ff'; g.beginPath();
+      let pen = false;
+      for (const p of seg) {
+        if (carved && inC(p)) { pen = false; continue; }
+        pen ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1]); pen = true;
+      }
+      g.stroke();
+    });
+    if (carved) {
+      const poly16 = sampleAll(16);
+      g.strokeStyle = '#ff4d4d'; g.lineWidth = 3; g.beginPath(); let pen = false;
+      for (let a = 0; a <= 128; a++) {      // trim arc: circle part that lies inside the shape
+        const th = a / 128 * 6.2832, wx = CIRCLE.x + CIRCLE.r * Math.cos(th), wy = CIRCLE.y + CIRCLE.r * Math.sin(th);
+        if (!inPoly(poly16, wx, wy)) { pen = false; continue; }
+        const s = toScreen([wx, wy]); pen ? g.lineTo(s[0], s[1]) : g.moveTo(s[0], s[1]); pen = true;
+      }
+      g.stroke();
+      texts.push('TRIM CURVE NEEDED: the result is no longer one B-spline. This is why CAD kernels are huge.');
+    }
+  }
+  g.fillStyle = '#fff';
+  ctrl.forEach((p, i) => { g.beginPath(); g.arc(p[0], p[1], i === focus ? 6 : 4.5, 0, 6.2832); g.fill(); });
+  if (probe) {
+    const s = toScreen([probe.x, probe.y]);
+    g.fillStyle = probe.inside ? '#7fd88f' : '#ef8a8a'; g.beginPath(); g.arc(s[0], s[1], 6, 0, 6.2832); g.fill();
+    texts.push((probe.inside ? 'INSIDE' : 'OUTSIDE') + ': only a yes/no from the outline. No interior data exists (no material, no density).');
+  }
+  g.font = '14px system-ui'; texts.forEach((t, i) => { g.fillStyle = /TRIM/.test(t) ? '#ff5a5a' : '#d6d9e0'; g.fillText(t, 12, 22 + i * 20); });
+  stats();
+}
+function stats() {
+  const z = zoom(), v = subMode ? n() * 2 ** level : lastCount;
+  $('zv').textContent = z.toFixed(1) + 'x'; $('lv').textContent = level;
+  $('stats').innerHTML =
+    'control points: ' + n() + '<br>' +
+    'bytes: ' + n() + ' x 8 = ' + n() * 8 + ' B<br>' +
+    '  (3D NURBS patch 12x8: 96 x 16 = ' + 96 * 16 + ' B)<br>' +
+    (subMode ? 'subdivision vertices: ' + n() + ' x 2^' + level + ' = ' + v + '<br>  (as mesh: ' + v + ' x 8 = ' + v * 8 + ' B)<br>'
+             : 'evaluated vertices at ' + z.toFixed(1) + 'x: ' + v + '<br>') +
+    'still a B-spline? ' + (carved ? '<span class="bad">NO (needs trim curve)</span>' : 'yes') + '<br>' +
+    'interior data: 0 B';
+}
+
+// ---- events ----
+$('zoom').oninput = e => setZoom(+e.target.value);
+$('level').oninput = e => setLevel(+e.target.value);
+$('sub').onchange = e => setSub(e.target.checked);
+$('carve').onclick = doCarve;
+$('reset').onclick = doReset;
+cv.onpointerdown = e => {
+  const r = cv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+  const hit = P.map(toScreen).findIndex(p => Math.hypot(p[0] - x, p[1] - y) < 10);
+  if (hit >= 0) { drag = hit; focus = hit; cv.setPointerCapture(e.pointerId); draw(); }
+  else { const w = toWorld(x, y); askInside(w[0], w[1]); }
+};
+cv.onpointermove = e => { if (drag < 0) return; const r = cv.getBoundingClientRect(), w = toWorld(e.clientX - r.left, e.clientY - r.top); movePoint(drag, w[0], w[1]); };
+cv.onpointerup = () => { drag = -1; };
+window.onresize = resize;
+
+// ---- self test ----
+function selftest() {
+  const out = $('selftest');
+  const fail = m => { out.textContent = 'FAIL ' + m; };
+  window.onerror = m => fail(m);
+  try {
+    doReset();
+    const before = JSON.stringify(sampleAll(8));
+    movePoint(2, .9, .3);
+    if (JSON.stringify(sampleAll(8)) === before) return fail('moving a control point did not change the curve');
+    doReset();
+    setSub(true); setLevel(2); const c2 = chaikin(P, 2).length;
+    setLevel(3); const c3 = chaikin(P, 3).length;
+    if (c3 !== 2 * c2 || c2 !== n() * 4 || lastCount !== c3) return fail('subdivision level+1 did not double vertices ' + c2 + '->' + c3);
+    setSub(false);
+    setZoom(0); const z0 = lastCount; setZoom(100); const z1 = lastCount;
+    if (z1 === z0 || !(z1 > 0)) return fail('zoom did not change evaluated vertex count');
+    setZoom(0);
+    if (!askInside(0, 0)) return fail('origin should be inside');
+    if (askInside(2, 2)) return fail('(2,2) should be outside');
+    doCarve();
+    if (!carved || !/needs trim/.test($('stats').textContent)) return fail('carve did not set trim warning');
+    doReset();
+    out.textContent = 'PASS move changes curve; subdiv ' + c2 + '->' + c3 + '; zoom verts ' + z0 + '->' + z1 + '; inside/outside; carve sets trim warning';
+  } catch (e) { fail(e.message); }
+}
+resize();
+if (location.search.includes('selftest')) selftest();
+</script></body></html>

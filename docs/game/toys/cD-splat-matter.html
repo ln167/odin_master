@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>D: splats as physical matter</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #111418; color: #d8dde3; font: 13px/1.45 system-ui, sans-serif; }
+  body { display: flex; }
+  #side { width: 320px; flex: none; padding: 12px 14px; box-sizing: border-box; overflow-y: auto; background: #181c22; border-right: 1px solid #2a3038; }
+  #main { flex: 1; position: relative; min-width: 0; }
+  canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
+  h1 { font-size: 16px; margin: 6px 0 8px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: #8fa0b3; margin: 14px 0 4px; }
+  a { color: #7fb6ff; }
+  p, ul { margin: 4px 0; }
+  ul { padding-left: 18px; }
+  label { display: block; margin: 4px 0; }
+  select, button { background: #232a33; color: #d8dde3; border: 1px solid #3a4450; border-radius: 4px; padding: 3px 6px; font: inherit; }
+  button { cursor: pointer; }
+  #stats { font: 12px/1.5 ui-monospace, monospace; background: #12161b; padding: 6px 8px; border-radius: 4px; white-space: pre; }
+  #selftest { font: 11px ui-monospace, monospace; color: #6c7a89; margin: 10px 0 0; white-space: pre-wrap; }
+  .hint { color: #8a96a3; font-size: 12px; }
+</style>
+</head>
+<body>
+<div id="side">
+  <a href="index.html">&larr; all toys</a>
+  <h1>D &mdash; splats as physical matter</h1>
+  <h2>What it is</h2>
+  <p>The scene is drawn as a few thousand soft coloured ellipses ("Gaussian splats"), and those same splat centres are the particles of a Material Point Method simulation (particles carry mass; a temporary grid works out forces).
+  Each particle tracks how its neighbourhood has been stretched and sheared (the deformation gradient F), and the splat's shape is bent by the same amount, &Sigma;' = F&Sigma;F&#7488;.
+  So one dataset is both the picture and the physics, with no mesh in between.</p>
+
+  <h2>Controls</h2>
+  <label>Click does:
+    <select id="clickMode"><option value="explode">explode impulse</option><option value="block">drop stone block</option></select>
+  </label>
+  <label>Show:
+    <select id="view"><option value="splats">splats</option><option value="dots">particle dots</option><option value="grid">MPM grid</option></select>
+  </label>
+  <label><input type="checkbox" id="fill" checked> fill interior (unchecked = surface shell only)</label>
+  <button id="reset">reset scene</button> <button id="pause">pause</button>
+  <p class="hint">Drag across the sand to plough through it.</p>
+
+  <h2>Live stats</h2>
+  <div id="stats"></div>
+
+  <h2>Good at</h2>
+  <ul>
+    <li>One dataset for rendering and physics; nothing to keep in sync.</li>
+    <li>No meshing or remeshing, even when the mound splits apart.</li>
+    <li>Granular slumping, ploughing and splashing come out naturally.</li>
+  </ul>
+  <h2>Bad at</h2>
+  <ul>
+    <li>The interior must be filled with splats, or the hollow shell collapses.</li>
+    <li>Cost and memory scale with splat count, including hidden interior ones.</li>
+    <li>Big deformation stretches splats into streaky artefacts (clamped here).</li>
+  </ul>
+  <h2>In 3D / for our game:</h2>
+  <p>Rubble piles and sand could be MPM splats directly, but a quarry face would need millions of filled interior splats; best reserved for the small region that is actually moving.</p>
+  <pre id="selftest"></pre>
+</div>
+<div id="main"><canvas id="cv"></canvas></div>
+
+<script>
+"use strict";
+window.onerror = (msg, src, line) => { document.getElementById('selftest').textContent = 'FAIL error: ' + msg + ' line ' + line; };
+
+// ---------- simulation constants (mpm88/mpm99 style, world = unit square) ----------
+const NG = 64, DX = 1 / NG, INV_DX = NG;
+const DT = 2e-4, SUBSTEPS = 25, GRAVITY = -50;
+const P_VOL = (DX * 0.5) * (DX * 0.5), P_RHO = 1, P_MASS = P_VOL * P_RHO;
+const SPACING = DX * 0.5;
+const MAXP = 6000;
+const SAND = 0, STONE = 1;
+function lame(E, nu) { return [E / (2 * (1 + nu)), E * nu / ((1 + nu) * (1 - 2 * nu))]; }
+const MU_LA = [lame(1500, 0.2), lame(6000, 0.2)];
+const SAND_MIN = 0.975, SAND_MAX = 1.006;     // plastic clamp on singular values of F
+const COV_MAX_GROW = 12;                      // ponytail: crude trace clamp on stretched splats, real fix is resampling
+
+// ---------- particle / splat state (structure of arrays) ----------
+const px = new Float64Array(MAXP), py = new Float64Array(MAXP);
+const vx = new Float64Array(MAXP), vy = new Float64Array(MAXP);
+const C = new Float64Array(MAXP * 4), F = new Float64Array(MAXP * 4);
+const cov = new Float64Array(MAXP * 3), cov0tr = new Float64Array(MAXP);
+const mat = new Uint8Array(MAXP), colR = new Uint8Array(MAXP), colG = new Uint8Array(MAXP), colB = new Uint8Array(MAXP);
+let N = 0;
+
+const gvx = new Float64Array((NG + 1) * (NG + 1)), gvy = new Float64Array((NG + 1) * (NG + 1)), gm = new Float64Array((NG + 1) * (NG + 1));
+
+let fillInterior = true, lastStepMs = 0, paused = false;
+let plough = null; // {x, y, vx, vy} in world units while dragging
+
+// seeded random so selftest is deterministic
+let seed = 1;
+function rnd() { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }
+
+function addParticle(x, y, m, r, g, b) {
+  if (N >= MAXP) return;
+  const i = N++;
+  px[i] = x; py[i] = y; vx[i] = 0; vy[i] = 0; mat[i] = m;
+  C.fill(0, i * 4, i * 4 + 4);
+  F[i * 4] = 1; F[i * 4 + 1] = 0; F[i * 4 + 2] = 0; F[i * 4 + 3] = 1;
+  // rest splat: slightly anisotropic, random orientation
+  const s = SPACING * 0.75, a = s * (0.8 + 0.5 * rnd()), bb = s * (0.8 + 0.5 * rnd()), t = rnd() * Math.PI;
+  const c = Math.cos(t), sn = Math.sin(t);
+  cov[i * 3] = c * c * a * a + sn * sn * bb * bb;
+  cov[i * 3 + 1] = c * sn * (a * a - bb * bb);
+  cov[i * 3 + 2] = sn * sn * a * a + c * c * bb * bb;
+  cov0tr[i] = cov[i * 3] + cov[i * 3 + 2];
+  colR[i] = r; colG[i] = g; colB[i] = b;
+}
+
+function inMound(x, y) { const h = 0.32 * (1 - ((x - 0.42) / 0.3) ** 2); return y > 0.05 && y < 0.05 + h; }
+
+function buildScene(fill) {
+  fillInterior = fill; N = 0; seed = 1;
+  const d = SPACING * 1.6; // shell thickness test distance
+  for (let y = 0.05 + SPACING / 2; y < 0.4; y += SPACING)
+    for (let x = 0.1; x < 0.75; x += SPACING) {
+      if (!inMound(x, y)) continue;
+      const surface = !inMound(x + d, y) || !inMound(x - d, y) || !inMound(x, y + d) || !inMound(x, y - d);
+      if (!fill && !surface) continue;
+      const k = rnd() * 40 + (y - 0.05) * 60;
+      addParticle(x, y, SAND, 190 + k * 0.6, 150 + k * 0.5, 90 + k * 0.3);
+    }
+  dropBlock(0.85, 0.12, 0.1);
+}
+
+function dropBlock(cx, cy, size) {
+  const s = size || 0.08;
+  for (let y = cy - s / 2; y < cy + s / 2; y += SPACING)
+    for (let x = cx - s / 2; x < cx + s / 2; x += SPACING) {
+      const k = rnd() * 30;
+      addParticle(x, y, STONE, 110 + k, 112 + k, 120 + k);
+    }
+}
+
+function explode(cx, cy) {
+  const R = 0.14, S = 9;
+  for (let i = 0; i < N; i++) {
+    const dx = px[i] - cx, dy = py[i] - cy, d = Math.hypot(dx, dy);
+    if (d > R || d < 1e-6) continue;
+    const f = S * (1 - d / R);
+    vx[i] += dx / d * f; vy[i] += dy / d * f;
+  }
+}
+
+// closed-form 2x2 SVD: M = Rot(phi) diag(s1,s2) Rot(theta), M row-major [a b; c d]
+function svd2(a, b, c, d) {
+  const E = (a + d) / 2, Fq = (a - d) / 2, G = (c + b) / 2, H = (c - b) / 2;
+  const Q = Math.hypot(E, H), R = Math.hypot(Fq, G);
+  const a1 = Math.atan2(G, Fq), a2 = Math.atan2(H, E);
+  return [Q + R, Q - R, (a2 + a1) / 2, (a2 - a1) / 2]; // s1, s2, phi, theta
+}
+
+function substep() {
+  gvx.fill(0); gvy.fill(0); gm.fill(0);
+  const W = NG + 1;
+  // ---- P2G ----
+  for (let p = 0; p < N; p++) {
+    const xg = px[p] * INV_DX, yg = py[p] * INV_DX;
+    const bx = Math.floor(xg - 0.5), by = Math.floor(yg - 0.5);
+    const fx = xg - bx, fy = yg - by;
+    const wx = [0.5 * (1.5 - fx) ** 2, 0.75 - (fx - 1) ** 2, 0.5 * (fx - 0.5) ** 2];
+    const wy = [0.5 * (1.5 - fy) ** 2, 0.75 - (fy - 1) ** 2, 0.5 * (fy - 0.5) ** 2];
+    const o = p * 4;
+    // F = (I + dt C) F
+    const a0 = 1 + DT * C[o], a1 = DT * C[o + 1], a2 = DT * C[o + 2], a3 = 1 + DT * C[o + 3];
+    let f0 = a0 * F[o] + a1 * F[o + 2], f1 = a0 * F[o + 1] + a1 * F[o + 3];
+    let f2 = a2 * F[o] + a3 * F[o + 2], f3 = a2 * F[o + 1] + a3 * F[o + 3];
+    let [s1, s2, phi, th] = svd2(f0, f1, f2, f3);
+    if (mat[p] === SAND) { // plasticity: forget strain beyond the yield band
+      s1 = Math.min(Math.max(s1, SAND_MIN), SAND_MAX); s2 = Math.min(Math.max(s2, SAND_MIN), SAND_MAX);
+      const cp = Math.cos(phi), sp = Math.sin(phi), ct = Math.cos(th), st = Math.sin(th);
+      // Rot(phi) diag(s1,s2) Rot(th)
+      f0 = cp * s1 * ct - sp * s2 * st; f1 = -cp * s1 * st - sp * s2 * ct;
+      f2 = sp * s1 * ct + cp * s2 * st; f3 = -sp * s1 * st + cp * s2 * ct;
+    }
+    F[o] = f0; F[o + 1] = f1; F[o + 2] = f2; F[o + 3] = f3;
+    const J = s1 * s2, rot = phi + th, r0 = Math.cos(rot), r2 = Math.sin(rot); // R = [r0 -r2; r2 r0]
+    const [mu, la] = MU_LA[mat[p]];
+    // stress = 2mu (F - R) F^T + la J (J-1) I
+    const d0 = f0 - r0, d1 = f1 + r2, d2 = f2 - r2, d3 = f3 - r0;
+    const k = -DT * P_VOL * 4 * INV_DX * INV_DX;
+    const st0 = 2 * mu * (d0 * f0 + d1 * f1) + la * J * (J - 1), st1 = 2 * mu * (d0 * f2 + d1 * f3);
+    const st2 = 2 * mu * (d2 * f0 + d3 * f1), st3 = 2 * mu * (d2 * f2 + d3 * f3) + la * J * (J - 1);
+    const A0 = k * st0 + P_MASS * C[o], A1 = k * st1 + P_MASS * C[o + 1];
+    const A2 = k * st2 + P_MASS * C[o + 2], A3 = k * st3 + P_MASS * C[o + 3];
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
+      const w = wx[i] * wy[j], dpx = (i - fx) * DX, dpy = (j - fy) * DX, g = (bx + i) * W + by + j;
+      gvx[g] += w * (P_MASS * vx[p] + A0 * dpx + A1 * dpy);
+      gvy[g] += w * (P_MASS * vy[p] + A2 * dpx + A3 * dpy);
+      gm[g] += w * P_MASS;
+    }
+  }
+  // ---- grid update ----
+  for (let i = 0; i <= NG; i++) for (let j = 0; j <= NG; j++) {
+    const g = i * W + j;
+    if (gm[g] <= 0) continue;
+    gvx[g] /= gm[g]; gvy[g] /= gm[g]; gvy[g] += DT * GRAVITY;
+    if (plough) {
+      const dx = i * DX - plough.x, dy = j * DX - plough.y;
+      if (dx * dx + dy * dy < 0.045 * 0.045) { gvx[g] = plough.vx; gvy[g] = plough.vy; }
+    }
+    if (i < 3 && gvx[g] < 0) gvx[g] = 0;
+    if (i > NG - 3 && gvx[g] > 0) gvx[g] = 0;
+    if (j > NG - 3 && gvy[g] > 0) gvy[g] = 0;
+    if (j < 3 && gvy[g] < 0) { gvy[g] = 0; gvx[g] *= 0.5; } // floor with friction
+  }
+  // ---- G2P + splat covariance update ----
+  for (let p = 0; p < N; p++) {
+    const xg = px[p] * INV_DX, yg = py[p] * INV_DX;
+    const bx = Math.floor(xg - 0.5), by = Math.floor(yg - 0.5);
+    const fx = xg - bx, fy = yg - by;
+    const wx = [0.5 * (1.5 - fx) ** 2, 0.75 - (fx - 1) ** 2, 0.5 * (fx - 0.5) ** 2];
+    const wy = [0.5 * (1.5 - fy) ** 2, 0.75 - (fy - 1) ** 2, 0.5 * (fy - 0.5) ** 2];
+    let nvx = 0, nvy = 0, c0 = 0, c1 = 0, c2 = 0, c3 = 0;
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
+      const w = wx[i] * wy[j], dpx = i - fx, dpy = j - fy, g = (bx + i) * W + by + j;
+      const ux = gvx[g], uy = gvy[g];
+      nvx += w * ux; nvy += w * uy;
+      const s = 4 * INV_DX * w; // 4 inv_dx^2 * w * dpos, with dpos already in grid units
+      c0 += s * ux * dpx; c1 += s * ux * dpy; c2 += s * uy * dpx; c3 += s * uy * dpy;
+    }
+    vx[p] = nvx; vy[p] = nvy;
+    const o = p * 4;
+    C[o] = c0; C[o + 1] = c1; C[o + 2] = c2; C[o + 3] = c3;
+    px[p] += DT * nvx; py[p] += DT * nvy;
+    // Sigma' = A Sigma A^T with A = I + dt C (this substep's deformation)
+    const a0 = 1 + DT * c0, a1 = DT * c1, a2 = DT * c2, a3 = 1 + DT * c3;
+    const q = p * 3, sxx = cov[q], sxy = cov[q + 1], syy = cov[q + 2];
+    const t0 = a0 * sxx + a1 * sxy, t1 = a0 * sxy + a1 * syy; // row 0 of A*Sigma
+    const t2 = a2 * sxx + a3 * sxy, t3 = a2 * sxy + a3 * syy; // row 1
+    let nxx = t0 * a0 + t1 * a1, nxy = t0 * a2 + t1 * a3, nyy = t2 * a2 + t3 * a3;
+    const tr = nxx + nyy, lim = cov0tr[p] * COV_MAX_GROW;
+    if (tr > lim) { const s = lim / tr; nxx *= s; nxy *= s; nyy *= s; }
+    cov[q] = nxx; cov[q + 1] = nxy; cov[q + 2] = nyy;
+  }
+}
+
+// one UI frame = SUBSTEPS substeps
+function step() {
+  const t = performance.now();
+  for (let s = 0; s < SUBSTEPS; s++) substep();
+  lastStepMs = performance.now() - t;
+}
+
+// ---------- rendering ----------
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+let S = 1, OX = 0, OY = 0, img = null;
+function resize() {
+  const r = cv.parentElement.getBoundingClientRect();
+  cv.width = Math.max(50, r.width | 0); cv.height = Math.max(50, r.height | 0);
+  S = Math.min(cv.width, cv.height) - 20; OX = (cv.width - S) / 2; OY = (cv.height - S) / 2;
+  img = ctx.createImageData(S, S);
+}
+const toSX = x => OX + x * S, toSY = y => OY + (1 - y) * S;
+
+function renderSplats() {
+  const d = img.data, W = S;
+  for (let i = 0; i < d.length; i += 4) { d[i] = 22; d[i + 1] = 26; d[i + 2] = 32; d[i + 3] = 255; }
+  const S2 = S * S;
+  for (let p = 0; p < N; p++) {
+    // covariance in pixel space (y flipped -> xy term flips sign)
+    const sxx = cov[p * 3] * S2, sxy = -cov[p * 3 + 1] * S2, syy = cov[p * 3 + 2] * S2;
+    const det = sxx * syy - sxy * sxy;
+    if (!(det > 1e-9)) continue;
+    const ixx = syy / det, ixy = -sxy / det, iyy = sxx / det;
+    const cx = px[p] * S, cy = (1 - py[p]) * S;
+    const rx = 3 * Math.sqrt(sxx), ry = 3 * Math.sqrt(syy);
+    const x0 = Math.max(0, cx - rx | 0), x1 = Math.min(W - 1, cx + rx | 0);
+    const y0 = Math.max(0, cy - ry | 0), y1 = Math.min(W - 1, cy + ry | 0);
+    const r = colR[p], g = colG[p], b = colB[p];
+    for (let y = y0; y <= y1; y++) {
+      const dy = y + 0.5 - cy;
+      let idx = (y * W + x0) * 4;
+      for (let x = x0; x <= x1; x++, idx += 4) {
+        const dx = x + 0.5 - cx;
+        const e = 0.5 * (ixx * dx * dx + 2 * ixy * dx * dy + iyy * dy * dy);
+        if (e > 4.5) continue;
+        const a = 0.85 * Math.exp(-e);
+        d[idx] += (r - d[idx]) * a; d[idx + 1] += (g - d[idx + 1]) * a; d[idx + 2] += (b - d[idx + 2]) * a;
+      }
+    }
+  }
+  ctx.putImageData(img, OX, OY);
+}
+
+function render() {
+  ctx.fillStyle = '#0d1014'; ctx.fillRect(0, 0, cv.width, cv.height);
+  const view = document.getElementById('view').value;
+  if (view === 'splats') renderSplats();
+  else {
+    ctx.fillStyle = '#161a20'; ctx.fillRect(OX, OY, S, S);
+    if (view === 'grid') {
+      const cs = S / NG, W = NG + 1;
+      let mmax = 1e-12; for (let g = 0; g < gm.length; g++) if (gm[g] > mmax) mmax = gm[g];
+      for (let i = 0; i <= NG; i++) for (let j = 0; j <= NG; j++) {
+        const m = gm[i * W + j]; if (m <= 0) continue;
+        const v = Math.min(1, m / mmax);
+        ctx.fillStyle = `rgba(90,170,255,${0.15 + 0.8 * v})`;
+        ctx.fillRect(toSX(i * DX) - cs / 2, toSY(j * DX) - cs / 2, cs - 1, cs - 1);
+      }
+      ctx.strokeStyle = '#ffd27a'; ctx.beginPath();
+      for (let i = 0; i <= NG; i++) for (let j = 0; j <= NG; j++) {
+        const g = i * W + j; if (gm[g] <= 0) continue;
+        const x = toSX(i * DX), y = toSY(j * DX);
+        ctx.moveTo(x, y); ctx.lineTo(x + gvx[g] * 3, y - gvy[g] * 3);
+      }
+      ctx.stroke();
+    }
+    for (let p = 0; p < N; p++) {
+      ctx.fillStyle = `rgb(${colR[p]},${colG[p]},${colB[p]})`;
+      ctx.fillRect(toSX(px[p]) - 1, toSY(py[p]) - 1, view === 'grid' ? 1.5 : 2.5, view === 'grid' ? 1.5 : 2.5);
+    }
+  }
+  if (plough) { ctx.strokeStyle = '#ff7a7a'; ctx.beginPath(); ctx.arc(toSX(plough.x), toSY(plough.y), 0.045 * S, 0, 7); ctx.stroke(); }
+  updateStats();
+}
+
+function updateStats() {
+  let maxStretch = 1;
+  for (let p = 0; p < N; p++) { const r = (cov[p * 3] + cov[p * 3 + 2]) / cov0tr[p]; if (r > maxStretch) maxStretch = r; }
+  const B = 8 + 12 + 4 + 8 + 16 + 16;
+  document.getElementById('stats').textContent =
+    `splats (= particles): ${N}${fillInterior ? '' : '  (shell only)'}\n` +
+    `bytes/splat: pos 8 + cov 12 + col 4\n` +
+    `           + vel 8 + F 16 + C 16 = ${B} B\n` +
+    `total: ${N} x ${B} = ${(N * B).toLocaleString()} B\n` +
+    `grid: ${NG + 1}^2 nodes x 12 B = ${((NG + 1) ** 2 * 12).toLocaleString()} B (scratch)\n` +
+    `ms/step (${SUBSTEPS} substeps): ${lastStepMs.toFixed(1)}\n` +
+    `max splat area growth: ${maxStretch.toFixed(2)}x (cap ${COV_MAX_GROW}x)`;
+}
+
+// ---------- input ----------
+let down = null;
+function worldOf(e) { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left - OX) / S, 1 - (e.clientY - r.top - OY) / S]; }
+cv.addEventListener('pointerdown', e => { const [x, y] = worldOf(e); down = { x, y, sx: e.clientX, sy: e.clientY, t: performance.now(), drag: false }; cv.setPointerCapture(e.pointerId); });
+cv.addEventListener('pointermove', e => {
+  if (!down) return;
+  const [x, y] = worldOf(e), now = performance.now();
+  if (Math.hypot(e.clientX - down.sx, e.clientY - down.sy) > 5) down.drag = true;
+  if (!down.drag) return;
+  const dt = Math.max(16, now - down.t) / 1000;
+  // ponytail: plough speed scaled into sim time units, tuned by eye
+  plough = { x, y, vx: Math.max(-8, Math.min(8, (x - down.x) / dt * 3)), vy: Math.max(-8, Math.min(8, (y - down.y) / dt * 3)) };
+  down.x = x; down.y = y; down.t = now;
+});
+cv.addEventListener('pointerup', e => {
+  if (down && !down.drag) { const [x, y] = worldOf(e); clickAt(x, y); }
+  down = null; plough = null;
+});
+function clickAt(x, y) {
+  if (document.getElementById('clickMode').value === 'block') dropBlock(x, y); else explode(x, y);
+  render();
+}
+document.getElementById('fill').onchange = e => { buildScene(e.target.checked); render(); };
+document.getElementById('reset').onclick = () => { buildScene(document.getElementById('fill').checked); render(); };
+document.getElementById('pause').onclick = e => { paused = !paused; e.target.textContent = paused ? 'play' : 'pause'; };
+document.getElementById('view').onchange = render;
+window.addEventListener('resize', () => { resize(); render(); });
+
+// ---------- self-test ----------
+function anyNaN() {
+  for (let p = 0; p < N; p++) if (!isFinite(px[p] + py[p] + vx[p] + vy[p] + cov[p * 3] + cov[p * 3 + 1] + cov[p * 3 + 2])) return true;
+  return false;
+}
+function selftest() {
+  const t0 = performance.now();
+  buildScene(true);
+  const nFilled = N;
+  for (let k = 0; k < 8; k++) step();
+  const ox = Float64Array.from(px.subarray(0, N)), oy = Float64Array.from(py.subarray(0, N)), oc = Float64Array.from(cov.subarray(0, N * 3));
+  explode(0.42, 0.2);
+  for (let k = 0; k < 12; k++) step();
+  let moved = 0, covChanged = 0;
+  for (let p = 0; p < nFilled; p++) {
+    if (Math.hypot(px[p] - ox[p], py[p] - oy[p]) > 0.01) moved++;
+    const q = p * 3, num = Math.hypot(cov[q] - oc[q], 2 * (cov[q + 1] - oc[q + 1]), cov[q + 2] - oc[q + 2]);
+    if (num / Math.hypot(oc[q], 2 * oc[q + 1], oc[q + 2]) > 0.05) covChanged++;
+  }
+  if (anyNaN()) return 'FAIL NaN after explode';
+  if (moved < 50) return 'FAIL only ' + moved + ' splats moved';
+  if (covChanged < 50) return 'FAIL only ' + covChanged + ' covariances changed >5%';
+  const before = N; dropBlock(0.5, 0.8); step();
+  if (N <= before || anyNaN()) return 'FAIL dropBlock';
+  buildScene(false);
+  const nShell = N;
+  for (let k = 0; k < 4; k++) step();
+  if (anyNaN()) return 'FAIL NaN in shell mode';
+  if (nShell >= nFilled) return 'FAIL shell ' + nShell + ' >= filled ' + nFilled;
+  buildScene(true); render();
+  return `PASS filled=${nFilled} shell=${nShell} moved=${moved} covChanged=${covChanged} ${(performance.now() - t0).toFixed(0)}ms`;
+}
+
+// ---------- boot ----------
+resize();
+buildScene(true);
+render();
+if (location.search.includes('selftest')) {
+  document.getElementById('selftest').textContent = selftest();
+} else {
+  (function loop() { if (!paused) step(); render(); requestAnimationFrame(loop); })();
+}
+</script>
+</body>
+</html>

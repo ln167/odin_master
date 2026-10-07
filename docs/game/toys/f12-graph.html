@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Toy: load graph</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;height:100vh;display:flex;background:#14161b;color:#d6d9e0;font:13px/1.45 system-ui,sans-serif}
+#side{width:320px;flex:none;padding:12px 14px;overflow-y:auto;background:#1b1e26;border-right:1px solid #2c303b}
+#main{flex:1;position:relative;min-width:0}
+canvas#view{position:absolute;inset:0;width:100%;height:100%;cursor:crosshair}
+a{color:#7fb0ff;text-decoration:none} h1{font-size:18px;margin:6px 0 8px} h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#8b93a7;margin:14px 0 4px}
+p,ul{margin:0} ul{padding-left:16px} label{display:block;margin:6px 0 2px}
+select,input,button{width:100%;background:#262a35;color:#d6d9e0;border:1px solid #3a3f4e;border-radius:4px;padding:4px;font:inherit}
+button{cursor:pointer;margin-top:4px} button:hover{background:#31364a}
+#stats{font-family:Consolas,monospace;font-size:12px;white-space:pre-wrap;background:#14161b;padding:6px;border-radius:4px}
+#chart{width:100%;height:150px;background:#14161b;border-radius:4px;margin-top:6px}
+#selftest{font-size:10px;color:#6b7285;margin:10px 0 0;white-space:pre-wrap}
+</style></head><body>
+<div id="side">
+<a href="index.html">&larr; all toys</a>
+<h1>Load graph</h1>
+<h2>What it is</h2>
+<p>A graph is just dots (nodes = chunks of rock with a mass) joined by lines (edges = contacts with a strength); it stores who touches whom and nothing about shape. Click a node to quarry it: anything no longer connected to the ground falls, then weight is pushed down the edges and overloaded edges snap.</p>
+<h2>Controls</h2>
+<label for="preset">Structure</label>
+<select id="preset"><option value="arch">Roman arch</option><option value="tower">Stacked tower</option><option value="aqueduct">Aqueduct span</option><option value="cliff">Overhanging cliff</option></select>
+<button id="reset">Rebuild structure</button>
+<label for="scale">Scale test: <span id="nlabel"></span> nodes (1k &rarr; 1M)</label>
+<input id="scale" type="range" min="3" max="6" step="0.25" value="4">
+<button id="sweep">Sweep 1k &rarr; chosen N</button>
+<canvas id="chart" width="292" height="150"></canvas>
+<h2>Live stats</h2>
+<div id="stats"></div>
+<h2>Good at</h2>
+<ul><li>Tiny and exact: connectivity answers are yes/no, never fuzzy.</li><li>"What is holding what" is a cheap flood fill at coarse scale.</li><li>Thousands of nodes cost well under a frame.</li></ul>
+<h2>Bad at</h2>
+<ul><li>No shape at all: nothing says where a chunk is or how it breaks.</li><li>Cost grows with node count; millions of nodes get expensive.</li><li>Needs another representation for geometry.</li><li>Remove the arch keystone: only the capstone falls. A real arch collapses, because it stands on sideways thrust and balance, which "connected to ground + push weight down" cannot see. Arches need a balance/thrust check on top.</li></ul>
+<h2>In 3D / for our game:</h2>
+<p>Use it as the coarse level: one node per big block or arch stone, edges for contacts, not per voxel.</p>
+<pre id="selftest"></pre>
+</div>
+<div id="main"><canvas id="view"></canvas></div>
+<script>
+"use strict";
+const PASSES = 20, SLACK = 1.4, BYTES_NODE = 12, BYTES_EDGE = 12;
+const $ = id => document.getElementById(id);
+
+// ---- core: flood fill from ground + load passes, on flat arrays (also used by scale test) ----
+// ea/eb: edge endpoints; nalive/ealive/ground: Uint8Array; mass: Float32Array.
+// returns d (hop distance from ground, -1 = unsupported), eload (load carried per edge)
+function analyze(n, ne, ea, eb, nalive, ealive, ground, mass, passes) {
+  const off = new Int32Array(n + 1);
+  for (let e = 0; e < ne; e++) if (ealive[e]) { off[ea[e] + 1]++; off[eb[e] + 1]++; }
+  for (let i = 0; i < n; i++) off[i + 1] += off[i];
+  const adj = new Int32Array(off[n]), fill = off.slice(0, n);
+  for (let e = 0; e < ne; e++) if (ealive[e]) { adj[fill[ea[e]]++] = eb[e]; adj[fill[eb[e]]++] = ea[e]; }
+  // (a) flood fill (BFS) from alive ground nodes
+  const d = new Int32Array(n).fill(-1), q = new Int32Array(n);
+  let qh = 0, qt = 0;
+  for (let i = 0; i < n; i++) if (ground[i] && nalive[i]) { d[i] = 0; q[qt++] = i; }
+  while (qh < qt) {
+    const j = q[qh++];
+    for (let k = off[j]; k < off[j + 1]; k++) { const i = adj[k]; if (nalive[i] && d[i] < 0) { d[i] = d[j] + 1; q[qt++] = i; } }
+  }
+  // (b) load: each node's weight flows to neighbours closer to the ground, split evenly
+  const sup = new Int32Array(n);
+  for (let j = 0; j < n; j++) if (d[j] > 0) for (let k = off[j]; k < off[j + 1]; k++) if (d[adj[k]] >= 0 && d[adj[k]] < d[j]) sup[j]++;
+  let load = Float32Array.from(mass), next = new Float32Array(n);
+  for (let p = 0; p < passes; p++) {
+    next.set(mass);
+    for (let j = 0; j < n; j++) {
+      if (sup[j] === 0) continue;
+      const share = load[j] / sup[j];
+      for (let k = off[j]; k < off[j + 1]; k++) if (d[adj[k]] >= 0 && d[adj[k]] < d[j]) next[adj[k]] += share;
+    }
+    [load, next] = [next, load];
+  }
+  const eload = new Float32Array(ne);
+  for (let e = 0; e < ne; e++) {
+    if (!ealive[e]) continue;
+    const a = ea[e], b = eb[e];
+    if (d[a] < 0 || d[b] < 0 || d[a] === d[b]) continue;
+    const hi = d[a] > d[b] ? a : b;
+    eload[e] = load[hi] / sup[hi];
+  }
+  return { d, eload };
+}
+
+// ---- the game graph ----
+let G; // {nodes:[{x,y,m,g,alive}], edges:[{a,b,s,alive,broke}], key, fallen:[], lastMs, waves, brokenCount}
+function build(kind) {
+  const nodes = [], edges = [];
+  const N = (x, y, m = 2, g = false) => nodes.push({ x, y, m: g ? 10 : m, g, alive: true }) - 1;
+  const L = (a, b) => edges.push({ a, b, s: 0, alive: true, broke: false });
+  let key = 0;
+  if (kind === "arch") {
+    const gl = N(22, 77, 2, true), gr = N(78, 77, 2, true), ring = [];
+    for (let k = 0; k <= 8; k++) ring.push(N(50 + 28 * Math.cos(Math.PI - k * Math.PI / 8), 70 - 28 * Math.sin(Math.PI - k * Math.PI / 8), k === 4 ? 3 : 2));
+    L(gl, ring[0]); L(gr, ring[8]);
+    for (let k = 0; k < 8; k++) L(ring[k], ring[k + 1]);
+    key = ring[4];
+    const cap = N(50, 32, 4); L(cap, key);
+  } else if (kind === "tower") {
+    let prev = N(50, 77, 2, true);
+    for (let r = 0; r < 8; r++) { const c = N(50, 68 - r * 8.5, 3); L(prev, c); prev = c; }
+    key = 3; // a block low in the stack
+  } else if (kind === "aqueduct") {
+    const deck = [];
+    for (let k = 0; k <= 8; k++) { deck.push(N(10 + 10 * k, 38, 2.5)); if (k) L(deck[k - 1], deck[k]); }
+    const mid = [];
+    for (const px of [10, 50, 90]) {
+      let prev = N(px, 77, 2, true);
+      for (let r = 0; r < 3; r++) { const c = N(px, 68 - r * 9, 3); L(prev, c); if (r === 1) mid.push(c); prev = c; }
+      L(prev, deck[(px - 10) / 10]);
+    }
+    for (const [i, x] of [[0, 30], [1, 70]]) { const a = N(x, 54, 2); L(a, mid[i]); L(a, mid[i + 1]); L(a, deck[(x - 10) / 10]); }
+    key = mid[1];
+  } else { // cliff: 5-wide block on the ground, upper rows jut out to the right
+    const idx = {};
+    for (let r = 0; r < 5; r++) for (let c = 0; c < 9; c++) {
+      if (r < 3 && c > 4) continue;               // lower rows only under the base
+      idx[r + "," + c] = N(10 + c * 10, 77 - r * 10, 2, r === 0 && c <= 4);
+    }
+    for (const k in idx) {
+      const [r, c] = k.split(",").map(Number);
+      if (idx[r + "," + (c + 1)] !== undefined) L(idx[k], idx[r + "," + (c + 1)]);
+      if (idx[(r + 1) + "," + c] !== undefined) L(idx[k], idx[(r + 1) + "," + c]);
+    }
+    key = idx["2,4"];
+  }
+  G = { kind, nodes, edges, key, fallen: [], lastMs: 0, waves: 0, brokenCount: 0 };
+  const a = run();
+  edges.forEach((e, k) => { e.s = Math.max(2, SLACK * a.eload[k]); }); // strength = 1.4x the intact load
+  run();
+}
+
+function run() {
+  const { nodes, edges } = G;
+  const ea = Int32Array.from(edges, e => e.a), eb = Int32Array.from(edges, e => e.b);
+  const nalive = Uint8Array.from(nodes, v => +v.alive), ealive = Uint8Array.from(edges, e => +e.alive);
+  const ground = Uint8Array.from(nodes, v => +v.g), mass = Float32Array.from(nodes, v => v.m);
+  const t = performance.now();
+  const r = analyze(nodes.length, edges.length, ea, eb, nalive, ealive, ground, mass, PASSES);
+  G.lastMs = performance.now() - t;
+  G.d = r.d; G.eload = r.eload;
+  return r;
+}
+
+// remove a node, then alternate (a) flood fill and (b) load check until stable
+function removeNode(i) {
+  if (!G.nodes[i].alive || G.nodes[i].g) return;
+  G.nodes[i].alive = false;
+  settle();
+}
+function settle() {
+  for (let guard = 0; guard < 100; guard++) {
+    for (const e of G.edges) if (e.alive && !(G.nodes[e.a].alive && G.nodes[e.b].alive)) e.alive = false;
+    run();
+    let changed = false;
+    G.nodes.forEach((v, i) => { if (v.alive && G.d[i] < 0) { v.alive = false; G.fallen.push({ x: v.x, y: v.y, m: v.m, vy: 0 }); changed = true; } });
+    if (!changed) {
+      G.edges.forEach((e, k) => { if (e.alive && G.eload[k] > e.s) { e.alive = false; e.broke = true; G.brokenCount++; changed = true; } });
+    }
+    if (!changed) break;
+    G.waves++;
+  }
+  updateStats();
+}
+const aliveNodes = () => G.nodes.filter(v => v.alive).length;
+const aliveEdges = () => G.edges.filter(e => e.alive).length;
+
+// ---- scale test: grid graph of N nodes (10% of links missing), bottom row anchored ----
+const scalePts = {}; // N -> {ms, bytes, nodes, edges}
+function scaleTest(N) {
+  const w = Math.max(2, Math.round(Math.sqrt(N))), h = Math.ceil(N / w), n = w * h;
+  const ea = new Int32Array(2 * n), eb = new Int32Array(2 * n);
+  let ne = 0;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x;
+    if (x + 1 < w && Math.random() < 0.9) { ea[ne] = i; eb[ne++] = i + 1; }
+    if (y + 1 < h && Math.random() < 0.9) { ea[ne] = i; eb[ne++] = i + w; }
+  }
+  const nalive = new Uint8Array(n).fill(1), ealive = new Uint8Array(2 * n).fill(1), ground = new Uint8Array(n), mass = new Float32Array(n).fill(2);
+  ground.fill(1, (h - 1) * w);
+  let ms = 0, reps = 0;
+  do { // repeat small runs so the clock has something to measure
+    const t = performance.now();
+    analyze(n, ne, ea, eb, nalive, ealive, ground, mass, PASSES);
+    ms += performance.now() - t; reps++;
+  } while (ms < 0.05 && reps < 200);
+  ms /= reps;
+  scalePts[N] = { ms, bytes: n * BYTES_NODE + ne * BYTES_EDGE, nodes: n, edges: ne };
+  return ms;
+}
+
+// ---- drawing ----
+const cv = $("view"), ctx = cv.getContext("2d"), ch = $("chart"), cctx = ch.getContext("2d");
+let S = 1, OX = 0, OY = 0; // world->px
+function layout() {
+  cv.width = cv.clientWidth; cv.height = cv.clientHeight;
+  S = Math.min(cv.width / 105, cv.height / 90); OX = (cv.width - 100 * S) / 2; OY = (cv.height - 85 * S) / 2 - 2 * S;
+  draw();
+}
+const px = v => [OX + v.x * S, OY + v.y * S], rad = m => Math.sqrt(m) * 1.8 * S;
+function draw() {
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  ctx.strokeStyle = "#2c303b"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(0, OY + 80 * S); ctx.lineTo(cv.width, OY + 80 * S); ctx.stroke();
+  G.edges.forEach((e, k) => {
+    const [x1, y1] = px(G.nodes[e.a]), [x2, y2] = px(G.nodes[e.b]);
+    ctx.lineWidth = Math.max(1, e.s * 0.09 * S);
+    if (e.alive) {
+      const r = Math.min(1, G.eload[k] / e.s); // stress: grey -> orange -> red
+      ctx.strokeStyle = r < 0.6 ? "#6b7285" : `rgb(255,${Math.round(180 - 150 * (r - 0.6) / 0.4)},40)`;
+      ctx.shadowColor = "#ff8a30"; ctx.shadowBlur = r > 0.8 ? 12 : 0; ctx.setLineDash([]);
+    } else if (e.broke) { ctx.strokeStyle = "#8a3a30"; ctx.setLineDash([4, 4]); ctx.lineWidth = 1; ctx.shadowBlur = 0; }
+    else return;
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  });
+  ctx.shadowBlur = 0; ctx.setLineDash([]);
+  for (const v of G.nodes) {
+    if (!v.alive) continue;
+    const [x, y] = px(v), r = rad(v.m);
+    ctx.fillStyle = v.g ? "#4a4f60" : "#c9b48a"; ctx.strokeStyle = "#14161b"; ctx.lineWidth = 2;
+    ctx.beginPath(); if (v.g) ctx.rect(x - r, y - r, 2 * r, 2 * r); else ctx.arc(x, y, r, 0, 7); ctx.fill(); ctx.stroke();
+  }
+  ctx.fillStyle = "#e5483a";
+  for (const f of G.fallen) { const [x, y] = px(f); ctx.beginPath(); ctx.arc(x, y, rad(f.m), 0, 7); ctx.fill(); }
+}
+function drawChart() {
+  const W = ch.width, H = ch.height, c = cctx;
+  c.clearRect(0, 0, W, H);
+  const pts = Object.entries(scalePts).map(([N, p]) => [+N, p.ms]).sort((a, b) => a[0] - b[0]);
+  c.fillStyle = "#8b93a7"; c.font = "10px sans-serif";
+  c.fillText("log-log: nodes (1k..1M) vs ms (flood+20 passes)", 6, 11);
+  const X = n => 30 + (Math.log10(n) - 3) / 3 * (W - 40), Y = ms => H - 14 - (Math.log10(Math.max(ms, 1e-3)) + 3) / 6 * (H - 34);
+  c.strokeStyle = "#2c303b"; c.lineWidth = 1;
+  for (let e = 3; e <= 6; e++) { c.beginPath(); c.moveTo(X(10 ** e), 16); c.lineTo(X(10 ** e), H - 14); c.stroke(); c.fillText(e === 3 ? "1k" : e === 6 ? "1M" : "10^" + e, X(10 ** e) - 8, H - 3); }
+  for (let e = -3; e <= 3; e++) { c.beginPath(); c.moveTo(30, Y(10 ** e)); c.lineTo(W - 10, Y(10 ** e)); c.stroke(); c.fillText(e === 0 ? "1ms" : e === 3 ? "1s" : e === -3 ? ".001" : "", 2, Y(10 ** e) + 3); }
+  c.strokeStyle = "#7fb0ff"; c.fillStyle = "#7fb0ff"; c.beginPath();
+  pts.forEach(([n, ms], i) => i ? c.lineTo(X(n), Y(ms)) : c.moveTo(X(n), Y(ms))); c.stroke();
+  pts.forEach(([n, ms]) => { c.beginPath(); c.arc(X(n), Y(ms), 3, 0, 7); c.fill(); });
+}
+function updateStats() {
+  const n = aliveNodes(), e = aliveEdges(), last = scalePts[$("scale").dataset.last];
+  $("stats").textContent =
+    `nodes ${n}   edges ${e}\n` +
+    `bytes ${n * BYTES_NODE + e * BYTES_EDGE}\n  = ${n}x(4 mass+8 pos) + ${e}x(8 idx+4 strength)\n` +
+    `fell ${G.fallen.length}   snapped ${G.brokenCount}   waves ${G.waves}\n` +
+    `last flood-fill+load: ${G.lastMs.toFixed(3)} ms\n` +
+    (last ? `scale ${last.nodes} nodes, ${last.edges} edges:\n  ${last.ms.toFixed(2)} ms, ${(last.bytes / 1e6).toFixed(1)} MB` : "scale test: not run yet");
+  $("nlabel").textContent = Math.round(10 ** $("scale").value).toLocaleString();
+  drawChart(); draw();
+}
+
+// ---- UI handlers ----
+function onPreset() { build($("preset").value); updateStats(); }
+function onScale() {
+  const N = Math.round(10 ** $("scale").value);
+  scaleTest(N); $("scale").dataset.last = N; updateStats();
+}
+function onSweep() {
+  const top = Math.round(10 ** $("scale").value);
+  for (let e = 3; 10 ** e <= top * 1.001; e += 0.5) { const N = Math.round(10 ** e); scaleTest(N); $("scale").dataset.last = N; }
+  updateStats();
+}
+cv.addEventListener("click", ev => {
+  const r = cv.getBoundingClientRect(), mx = ev.clientX - r.left, my = ev.clientY - r.top;
+  let best = -1, bd = 1e9;
+  G.nodes.forEach((v, i) => { if (!v.alive || v.g) return; const [x, y] = px(v), dd = Math.hypot(x - mx, y - my); if (dd < bd && dd < rad(v.m) + 6) { bd = dd; best = i; } });
+  if (best >= 0) removeNode(best);
+});
+$("preset").onchange = onPreset; $("reset").onclick = onPreset;
+$("scale").oninput = onScale; $("sweep").onclick = onSweep;
+window.addEventListener("resize", layout);
+let lastT = performance.now();
+function frame(t) {
+  const dt = Math.min(0.05, (t - lastT) / 1000); lastT = t;
+  for (const f of G.fallen) { f.vy += 120 * dt; f.y += f.vy * dt; }
+  G.fallen = G.fallen.filter(f => f.y < 130);
+  draw(); requestAnimationFrame(frame);
+}
+
+// ---- self test (same functions the handlers call, no rAF) ----
+function selftest() {
+  const out = $("selftest");
+  try {
+    const must = (c, why) => { if (!c) throw new Error(why); };
+    $("preset").value = "arch"; onPreset();
+    const n0 = aliveNodes();
+    removeNode(G.key);
+    must(aliveNodes() < n0 && G.fallen.length > 0, "arch keystone removal left nothing unsupported");
+    const archFell = G.fallen.length, archSnap = G.brokenCount;
+    $("preset").value = "tower"; onPreset();
+    const t0 = aliveNodes(); removeNode(G.key);
+    must(G.fallen.length === t0 - 4 && G.waves > 0, "tower support removal fell " + G.fallen.length);
+    $("preset").value = "cliff"; onPreset();
+    const c0 = aliveEdges(); removeNode(G.key);
+    must(aliveEdges() < c0, "cliff edges unchanged");
+    $("scale").value = 4; onScale();
+    const ms = scalePts[10000].ms;
+    must(ms > 0, "10k scale time not positive: " + ms);
+    onSweep();
+    must(Object.keys(scalePts).length >= 3, "sweep produced no points");
+    out.textContent = `PASS arch key drop ${archFell} fell/${archSnap} snapped, tower ${G.kind === "cliff" ? t0 - 4 : 0} fell, 10k nodes ${ms.toFixed(2)} ms`;
+  } catch (e) { out.textContent = "FAIL " + e.message; }
+}
+
+window.onerror = m => { $("selftest").textContent = "FAIL " + m; };
+build("arch"); layout(); onScale();
+if (location.search.includes("selftest")) selftest(); else requestAnimationFrame(frame);
+</script></body></html>

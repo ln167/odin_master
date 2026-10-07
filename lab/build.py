@@ -97,66 +97,15 @@ def watch():
                 host.kill()
 
 
-def test():
-    ensure_sdl()
-    out = HOT / ("labtest" + EXE)
-    subprocess.run([ODIN, "build", "src/test", "-debug", "-define:LAB_HEADLESS=true",
-                    "-collection:src=src", VND, ODIN_LIB, TELE_ON, f"-out:{out}"], cwd=ROOT, check=True)
-    rc = subprocess.run([str(out)], cwd=ROOT).returncode
-    if rc != 0:
-        sys.exit(rc)
-    guard()
-
-
-def guard():
-    """Determinism guard: the same headless run must hash identically
-    run-to-run and across -o:none vs -o:speed (a hash mismatch here means the
-    optimizer changed trajectory math — a real Odin/LLVM footgun). Input gates
-    are pinned via LAB_DEBUG_KEYS so both builds handle keys identically."""
-    base = [ODIN, "build", "src/headless", "-define:LAB_DEBUG_KEYS=true",
-            "-define:LAB_HEADLESS=true", "-collection:src=src", VND, ODIN_LIB, TELE_ON]
-    none_exe = HOT / ("labx_none" + EXE)
-    speed_exe = HOT / ("labx_speed" + EXE)
-    subprocess.run([*base, "-o:none", f"-out:{none_exe}"], cwd=ROOT, check=True)
-    subprocess.run([*base, "-o:speed", f"-out:{speed_exe}"], cwd=ROOT, check=True)
-    args = ["-frames:600", "-state-every:0", "-arena"]
-
-    def run_hash(exe):
-        r = subprocess.run([str(exe), *args], cwd=ROOT, capture_output=True, text=True)
-        if r.returncode != 0:
-            print(r.stdout, r.stderr, sep="\n")
-            sys.exit(f"guard: {exe.name} exited {r.returncode}")
-        for line in r.stdout.splitlines():
-            if line.startswith("hash="):
-                return line
-        sys.exit(f"guard: no hash line from {exe.name}")
-
-    a, b, c = run_hash(none_exe), run_hash(none_exe), run_hash(speed_exe)
-    if a != b:
-        sys.exit(f"DETERMINISM: run-to-run differs at -o:none: {a} vs {b}")
-    if a != c:
-        sys.exit(f"DETERMINISM: -o:none vs -o:speed differ: {a} vs {c}")
-    print(f"determinism guard PASS ({a})")
-
-
-def labx():
-    """Build the headless runner and run it; argv after 'labx' pass through."""
-    ensure_sdl()
-    out = HOT / ("labx" + EXE)
-    subprocess.run([ODIN, "build", "src/headless", "-debug", "-define:LAB_DEBUG_KEYS=true",
-                    "-define:LAB_HEADLESS=true", "-collection:src=src", VND, ODIN_LIB, TELE_ON, f"-out:{out}"], cwd=ROOT, check=True)
-    sys.exit(subprocess.run([str(out), *sys.argv[2:]], cwd=ROOT).returncode)
-
-
 def clean():
     if (ROOT / "build").exists():
         shutil.rmtree(ROOT / "build")
 
 
-CMDS = {"hot": hot, "watch": watch, "test": test, "labx": labx, "clean": clean}
+CMDS = {"hot": hot, "watch": watch, "clean": clean}
 if __name__ == "__main__":
     if len(sys.argv) < 2 or sys.argv[1] not in CMDS:
-        sys.exit("usage: build.py {hot|watch|test|labx|clean} [labx args...]")
-    if sys.argv[1] != "labx" and len(sys.argv) != 2:
-        sys.exit("usage: build.py {hot|watch|test|labx|clean} [labx args...]")
+        sys.exit("usage: build.py {hot|watch|clean}")
+    if len(sys.argv) != 2:
+        sys.exit("usage: build.py {hot|watch|clean}")
     CMDS[sys.argv[1]]()

@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Height maps (single and layered)</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;display:flex;height:100vh;background:#14161a;color:#d6d9de;font:13px/1.4 system-ui,sans-serif}
+#side{width:320px;flex:none;overflow-y:auto;padding:12px 14px;background:#1b1e24;border-right:1px solid #2c3038}
+#main{position:relative;flex:1;min-width:0}
+canvas#c{display:block;width:100%;height:100%;cursor:crosshair}
+canvas#mini{position:absolute;right:10px;top:10px;width:128px;height:128px;border:1px solid #555;image-rendering:pixelated;background:#000}
+#minilbl{position:absolute;right:10px;top:140px;font-size:11px;color:#9aa;background:#000a;padding:1px 4px}
+h1{font-size:17px;margin:4px 0 8px}h3{font-size:12px;margin:12px 0 4px;color:#8fb6ff;text-transform:uppercase;letter-spacing:.05em}
+a{color:#8fb6ff}p{margin:4px 0}ul{margin:2px 0;padding-left:18px}
+button{background:#2a2f38;color:#d6d9de;border:1px solid #444b57;border-radius:4px;padding:4px 8px;margin:2px 2px 2px 0;cursor:pointer;font:inherit}
+button.on{background:#3b5fa8;border-color:#6d92e0}button:hover{border-color:#8fb6ff}
+#stats{font:12px/1.5 ui-monospace,Consolas,monospace;background:#101216;padding:6px 8px;border-radius:4px;white-space:pre-wrap}
+#note{color:#ff7777;min-height:2.8em}
+pre#selftest{font-size:10px;color:#667;margin:10px 0 0;white-space:pre-wrap}
+</style></head><body>
+<div id="side">
+<a href="index.html">&larr; all toys</a>
+<h1>Height maps: single and layered</h1>
+<h3>What it is</h3>
+<p>A height map stores one number per ground column: how high the solid top is. Layered (2.5D) stores a short list of spans per column, each span being (material, top, bottom), so air gaps can exist inside a column.</p>
+<h3>Controls</h3>
+<div id="modes"></div>
+<div>Brush: <button id="tdig" class="on">Dig</button><button id="traise">Raise</button>
+ size <input id="rad" type="range" min="2" max="16" value="6" style="width:90px"></div>
+<div><button id="btun">Carve tunnel</button><button id="bchain">Carve chain links</button><button id="bsponge">Carve sponge</button><button id="breset">Reset</button></div>
+<p id="note"></p>
+<h3>Live stats</h3>
+<div id="stats"></div>
+<h3>Good at</h3><ul><li>Very cheap, about 1000x less than voxels</li><li>Perfect for terrain and strata</li></ul>
+<h3>Bad at</h3><ul><li>No arbitrary 3D carving (single map: no overhangs or caves)</li><li>Overhangs need layers; layers explode for sculpture</li></ul>
+<h3>In 3D / for our game:</h3>
+<p>Use it for the big ~4 km terrain and rock strata; switch to voxels only inside carved sculpture zones.</p>
+<pre id="selftest"></pre>
+</div>
+<div id="main"><canvas id="c"></canvas><canvas id="mini" width="64" height="64"></canvas><div id="minilbl">top-down height (grey); red line = this slice</div></div>
+<script>
+const W=160, H=120, SLICE=32;
+const MATS=[{n:"soil",c:"#7a5a35"},{n:"sandstone",c:"#c9a566"},{n:"limestone",c:"#b9bfc4"},{n:"granite",c:"#7d6a78"}];
+const MODES=[["single","Single height map"],["layered","Layered"],["arb3d","Arbitrary 3D carve"]];
+let mode="single", tool="dig", h=[], cols=[], flashes=[];
+const $=id=>document.getElementById(id);
+const c=$("c"), g=c.getContext("2d"), mini=$("mini"), mg=mini.getContext("2d");
+
+function terrain(x){return Math.round(88+8*Math.sin(x/11)+5*Math.sin(x/4.3+1));}
+function zwob(z){return 7*Math.sin(z/5)+5*Math.sin(z/2.3);}   // fake variation along depth, minimap only
+function reset(){
+  h=[];cols=[];flashes=[];
+  for(let x=0;x<W;x++){const t=terrain(x);h.push(t);
+    cols.push([{m:0,top:t,bot:t-6},{m:1,top:t-6,bot:t-26},{m:2,top:t-26,bot:t-56},{m:3,top:t-56,bot:0}]);}
+  note("");
+}
+function topOf(x){return mode==="single"?h[x]:(cols[x].length?cols[x][0].top:0);}
+
+// ---- edit operations (UI handlers and selftest both call these) ----
+function carve(x,lo,hi){            // remove material in height range [lo,hi] of column x
+  if(x<0||x>=W)return; lo=Math.max(0,lo);
+  if(mode==="single"){
+    if(lo>=h[x])return;
+    if(hi<h[x]){flashes.push({x,lo:hi,hi:h[x],t:performance.now()});   // overburden cannot hang in the air
+      note("Single map cannot keep material above a hole: the roof collapsed. Lost cells shown in red.");}
+    h[x]=lo;
+  }else{
+    const out=[];
+    for(const s of cols[x]){
+      if(hi<=s.bot||lo>=s.top){out.push(s);continue;}
+      if(s.top>hi)out.push({m:s.m,top:s.top,bot:hi});
+      if(s.bot<lo)out.push({m:s.m,top:lo,bot:s.bot});
+    }
+    cols[x]=out;
+  }
+}
+function fill(x,lo,hi,m){           // add a material span (layered only; a height map cannot float material)
+  if(mode==="single"||x<0||x>=W||hi<=lo)return;
+  carve(x,lo,hi); cols[x].push({m,top:hi,bot:lo}); cols[x].sort((a,b)=>b.top-a.top);
+}
+function raise(x,dh){
+  if(x<0||x>=W)return;
+  if(mode==="single"){h[x]=Math.min(H-1,h[x]+dh);return;}
+  const s=cols[x][0];
+  if(s&&s.m===0)s.top=Math.min(H-1,s.top+dh); else cols[x].unshift({m:0,top:Math.min(H-1,topOf(x)+dh),bot:topOf(x)});
+}
+function brush(cx,cy,r){
+  for(let dx=-r;dx<=r;dx++){
+    const x=cx+dx, half=Math.sqrt(r*r-dx*dx);
+    if(tool==="dig")carve(x,Math.floor(cy-half),Math.ceil(cy+half)); else raise(x,2);
+  }
+}
+function tunnel(){                  // horizontal tunnel 8 cells tall, 10..18 below the surface, x 30..130
+  note("");
+  const t=[];for(let x=30;x<=130;x++)t.push(topOf(x));
+  for(let x=30;x<=130;x++)carve(x,t[x-30]-18,t[x-30]-10);
+  if(mode!=="single")note("Layered: the tunnel is a mid-column air span; the surface above it is intact.");
+}
+function chain(){                   // three chain links: air disc r18 with a solid ring r8..14 left inside
+  note("");
+  for(const cx of [45,80,115]){
+    for(let x=cx-18;x<=cx+18;x++){
+      const dx=x-cx, R=Math.sqrt(Math.max(0,324-dx*dx));
+      carve(x,Math.floor(55-R),Math.ceil(55+R));
+    }
+    for(let x=cx-14;x<=cx+14;x++){
+      const dx=x-cx, o=Math.sqrt(196-dx*dx), i=Math.abs(dx)<8?Math.sqrt(64-dx*dx):0;
+      if(i){fill(x,Math.round(55+i),Math.round(55+o),3);fill(x,Math.round(55-o),Math.round(55-i),3);}
+      else fill(x,Math.round(55-o),Math.round(55+o),3);
+    }
+  }
+}
+function sponge(){                  // lattice of small holes: many air gaps per column
+  note("");
+  for(let x=40;x<120;x++)if(x%6<3)for(let y=30;y<80;y+=6)carve(x,y,y+3);
+}
+function note(s){$("note").textContent=s;}
+
+// ---- stats ----
+function spanCount(x){return mode==="single"?1:cols[x].length;}
+function stats(){
+  let total=0,max=0,bad=0;
+  for(let x=0;x<W;x++){const n=spanCount(x);total+=n;max=Math.max(max,n);if(n>=5)bad++;}
+  const bytes=mode==="single"?W*4:total*9, perCol=bytes/W;
+  const realCols=8000*8000, real=perCol*realCols, vox=realCols*1000;   // 4 km / 50 cm = 8000; 500 m tall = 1000 cells; 1 byte per voxel
+  const MB=v=>(v/1048576).toLocaleString(undefined,{maximumFractionDigits:0})+" MB";
+  $("stats").textContent=
+   `columns: ${W}   spans: ${total}   max/col: ${max}\n`+
+   (mode==="single"?`bytes = columns x 4 = ${W} x 4 = ${bytes}\n`:`bytes = spans x (4+4+1) = ${total} x 9 = ${bytes}\n`)+
+   `toy voxels (1 B each): ${W} x ${H} = ${W*H} B\n`+
+   `3D at 4 km x 4 km, 50 cm columns:\n  ${MB(real)}  (${perCol.toFixed(1)} B/col x 64M cols)\n`+
+   `  voxels, 500 m tall: ${MB(vox)}\n  voxels / this = ${(vox/real).toFixed(0)}x`+
+   (mode==="arb3d"?`\ncolumns with 5+ spans: ${bad}`:"");
+  return {total,max,bad,bytes};
+}
+
+// ---- drawing ----
+let sx=1,sy=1;
+function resize(){c.width=c.clientWidth;c.height=c.clientHeight;sx=c.width/W;sy=c.height/H;}
+function draw(){
+  g.fillStyle="#1d2a3a";g.fillRect(0,0,c.width,c.height);
+  const Y=v=>c.height-v*sy;
+  for(let x=0;x<W;x++){
+    if(mode==="single"){
+      g.fillStyle="#8a8f96";g.fillRect(x*sx,Y(h[x]),sx+.5,h[x]*sy);
+      g.fillStyle=MATS[0].c;g.fillRect(x*sx,Y(h[x]),sx+.5,Math.min(6,h[x])*sy);
+    }else for(const s of cols[x]){g.fillStyle=MATS[s.m].c;g.fillRect(x*sx,Y(s.top),sx+.5,(s.top-s.bot)*sy+.5);}
+  }
+  if(mode==="arb3d")for(let x=0;x<W;x++){const n=cols[x].length;
+    g.fillStyle=n>=5?"#ff3a3a":"#7fd48a";g.fillRect(x*sx,0,sx+.5,n*7);
+    if(n>=5){g.fillStyle="#ff3a3a33";g.fillRect(x*sx,0,sx+.5,c.height);}}
+  const now=performance.now();flashes=flashes.filter(f=>now-f.t<2500);
+  for(const f of flashes){g.fillStyle=`rgba(255,40,40,${1-(now-f.t)/2500})`;g.fillRect(f.x*sx,Y(f.hi),sx+.5,(f.hi-f.lo)*sy);}
+  g.fillStyle="#cfd6df";g.font="12px system-ui";
+  g.fillText(mode==="arb3d"?"bars at top = spans per column (red = 5 or more)":"side view: each column is a vertical strip",8,c.height-8);
+  // minimap: greyscale height of (x,z); row SLICE is the edited slice
+  const im=mg.createImageData(64,64);
+  for(let z=0;z<64;z++)for(let X=0;X<64;X++){
+    const v=Math.max(0,Math.min(255,(topOf(Math.floor(X*W/64))+(z===SLICE?0:zwob(z))-60)*6)), i=(z*64+X)*4;
+    im.data[i]=im.data[i+1]=im.data[i+2]=v;im.data[i+3]=255;
+    if(z===SLICE){im.data[i]=255;im.data[i+1]=im.data[i+2]=v*.4;}
+  }
+  mg.putImageData(im,0,0);
+}
+function refresh(){stats();draw();}
+function loop(){draw();requestAnimationFrame(loop);}
+
+// ---- UI ----
+function setMode(m){mode=m;reset();
+  for(const b of document.querySelectorAll("#modes button"))b.classList.toggle("on",b.dataset.m===m);
+  refresh();}
+for(const [k,l] of MODES){const b=document.createElement("button");b.textContent=l;b.dataset.m=k;b.onclick=()=>setMode(k);$("modes").append(b);}
+function setTool(t){tool=t;$("tdig").classList.toggle("on",t==="dig");$("traise").classList.toggle("on",t==="raise");}
+$("tdig").onclick=()=>setTool("dig");$("traise").onclick=()=>setTool("raise");
+$("btun").onclick=()=>{tunnel();refresh();};
+$("bchain").onclick=()=>{chain();refresh();};
+$("bsponge").onclick=()=>{sponge();refresh();};
+$("breset").onclick=()=>{reset();refresh();};
+function paint(e){
+  if(!(e.buttons&1))return;
+  const r=c.getBoundingClientRect();
+  brush(Math.floor((e.clientX-r.left)/sx),Math.round(H-(e.clientY-r.top)/sy),+$("rad").value);
+  refresh();
+}
+c.onpointerdown=paint;c.onpointermove=paint;
+window.onresize=()=>{resize();refresh();};
+
+// ---- selftest ----
+function selftest(){
+  const out=$("selftest");
+  try{
+    setMode("single");
+    const t0=topOf(60);tunnel();
+    if(!(topOf(60)<t0))throw "single: tunnel did not lower column top";
+    if(!flashes.length)throw "single: no lost-material flash";
+    const t0b=topOf(60);
+    setMode("layered");
+    const t1=topOf(60),n1=cols[60].length;tunnel();
+    if(topOf(60)!==t1)throw "layered: top changed";
+    const n2=cols[60].length;
+    if(n2<=n1)throw "layered: no span added";
+    setMode("arb3d");
+    chain();const a=stats().max;sponge();const s=stats();
+    if(s.max<8)throw "arb3d: spans did not explode ("+s.max+")";
+    setMode("single");const t2=topOf(10);tool="dig";brush(10,t2-2,4);
+    if(!(topOf(10)<t2))throw "dig did not lower";
+    out.textContent=`PASS single tunnel top ${t0}->${t0b}; layered spans ${n1}->${n2} top kept ${t1}; chain max ${a}, sponge max ${s.max} spans/col`;
+  }catch(e){out.textContent="FAIL "+e;}
+  setMode("single");
+}
+window.onerror=(m)=>{$("selftest").textContent="FAIL "+m;};
+resize();reset();setMode("single");requestAnimationFrame(loop);
+if(location.search.includes("selftest"))selftest();
+</script></body></html>

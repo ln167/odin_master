@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Axis explorer</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;display:flex;min-height:100vh;background:#14161b;color:#d8dbe2;font:14px/1.4 system-ui,sans-serif}
+a{color:#7fb4ff}
+#side{width:330px;padding:14px;background:#1b1e25;border-right:1px solid #2c303a;overflow:auto}
+#main{flex:1;padding:14px;overflow:auto}
+.axis{margin:0 0 12px}
+.axis h3{margin:0 0 3px;font-size:13px;color:#fff}
+.axis p{margin:0 0 5px;font-size:12px;color:#8e95a5}
+.chip{display:inline-block;margin:0 4px 4px 0;padding:2px 9px;border:1px solid #444b5a;border-radius:11px;background:#232733;color:#c8ccd6;cursor:pointer;font-size:12px}
+.chip.on{background:#2f5fb5;border-color:#7fb4ff;color:#fff}
+button.tab{background:#232733;color:#c8ccd6;border:1px solid #444b5a;padding:5px 14px;cursor:pointer}
+button.tab.on{background:#2f5fb5;color:#fff}
+#stats{background:#101218;border:1px solid #2c303a;padding:8px;margin:10px 0;font-size:13px}
+#stats b{color:#ffd24a}
+#cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;margin-top:12px}
+.card{display:block;padding:10px;border:1px solid #444b5a;border-radius:6px;background:#232733;text-decoration:none;color:#d8dbe2}
+.card.lit{border-color:#ffd24a;background:#2c2a1a;box-shadow:0 0 8px #ffd24a55}
+.card:not(.lit){opacity:.28}
+.card small{display:block;color:#8e95a5;margin-top:4px}
+table{border-collapse:collapse;margin-top:12px}
+th{padding:4px 8px;font-size:12px;color:#aab}
+td.cell{width:130px;height:78px;border:1px solid #333845;vertical-align:top;padding:3px;font-size:11px}
+td.cell.empty{background:repeating-linear-gradient(45deg,#14161b,#14161b 5px,#232733 5px,#232733 7px)}
+td.cell.off{opacity:.3}
+.dot{display:inline-block;margin:1px;padding:0 5px;border-radius:8px;background:#2f5fb5;color:#fff;font-size:10px}
+.gold{display:inline-block;margin:1px;padding:0 5px;border-radius:8px;background:#ffd24a;color:#000;font-weight:bold;text-decoration:none;font-size:11px}
+#selftest{font-size:10px;color:#667;margin-top:16px;white-space:pre-wrap}
+</style></head><body>
+<div id="side">
+<a href="index.html">&larr; all toys</a>
+<h2 style="margin:8px 0">Axis explorer</h2>
+<div id="axes"></div>
+</div>
+<div id="main">
+<button class="tab on" id="tabF" onclick="setView('families')">Families</button>
+<button class="tab" id="tabM" onclick="setView('map')">Map</button>
+<button class="tab" onclick="clearAll()">clear filter</button>
+<div id="stats"></div>
+<div id="mapctl" hidden>X <select id="selX" onchange="setAxes(this.value,$('selY').value)"></select>
+ Y <select id="selY" onchange="setAxes($('selX').value,this.value)"></select></div>
+<div id="cards"></div>
+<div id="map" hidden></div>
+<pre id="selftest"></pre>
+</div>
+<script>
+const ALL5 = ["authored","procedural","learned","captured","sim"];
+const AXES = [
+ {k:"desc", name:"Describes", vals:["skin","interior","space","connections"],
+  note:"Skin is cheapest but can't answer 'what's inside?'; interior is needed for damage, stress, composition; all-of-space answers every query but costs most explicitly."},
+ {k:"expl", name:"Explicit / Implicit", vals:["explicit","implicit"],
+  note:"Explicit: fast to read, costly to store and change topology. Implicit: tiny, edits compose (CSG), costs compute per query, no inherent list of parts."},
+ {k:"struct", name:"Structure", vals:["arbitrary","regular","adaptive","continuous"],
+  note:"Regular: O(1) neighbours, easy threading. Arbitrary: exact shape, few elements. Adaptive: both, but complex code. Continuous: unlimited resolution, no neighbours at all."},
+ {k:"lag", name:"Lagrangian / Eulerian", vals:["Lagrangian","Eulerian"],
+  note:"Lagrangian: matter carries its data, motion is free, no fixed home. Eulerian: fixed cells, moving matter must be re-gridded each step (smearing)."},
+ {k:"dim", name:"3D / 2.5D", vals:["3D","2.5D"],
+  note:"2.5D is ~1000x cheaper and handles most terrain, but cannot do overhangs, tunnels or carving."},
+ {k:"vals", name:"Values per sample", vals:["bit","scalar","multi"],
+  note:"Channel count multiplies memory. Our goo needs at least shape, material ratios, weakness, damage."},
+ {k:"src", name:"Source", vals:ALL5,
+  note:"Authored: big, controllable. Procedural: tiny, needs controllability work. Learned: compressed authored data, expensive to edit. (captured / sim: measured or simulated.)"},
+];
+// family axis values (md section 3; attrs -> multi, edge weights -> scalar, "any" -> all sources, none -> [])
+const FAMILIES = [
+ {id:"f01",file:"f01-surface-mesh.html",name:"Surface mesh",desc:["skin"],expl:["explicit"],struct:["arbitrary"],lag:["Lagrangian"],dim:["3D"],vals:["multi"],src:["authored"]},
+ {id:"f02",file:"f02-structured-mesh.html",name:"Structured mesh",desc:["skin","interior"],expl:["explicit"],struct:["regular"],lag:["Lagrangian"],dim:["3D"],vals:["multi"],src:["authored","procedural"]},
+ {id:"f03",file:"f03-tet-mesh.html",name:"Tet mesh",desc:["interior"],expl:["explicit"],struct:["arbitrary"],lag:["Lagrangian"],dim:["3D"],vals:["multi"],src:ALL5},
+ {id:"f04",file:"f04-voxels.html",name:"Voxels",desc:["interior"],expl:["explicit"],struct:["regular"],lag:["Eulerian"],dim:["3D"],vals:["bit","scalar","multi"],src:ALL5},
+ {id:"f05",file:"f05-adaptive-grid.html",name:"Octree / VDB / DAG",desc:["interior"],expl:["explicit"],struct:["adaptive"],lag:["Eulerian"],dim:["3D"],vals:["bit","scalar","multi"],src:ALL5},
+ {id:"f06",file:"f06-splats.html",name:"Splats / points",desc:["skin"],expl:["explicit"],struct:["arbitrary"],lag:["Lagrangian"],dim:["3D"],vals:["multi"],src:["captured","learned"]},
+ {id:"f07",file:"f07-particles.html",name:"Particles",desc:["interior"],expl:["explicit"],struct:["arbitrary"],lag:["Lagrangian"],dim:["3D"],vals:["multi"],src:["sim"]},
+ {id:"f08",file:"f08-parametric.html",name:"Parametric (NURBS)",desc:["skin"],expl:["explicit"],struct:["continuous"],lag:["Lagrangian"],dim:["3D"],vals:["multi"],src:["authored"]},
+ {id:"f09",file:"f09-sdf.html",name:"SDF (analytic / sampled)",desc:["space"],expl:["implicit"],struct:["continuous","regular","adaptive"],lag:["Eulerian"],dim:["3D"],vals:["scalar"],src:ALL5},
+ {id:"f10",file:"f10-neural-field.html",name:"Neural field",desc:["space"],expl:["implicit"],struct:["continuous"],lag:["Eulerian"],dim:["3D"],vals:["multi"],src:["learned"]},
+ {id:"f11",file:"f11-heightmaps.html",name:"Height maps",desc:["skin"],expl:["explicit"],struct:["regular"],lag:["Eulerian"],dim:["2.5D"],vals:["scalar"],src:ALL5},
+ {id:"f12",file:"f12-graph.html",name:"Pure graph",desc:["connections"],expl:["explicit"],struct:["arbitrary"],lag:[],dim:[],vals:["scalar"],src:ALL5},
+];
+// sparse cells A-G (md section 3); axis values are my reading of each description
+const CANDS = [
+ {id:"A",file:"cA-lagrangian-fields.html",title:"Lagrangian implicit fields",tip:"Each fragment carries its own small field in its body frame; promotion to rigid body needs no meshing step.",desc:["space"],expl:["implicit"],struct:["continuous"],lag:["Lagrangian"],dim:["3D"],vals:["scalar"],src:["procedural","authored"]},
+ {id:"B",file:"p4-mincut-fracture.html",title:"Implicit connectivity",tip:"A continuous field storing bond strength between neighbours; fracture = min-cut through the field.",desc:["connections"],expl:["implicit"],struct:["continuous"],lag:["Eulerian"],dim:["3D"],vals:["scalar"],src:["authored","procedural"]},
+ {id:"C",file:"cC-residual-neural.html",title:"Learned interior multi-channel adaptive",tip:"Neural field of shape + material ratios + weakness for a hand-crafted world; edits as residual patches.",desc:["interior"],expl:["implicit"],struct:["adaptive"],lag:["Eulerian"],dim:["3D"],vals:["multi"],src:["learned"]},
+ {id:"D",file:"cD-splat-matter.html",title:"Splats as physical matter",tip:"Lagrangian, render-native particles that are also the MPM material (PhysGaussian precedent).",desc:["interior","skin"],expl:["explicit"],struct:["arbitrary"],lag:["Lagrangian"],dim:["3D"],vals:["multi"],src:["captured","sim"]},
+ {id:"E",file:"cE-adaptive-tet.html",title:"Adaptive structured tet lattice",tip:"BCC tets, coarse far away and refined at events; bonds = edges, fracture along faces.",desc:["interior"],expl:["explicit"],struct:["adaptive"],lag:["Lagrangian"],dim:["3D"],vals:["multi"],src:["procedural"]},
+ {id:"F",file:"cF-moving-strata.html",title:"Moving layered height fields",tip:"2.5D Lagrangian strata whose layers move with erosion and deposition.",desc:["skin"],expl:["explicit"],struct:["regular"],lag:["Lagrangian"],dim:["2.5D"],vals:["scalar"],src:["sim"]},
+ {id:"G",file:"cG-learned-connectivity.html",title:"Learned connectivity",tip:"A graph neural network predicts fracture or collapse on the load graph.",desc:["connections"],expl:["explicit"],struct:["arbitrary"],lag:[],dim:[],vals:["multi"],src:["learned"]},
+];
+
+const state = {view:"families", sel:{}, x:"lag", y:"expl"};
+AXES.forEach(a => state.sel[a.k] = new Set());
+const $ = id => document.getElementById(id);
+const axis = k => AXES.find(a => a.k === k);
+
+// a thing passes the filter if, on every axis with chips set, it has at least one selected value
+const passes = t => AXES.every(a => !state.sel[a.k].size || t[a.k].some(v => state.sel[a.k].has(v)));
+const litFamilies = () => FAMILIES.filter(passes).map(f => f.id);
+
+// Occupied = union of each family's cartesian product of axis values within the filter.
+// Families lacking an axis value (the graph) are skipped.
+function stats() {
+  const sizes = AXES.map(a => state.sel[a.k].size || a.vals.length);
+  const total = sizes.reduce((p, n) => p * n, 1);
+  const keys = new Set();
+  for (const f of FAMILIES) {
+    if (AXES.some(a => !f[a.k].length)) continue;
+    let combos = [[]];
+    for (const a of AXES) {
+      const vs = f[a.k].filter(v => !state.sel[a.k].size || state.sel[a.k].has(v));
+      combos = combos.flatMap(c => vs.map(v => c.concat(v)));
+    }
+    combos.forEach(c => keys.add(c.join("|")));
+  }
+  return {total, occupied: keys.size, pct: 100 * keys.size / total};
+}
+
+function toggleChip(k, v) {
+  const s = state.sel[k];
+  s.has(v) ? s.delete(v) : s.add(v);
+  render();
+}
+function clearAll() { AXES.forEach(a => state.sel[a.k].clear()); render(); }
+function setView(v) { state.view = v; render(); }
+function setAxes(x, y) { state.x = x; state.y = y; render(); }
+
+function render() {
+  $("axes").innerHTML = AXES.map(a => `<div class="axis"><h3>${a.name}</h3><p>${a.note}</p>` +
+    a.vals.map(v => `<span class="chip${state.sel[a.k].has(v) ? " on" : ""}" data-axis="${a.k}" data-val="${v}" onclick="toggleChip('${a.k}','${v}')">${v}</span>`).join("") + `</div>`).join("");
+  const st = stats();
+  $("stats").innerHTML = `combinations possible: <b>${st.total}</b> &nbsp; occupied by known families: <b>${st.occupied}</b> &nbsp; explored: <b>${st.pct.toFixed(1)}%</b> &nbsp; families lit: <b>${litFamilies().length}/12</b>`;
+  $("tabF").classList.toggle("on", state.view === "families");
+  $("tabM").classList.toggle("on", state.view === "map");
+  $("cards").hidden = state.view !== "families";
+  $("map").hidden = $("mapctl").hidden = state.view !== "map";
+  $("cards").innerHTML = FAMILIES.map(f => `<a class="card${passes(f) ? " lit" : ""}" id="card-${f.id}" href="${f.file}"><b>${f.name}</b>` +
+    `<small>${AXES.map(a => f[a.k].join("/") || "-").join(" · ")}</small></a>`).join("");
+  const opts = sel => AXES.map(a => `<option value="${a.k}"${a.k === sel ? " selected" : ""}>${a.name}</option>`).join("");
+  $("selX").innerHTML = opts(state.x); $("selY").innerHTML = opts(state.y);
+  renderMap();
+}
+
+function renderMap() {
+  const ax = axis(state.x), ay = axis(state.y);
+  let h = `<table><tr><th>${ay.name} \\ ${ax.name}</th>` + ax.vals.map(v => `<th>${v}</th>`).join("") + `</tr>`;
+  for (const vy of ay.vals) {
+    h += `<tr><th>${vy}</th>`;
+    for (const vx of ax.vals) {
+      const has = t => t[ax.k].includes(vx) && t[ay.k].includes(vy);
+      const fams = FAMILIES.filter(f => has(f) && passes(f)), cands = CANDS.filter(has);
+      const off = (state.sel[ax.k].size && !state.sel[ax.k].has(vx)) || (state.sel[ay.k].size && !state.sel[ay.k].has(vy));
+      h += `<td class="cell${fams.length ? "" : " empty"}${off ? " off" : ""}" data-x="${vx}" data-y="${vy}">` +
+        fams.map(f => `<span class="dot" title="${f.name}">${f.name}</span>`).join("") +
+        cands.map(c => `<a class="gold" href="${c.file}" title="${c.title}: ${c.tip}">${c.id}</a>`).join("") + `</td>`;
+    }
+    h += `</tr>`;
+  }
+  $("map").innerHTML = h + `</table><p style="font-size:12px;color:#8e95a5">Hatched = no known family. Gold letters = candidate cells A-G (hover for description). Graph and G have no Lagrangian/3D value so never appear on those axes.</p>`;
+}
+
+function selftest() {
+  const out = $("selftest");
+  try {
+    const eq = (a, b, m) => { if (JSON.stringify(a) !== JSON.stringify(b)) throw new Error(m + ": got " + JSON.stringify(a)); };
+    render();
+    const base = stats();
+    eq(litFamilies().length, 12, "no filter lights all");
+    toggleChip("expl", "implicit");
+    eq(litFamilies(), ["f09", "f10"], "implicit lights");
+    eq(document.querySelectorAll(".card.lit").length, 2, "lit cards in DOM");
+    if (!(stats().total < base.total)) throw new Error("total did not shrink");
+    toggleChip("expl", "implicit");
+    eq(stats().total, base.total, "chip toggles back");
+    setView("map");
+    setAxes("lag", "expl");
+    const cell = document.querySelector('td.cell[data-x="Lagrangian"][data-y="implicit"]');
+    if (!cell || !cell.querySelector(".gold") || cell.querySelector(".gold").textContent !== "A") throw new Error("candidate A not marked");
+    if (!cell.classList.contains("empty")) throw new Error("A cell should be hatched/empty");
+    if (!document.querySelector('td.cell[data-x="Eulerian"][data-y="implicit"] .dot')) throw new Error("Eulerian/implicit should hold a family");
+    if (!(base.pct < 100 && base.pct > 0)) throw new Error("pct explored " + base.pct);
+    setView("families");
+    out.textContent = `PASS implicit->2 fam; A marked at Lag x Impl; ${base.occupied}/${base.total} = ${base.pct.toFixed(1)}% explored`;
+  } catch (e) { out.textContent = "FAIL " + e.message; }
+}
+window.onerror = (m) => { $("selftest").textContent = "FAIL " + m; };
+render();
+if (location.search.includes("selftest")) selftest();
+</script></body></html>

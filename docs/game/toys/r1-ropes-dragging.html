@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>r1 - Ropes, dragging, tree felling</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;display:flex;height:100vh;background:#14161a;color:#d6d9de;font:13px/1.4 system-ui,sans-serif}
+aside{width:320px;flex:none;overflow-y:auto;padding:12px 14px;background:#1b1e24;border-right:1px solid #2c3038}
+main{flex:1;position:relative;min-width:0}
+canvas{position:absolute;inset:0;width:100%;height:100%;cursor:crosshair}
+h1{font-size:17px;margin:6px 0 8px}h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#8a93a3;margin:14px 0 4px}
+a{color:#7ab4ff}p,ul{margin:4px 0}ul{padding-left:18px}
+label{display:block;margin:6px 0 2px}label span{float:right;color:#9fb}
+input[type=range]{width:100%}
+.row{display:flex;gap:4px;margin:4px 0}.row button{flex:1}
+button{background:#272c35;color:#d6d9de;border:1px solid #3a404c;padding:4px 6px;cursor:pointer;border-radius:3px}
+button.on{background:#2f5fa8;border-color:#5b8fe0}
+table{width:100%;border-collapse:collapse}td{padding:1px 0}td:last-child{text-align:right;color:#ffd58a;font-family:monospace}
+#hov{color:#9fe3b0;font-family:monospace;min-height:5.6em;white-space:pre-wrap}
+#selftest{font-size:10px;color:#667;margin:10px 0 0;white-space:pre-wrap}
+</style></head><body>
+<aside>
+<a href="index.html">&larr; all toys</a>
+<h1>r1 &mdash; Ropes, dragging, tree felling</h1>
+<h2>What it is</h2>
+<p>A rope is a chain of particles joined by distance constraints, solved by position-based dynamics (PBD): move each particle freely, then repeatedly nudge pairs back to their rest distance, and read velocity as displacement / dt. One end is pinned to a point on a rigid body (the rope pulls it, and it pulls the rope back); the other end is held by a group of workers. The block slides on terrain given by a signed distance function, with Coulomb friction: it only moves when pull &gt; &mu;&middot;m&middot;g.</p>
+<h2>Controls</h2>
+<label>Workers <span id="vWk"></span></label><input id="wk" type="range" min="1" max="60" value="10">
+<label>Force per worker (N) <span id="vFw"></span></label><input id="fw" type="range" min="100" max="1000" step="50" value="300">
+<label>Block mass (tonnes) <span id="vMass"></span></label><input id="mass" type="range" min="1" max="15" step="0.5" value="3">
+<div class="row"><button data-surf="0">Stone / sand</button><button data-surf="1">Sled / dry</button><button data-surf="2">Sled / wet</button></div>
+<div class="row"><button id="reset">Reset</button><button id="fell">Fell tree</button><button id="rope">Rope the tree</button></div>
+<div>Click-drag a rope particle to tug it by hand.</div>
+<h2>Pull needed vs available</h2>
+<table>
+<tr><td>Required = &mu;mg (+ slope)</td><td id="sReq"></td></tr>
+<tr><td>Available = workers &times; force</td><td id="sAvail"></td></tr>
+<tr><td>Verdict</td><td id="sVerdict"></td></tr>
+</table>
+<h2>Hover</h2><div id="hov">hover a rope particle, the block or the tree</div>
+<h2>Live stats</h2>
+<table>
+<tr><td>Rope particles / constraints</td><td id="sPart"></td></tr>
+<tr><td>Iterations &times; substeps</td><td id="sIter"></td></tr>
+<tr><td>Solver time / frame</td><td id="sMs"></td></tr>
+<tr><td>Max rope stretch error</td><td id="sStr"></td></tr>
+<tr><td>Block velocity</td><td id="sV"></td></tr>
+<tr><td>Friction state</td><td id="sFric"></td></tr>
+</table>
+<h2>Good at</h2>
+<ul><li>Rope is cheap and unconditionally stable; two-way pull on rigid bodies.</li><li>Friction and the wet-sand trick (&mu; 0.6 &rarr; 0.3, Fall et al. 2014, Phys. Rev. Lett.) fall out of one rule.</li></ul>
+<h2>Bad at</h2>
+<ul><li>Stretch grows when a light rope hauls a heavy body (mass ratio); more iterations cost time.</li><li>Rope does not collide with the block or itself here.</li></ul>
+<h2>In 3D / for our game:</h2>
+<p>Ropes + attachments need a deterministic rigid-body and constraint solver that hundreds of workers can pull on at 30 fps; blocks and trees are objects that each carry their own field and transform, sliding against the terrain field.</p>
+<pre id="selftest"></pre>
+</aside>
+<main><canvas id="cv"></canvas></main>
+<script>
+window.onerror = (m) => { document.getElementById('selftest').textContent = 'FAIL ' + m; };
+const $ = id => document.getElementById(id);
+const cv = $('cv'), ctx = cv.getContext('2d');
+const G = 9.81, NP = 30, SEG = 0.7, SUB = 16, ITER = 3, AL = 1e-7, DT = 1 / 60, RM = 8, RR = 0.08, VMAX = 1.2, WM = 70;
+const SURF = [{ mu: 0.6, sled: 0 }, { mu: 0.5, sled: 1 }, { mu: 0.3, sled: 1 }];
+let W = 800, H = 600, surf = 0, nWk = 10, fWk = 300, tMass = 3;
+let blk, tree, tgt, anc, dir, wk, P, drag = -1, mouse = { x: 0, y: 0 }, ms = 0, maxStr = 0, peak = 0;
+
+// ---- terrain: flat ground, 1:5 ramp (x 10..30), platform at y=4 ----
+const hg = x => x < 10 ? 0 : x < 30 ? (x - 10) * 0.2 : 4;
+const sdf = (x, y) => (y - hg(x)) / (x > 10 && x < 30 ? 1.0198 : 1);
+function nrm(x, y) { const e = 1e-3, gx = sdf(x + e, y) - sdf(x - e, y), gy = sdf(x, y + e) - sdf(x, y - e), l = Math.hypot(gx, gy); return [gx / l, gy / l]; }
+
+// ---- rigid body: box with contact points sampled against the SDF ----
+function mkBody(x, y, hx, hy, m, mu) {
+  return { x, y, a: 0, vx: 0, vy: 0, w: 0, hx, hy, mu, m, im: 1 / m, iI: 12 / (m * 4 * (hx * hx + hy * hy)),
+    pts: [[-hx, -hy], [hx, -hy], [0, -hy], [-hx, hy], [hx, hy], [0, hy]], pin: null, on: true, felled: false, state: 'static' };
+}
+function setMass(b, m) { b.m = m; b.im = 1 / m; b.iI = 12 / (m * 4 * (b.hx * b.hx + b.hy * b.hy)); }
+function wp(b, lx, ly) { const c = Math.cos(b.a), s = Math.sin(b.a); return [b.x + c * lx - s * ly, b.y + s * lx + c * ly]; }
+function impulse(b, rx, ry, Jx, Jy) { b.vx += Jx * b.im; b.vy += Jy * b.im; b.w += b.iI * (rx * Jy - ry * Jx); }
+
+function stepBody(b, h) {
+  b.vy -= G * h;
+  const C = [];
+  b.pts.forEach(([lx, ly], i) => {
+    if (b.pin && i === 0) return;
+    const w = wp(b, lx, ly), d = sdf(w[0], w[1]);
+    if (d > 0.05) return;
+    const [nx, ny] = nrm(w[0], w[1]), rx = w[0] - b.x, ry = w[1] - b.y, tx = -ny, ty = nx;
+    const cn = rx * ny - ry * nx, ct = rx * ty - ry * tx;
+    C.push({ i, rx, ry, nx, ny, tx, ty, d, kn: b.im + b.iI * cn * cn, kt: b.im + b.iI * ct * ct, ln: 0, lt: 0 });
+  });
+  let pr = null;
+  if (b.pin) {
+    const w = wp(b, -b.hx, -b.hy), rx = w[0] - b.x, ry = w[1] - b.y, k = b.iI;
+    const k11 = b.im + k * ry * ry, k12 = -k * rx * ry, k22 = b.im + k * rx * rx;
+    pr = { rx, ry, k11, k12, k22, det: k11 * k22 - k12 * k12, bx: (b.pin[0] - w[0]) * 0.2 / h, by: (b.pin[1] - w[1]) * 0.2 / h };
+  }
+  for (let it = 0; it < 8; it++) {
+    if (pr) {
+      const ex = pr.bx - (b.vx - b.w * pr.ry), ey = pr.by - (b.vy + b.w * pr.rx);
+      impulse(b, pr.rx, pr.ry, (pr.k22 * ex - pr.k12 * ey) / pr.det, (pr.k11 * ey - pr.k12 * ex) / pr.det);
+    }
+    for (const c of C) {
+      let vx = b.vx - b.w * c.ry, vy = b.vy + b.w * c.rx;
+      const goal = c.d > 0 ? -c.d / h : 0.2 * Math.max(0, -c.d - 0.005) / h;
+      const nl = Math.max(0, c.ln + (goal - (vx * c.nx + vy * c.ny)) / c.kn), dn = nl - c.ln; c.ln = nl;
+      impulse(b, c.rx, c.ry, c.nx * dn, c.ny * dn);
+      vx = b.vx - b.w * c.ry; vy = b.vy + b.w * c.rx;
+      const lim = b.mu * c.ln, tl = Math.max(-lim, Math.min(lim, c.lt - (vx * c.tx + vy * c.ty) / c.kt)), dt = tl - c.lt; c.lt = tl;
+      impulse(b, c.rx, c.ry, c.tx * dt, c.ty * dt);
+    }
+  }
+  b.state = C.some(c => c.ln > 0) ? (Math.hypot(b.vx, b.vy) > 0.02 && C.some(c => c.ln > 0 && Math.abs(c.lt) >= b.mu * c.ln * 0.999) ? 'sliding' : 'static') : 'airborne';
+  if (pr && C.some(c => c.i === 3 && c.ln > 0)) { b.pin = null; b.felled = true; }   // tip hit the ground: hinge lets go
+  b.x += b.vx * h; b.y += b.vy * h; b.a += b.w * h;
+}
+
+// ---- rope (PBD) + one substep of the whole world ----
+function layRope() {
+  const A = wp(tgt, anc[0], anc[1]), L = (NP - 1) * SEG;
+  wk.x = A[0] + dir * 0.97 * L; wk.v = 0;
+  const B = [wk.x, hg(wk.x) + 0.9];
+  P = [];
+  for (let i = 0; i < NP; i++) { const t = i / (NP - 1); P.push({ id: i, x: A[0] + (B[0] - A[0]) * t, y: A[1] + (B[1] - A[1]) * t + 2 * Math.sin(Math.PI * t), ox: 0, oy: 0, vx: 0, vy: 0 }); }
+}
+const wi = i => (i === 0 || i === NP - 1 || i === drag) ? 0 : 1 / RM;
+
+function sub(h) {
+  const A = wp(tgt, anc[0], anc[1]), N = NP - 1;
+  P[0].x = A[0]; P[0].y = A[1]; P[N].x = wk.x; P[N].y = hg(wk.x) + 0.9;
+  for (let i = 1; i < N; i++) {
+    const p = P[i]; p.ox = p.x; p.oy = p.y;
+    if (i === drag) { p.x = mouse.x; p.y = mouse.y; continue; }
+    p.vy -= G * h; p.x += p.vx * h; p.y += p.vy * h;
+  }
+  let c0x = 0, c0y = 0, cNx = 0, cNy = 0;
+  const at = AL / (h * h), lam = new Array(N).fill(0);
+  for (let it = 0; it < ITER; it++) {            // Newton step: solve all distance constraints at once (tridiagonal), then re-linearise
+    const nx = [], ny = [], C = [], D = [], O = [], R = [], dl = [];
+    for (let i = 0; i < N; i++) {
+      const dx = P[i + 1].x - P[i].x, dy = P[i + 1].y - P[i].y, d = Math.hypot(dx, dy);
+      nx.push(dx / d); ny.push(dy / d); C.push(d - SEG);
+    }
+    for (let i = 0; i < N; i++) {
+      D.push(wi(i) + wi(i + 1) + at); R.push(C[i] - at * lam[i]);
+      O.push(i < N - 1 ? -wi(i + 1) * (nx[i] * nx[i + 1] + ny[i] * ny[i + 1]) : 0);
+    }
+    for (let i = 1; i < N; i++) { const m = O[i - 1] / D[i - 1]; D[i] -= m * O[i - 1]; R[i] -= m * R[i - 1]; }
+    dl[N - 1] = R[N - 1] / D[N - 1];
+    for (let i = N - 2; i >= 0; i--) dl[i] = (R[i] - O[i] * dl[i + 1]) / D[i];
+    for (let j = 1; j < N; j++) {
+      const w = wi(j);
+      P[j].x += w * (dl[j] * nx[j] - dl[j - 1] * nx[j - 1]); P[j].y += w * (dl[j] * ny[j] - dl[j - 1] * ny[j - 1]);
+    }
+    c0x -= wi(1) * dl[0] * nx[0]; c0y -= wi(1) * dl[0] * ny[0];
+    cNx += wi(N - 1) * dl[N - 1] * nx[N - 1]; cNy += wi(N - 1) * dl[N - 1] * ny[N - 1];
+    for (let i = 0; i < N; i++) lam[i] += dl[i];
+  }
+  for (let i = 1; i < N; i++) {
+    const p = P[i];
+    if (i !== drag) {
+      const d = sdf(p.x, p.y) - RR;
+      if (d < 0) { const n = nrm(p.x, p.y); p.x -= n[0] * d; p.y -= n[1] * d; }
+      p.vx = (p.x - p.ox) / h * 0.999; p.vy = (p.y - p.oy) / h * 0.999;
+    }
+  }
+  impulse(tgt, A[0] - tgt.x, A[1] - tgt.y, -RM * c0x / h, -RM * c0y / h);      // two-way: rope pulls the body
+  const F = nWk * fWk * Math.max(0, 1 - wk.v * dir / VMAX), Mw = nWk * WM;      // workers: force fades as they reach walking speed
+  wk.v += (dir * F * h - RM * cNx / h) / Mw;
+  stepBody(blk, h);
+  if (tree.on) stepBody(tree, h);
+  wk.x += wk.v * h;
+}
+function simStep() {
+  const t0 = performance.now();
+  for (let s = 0; s < SUB; s++) sub(DT / SUB);
+  maxStr = 0;
+  for (let i = 0; i < NP - 1; i++) maxStr = Math.max(maxStr, (Math.hypot(P[i + 1].x - P[i].x, P[i + 1].y - P[i].y) - SEG) / SEG);
+  peak = Math.max(peak, maxStr); ms = ms * 0.9 + 0.1 * (performance.now() - t0);
+}
+
+// ---- UI handlers ----
+function readCtl() {
+  nWk = +$('wk').value; fWk = +$('fw').value; tMass = +$('mass').value;
+  setMass(blk, tMass * 1000); blk.mu = SURF[surf].mu;
+}
+function reset() {
+  blk = mkBody(3, 0.6, 1.2, 0.6, tMass * 1000, SURF[surf].mu);
+  tree = mkBody(42, hg(42) + 4, 0.25, 4, 1000, 0.5); tree.on = false;
+  tgt = blk; anc = [1.2, -0.3]; dir = 1; wk = { x: 0, v: 0 }; drag = -1; peak = 0;
+  readCtl(); layRope();
+}
+function fell() {
+  if (tree.on || tree.felled) return;
+  const pv = wp(tree, -tree.hx, -tree.hy); tree.pin = pv; tree.on = true; tree.a = 0.1;
+  const c = Math.cos(tree.a), s = Math.sin(tree.a);
+  tree.x = pv[0] + c * tree.hx - s * tree.hy; tree.y = pv[1] + s * tree.hx + c * tree.hy;
+}
+function ropeTree() {
+  if (!tree.felled) return;
+  tgt = tree; anc = [0, tree.hy]; dir = -1; layRope();
+}
+function setSurf(i) { surf = i; readCtl(); }
+['wk', 'fw', 'mass'].forEach(i => $(i).oninput = readCtl);
+document.querySelectorAll('[data-surf]').forEach(b => b.onclick = () => setSurf(+b.dataset.surf));
+$('reset').onclick = reset; $('fell').onclick = fell; $('rope').onclick = ropeTree;
+
+// ---- drawing ----
+const S = () => W / 52, sx = x => (x + 4) * S(), sy = y => H * 0.78 - y * S();
+function poly(b, pts, fill) {
+  ctx.beginPath();
+  pts.forEach(([x, y], i) => { const w = wp(b, x, y); i ? ctx.lineTo(sx(w[0]), sy(w[1])) : ctx.moveTo(sx(w[0]), sy(w[1])); });
+  ctx.closePath(); ctx.fillStyle = fill; ctx.fill(); ctx.strokeStyle = '#000'; ctx.stroke();
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  ctx.beginPath(); ctx.moveTo(sx(-4), H);
+  for (let x = -4; x <= 48; x += 1) ctx.lineTo(sx(x), sy(hg(x)));
+  ctx.lineTo(sx(48), H); ctx.closePath(); ctx.fillStyle = surf === 2 ? '#6e5c3c' : '#a8915f'; ctx.fill();
+  ctx.strokeStyle = 'rgba(122,180,255,.3)'; ctx.setLineDash([4, 4]);       // SDF iso-lines d = 1, 2, 3 m
+  for (let k = 1; k <= 3; k++) { ctx.beginPath(); for (let x = -4; x <= 48; x += 1) { const y = hg(x) + k * (x > 10 && x < 30 ? 1.0198 : 1); x === -4 ? ctx.moveTo(sx(x), sy(y)) : ctx.lineTo(sx(x), sy(y)); } ctx.stroke(); }
+  ctx.setLineDash([]);
+  poly(tree, [[-.25, -4], [.25, -4], [.25, 4], [-.25, 4]], '#5e4128');
+  poly(blk, [[-1.2, -.6], [1.2, -.6], [1.2, .6], [-1.2, .6]], '#8d8a82');
+  if (SURF[surf].sled) poly(blk, [[-1.3, -.6], [1.4, -.6], [1.4, -.48], [-1.3, -.48]], '#8a5a2b');
+  for (let i = 0; i < NP - 1; i++) {
+    const st = Math.max(0, (Math.hypot(P[i + 1].x - P[i].x, P[i + 1].y - P[i].y) - SEG) / SEG);
+    ctx.strokeStyle = `hsl(${Math.max(0, 50 - st * 1500)},85%,60%)`; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(sx(P[i].x), sy(P[i].y)); ctx.lineTo(sx(P[i + 1].x), sy(P[i + 1].y)); ctx.stroke();
+  }
+  ctx.lineWidth = 1;
+  for (const p of P) { ctx.fillStyle = (p.id === 0 || p.id === NP - 1) ? '#ff6b6b' : '#fff'; ctx.beginPath(); ctx.arc(sx(p.x), sy(p.y), 2.5, 0, 7); ctx.fill(); }
+  ctx.fillStyle = '#7ab4ff';
+  for (let i = 0; i < nWk; i++) { const x = wk.x + dir * (0.5 + 0.45 * (i % 12)), y = hg(x) + 0.5 + 0.4 * ((i / 12) | 0) * 0; ctx.beginPath(); ctx.arc(sx(x), sy(hg(x) + 0.2 + 0.4 * ((i / 12) | 0)), 3.5, 0, 7); ctx.fill(); }
+  const sl = hg(blk.x + 0.1) - hg(blk.x - 0.1), th = Math.atan(sl / 0.2);
+  const req = blk.m * G * (blk.mu * Math.cos(th) + Math.sin(th)), av = nWk * fWk;
+  $('vWk').textContent = nWk; $('vFw').textContent = fWk; $('vMass').textContent = tMass + ' t';
+  $('sReq').textContent = (req / 1000).toFixed(1) + ' kN'; $('sAvail').textContent = (av / 1000).toFixed(1) + ' kN';
+  $('sVerdict').textContent = av > req ? 'moves' : 'holds';
+  $('sPart').textContent = NP + ' / ' + (NP - 1); $('sIter').textContent = ITER + ' x ' + SUB;
+  $('sMs').textContent = ms.toFixed(2) + ' ms'; $('sStr').textContent = (maxStr * 100).toFixed(2) + ' %';
+  $('sV').textContent = blk.vx.toFixed(2) + ' m/s'; $('sFric').textContent = blk.state;
+  document.querySelectorAll('[data-surf]').forEach(b => b.classList.toggle('on', +b.dataset.surf === surf));
+}
+function hover() {
+  let best = -1, bd = 0.5;
+  P.forEach(p => { const d = Math.hypot(p.x - mouse.x, p.y - mouse.y); if (d < bd) { bd = d; best = p.id; } });
+  const inside = b => { const c = Math.cos(b.a), s = Math.sin(b.a), dx = mouse.x - b.x, dy = mouse.y - b.y; return Math.abs(c * dx + s * dy) < b.hx && Math.abs(-s * dx + c * dy) < b.hy; };
+  const body = (n, b) => `${n}: pos (${b.x.toFixed(2)}, ${b.y.toFixed(2)}) m  angle ${(b.a * 57.296).toFixed(1)} deg\nvel (${b.vx.toFixed(2)}, ${b.vy.toFixed(2)})  spin ${b.w.toFixed(2)}\nmass ${b.m.toFixed(0)} kg  mu ${b.mu}  ${b.state}`;
+  if (best >= 0) { const p = P[best]; $('hov').textContent = `rope particle id ${p.id}\npos (${p.x.toFixed(2)}, ${p.y.toFixed(2)}) m\ninverse mass ${wi(p.id) ? wi(p.id).toFixed(3) : '0'}  pinned: ${wi(p.id) ? 'no' : 'yes'}`; }
+  else if (inside(blk)) $('hov').textContent = body('block', blk);
+  else if (inside(tree)) $('hov').textContent = body('tree', tree);
+}
+const pos = e => { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) * W / r.width / S() - 4, y: (H * 0.78 - (e.clientY - r.top) * H / r.height) / S() }; };
+cv.onmousemove = e => { mouse = pos(e); hover(); };
+cv.onmousedown = e => {
+  mouse = pos(e); let bd = 0.8;
+  for (let i = 1; i < NP - 1; i++) { const d = Math.hypot(P[i].x - mouse.x, P[i].y - mouse.y); if (d < bd) { bd = d; drag = i; } }
+};
+window.onmouseup = () => { drag = -1; };
+function resize() { const r = cv.parentElement.getBoundingClientRect(); W = cv.width = Math.max(200, Math.floor(r.width)); H = cv.height = Math.max(200, Math.floor(r.height)); draw(); }
+window.onresize = resize;
+
+// ---- self test ----
+function setCtl(n, t, f, sf) { $('wk').value = n; $('mass').value = t; $('fw').value = f; surf = sf; reset(); }
+function run(n) { for (let i = 0; i < n; i++) simStep(); }
+function selftest() {
+  const out = $('selftest'), must = (c, m) => { if (!c) throw new Error(m); };
+  try {
+    setCtl(1, 15, 300, 0); let x0 = blk.x; run(600);
+    const dA = Math.abs(blk.x - x0), stA = blk.state;
+    must(dA < 0.01, `heavy block moved ${(dA * 100).toFixed(2)} cm with 1 worker`);
+    setCtl(60, 15, 300, 2); x0 = blk.x; run(600);
+    const dH = Math.abs(blk.x - x0), reqH = blk.m * G * blk.mu / 1000, avH = 60 * 300 / 1000;
+    must(avH < reqH && dH < 0.01, `15 t wet: avail ${avH} kN < req ${reqH.toFixed(1)} kN but moved ${(dH * 100).toFixed(2)} cm`);
+    setCtl(60, 5, 300, 2); x0 = blk.x; run(600);
+    const dB = blk.x - x0, strB = maxStr, pkB = peak, stB = blk.state;
+    must(dB > 0.5, `5 t, 60 workers, wet sand moved only ${dB.toFixed(2)} m`);
+    must(strB < 0.03, `rope stretch ${(strB * 100).toFixed(2)}%`);
+    setCtl(60, 5, 300, 2); run(300); const k1 = [blk.x, blk.a, P[10].x, P[10].y];
+    setCtl(60, 5, 300, 2); run(300); const k2 = [blk.x, blk.a, P[10].x, P[10].y];
+    must(k1.every((v, i) => v === k2[i]), 'non-deterministic: ' + k1 + ' vs ' + k2);
+    setCtl(60, 3, 300, 0); fell(); run(600);
+    const tilt = Math.abs(tree.a) * 57.296;
+    must(tree.felled, 'tree never landed');
+    must(tilt > 80, `tree tilt only ${tilt.toFixed(1)} deg`);
+    run(120); must(Math.abs(tree.w) < 0.05, `tree still spinning ${tree.w.toFixed(3)}`);
+    const tx = tree.x; ropeTree(); run(600); const dT = tx - tree.x;
+    must(dT > 0.5, `roped tree moved ${dT.toFixed(2)} m`);
+    must(maxStr < 0.03, `tree rope stretch ${(maxStr * 100).toFixed(2)}%`);
+    reset();
+    out.textContent = `PASS 15t/1w static ${(dA * 100).toFixed(3)} cm (${stA}); 15t/60w wet holds (${avH} kN < ${reqH.toFixed(1)} kN, ${(dH * 100).toFixed(3)} cm); 5t/60w wet moved ${dB.toFixed(2)} m (${stB}); stretch end ${(strB * 100).toFixed(2)}% peak ${(pkB * 100).toFixed(2)}%; tree ${tilt.toFixed(1)} deg w=${tree.w.toFixed(3)} dragged ${dT.toFixed(2)} m; deterministic`;
+  } catch (e) { out.textContent = 'FAIL ' + e.message; }
+}
+
+reset(); resize();
+if (location.search.includes('selftest')) selftest();
+else (function loop() { simStep(); draw(); requestAnimationFrame(loop); })();
+</script></body></html>

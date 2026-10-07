@@ -1,4 +1,4 @@
-// Tracy backend. Active when -define:INSTRUMENT=tracy|both.
+// Tracy backend. Active when -define:INSTRUMENT=tracy.
 //
 // Requires `tracy.lib` / `tracy.so` / `tracy.dylib` to exist next to
 // vendor/odin-tracy/bindings.odin. Build it with

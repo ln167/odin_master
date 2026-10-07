@@ -1,0 +1,452 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>3D ropes: dragging stone and logs</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;display:flex;height:100vh;background:#14161a;color:#d6d9de;font:13px/1.4 system-ui,sans-serif}
+aside{width:320px;flex:none;overflow-y:auto;padding:12px 14px;background:#1b1e24;border-right:1px solid #2c3038}
+main{flex:1;position:relative;min-width:0}
+canvas{position:absolute;inset:0;width:100%;height:100%;cursor:grab}
+h1{font-size:17px;margin:6px 0 8px}h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#8a93a3;margin:14px 0 4px}
+a{color:#7ab4ff}p,ul{margin:4px 0}ul{padding-left:18px}
+label{display:block;margin:6px 0 2px}label span{float:right;color:#9fb}
+input[type=range]{width:100%}
+.row{display:flex;gap:4px;margin:4px 0}.row button{flex:1}
+button{background:#272c35;color:#d6d9de;border:1px solid #3a404c;padding:4px 6px;cursor:pointer;border-radius:3px}
+button.on{background:#2f5fa8;border-color:#5b8fe0}
+table{width:100%;border-collapse:collapse}td{padding:1px 0}td:last-child{text-align:right;color:#ffd58a;font-family:monospace}
+#hov{font-family:ui-monospace,Consolas,monospace;font-size:12px;background:#12141a;border:1px solid #2c3038;padding:6px;min-height:96px;white-space:pre-wrap;color:#9fe3b0}
+#pull{font-family:ui-monospace,Consolas,monospace;font-size:12px;white-space:pre-wrap;margin:4px 0}
+#selftest{font-size:10px;color:#667;margin:10px 0 0;white-space:pre-wrap}
+</style></head><body>
+<aside>
+<a href="index.html">&larr; all toys</a>
+<h1>3D ropes: dragging stone and logs</h1>
+<h2>What it is</h2>
+<p>Teams of workers pull ropes to drag a stone block on a wooden sled up a construction ramp, and they drag a felled log. Each rope is a chain of particles joined by distance constraints, solved position-based with substeps. One end of each rope is pinned to the sled, and the rope's pull goes back into the block as force and torque. The block slides against a terrain signed distance field (SDF) under Coulomb friction: it stays put until the pull beats &mu;&middot;N.</p>
+<p style="color:#9fb3cf"><i>Wetting the sand in front of the sled (shown in an Egyptian tomb painting; measured by Fall et al. 2014, Phys. Rev. Lett.) roughly halves the pull needed.</i></p>
+<h2>Controls</h2>
+<div>Left-drag: orbit. Wheel: zoom. Right- or shift-drag: pan. Left-drag a rope particle to tug it by hand.</div>
+<div class="row"><button id="bPlay">Pause</button><button id="bStep">Step</button><button id="bReset">Reset</button></div>
+<label>Block mass <span id="vMass"></span></label><input id="mass" type="range" min="1" max="15" value="5">
+<label>Workers (300 N each) <span id="vWork"></span></label><input id="work" type="range" min="1" max="80" value="80">
+<label>Ropes <span id="vRopes"></span></label><input id="ropes" type="range" min="2" max="4" value="2">
+<div class="row"><button data-surf="bare">Bare stone/sand &mu;.6</button></div>
+<div class="row"><button data-surf="dry">Sled, dry &mu;.5</button><button data-surf="wet">Sled, wet &mu;.3</button></div>
+<div class="row"><button id="bFell">Fell tree</button><button id="bRope">Rope the log</button></div>
+<h2>Pull: required vs available</h2>
+<div id="pull"></div>
+<h2>Inspect</h2><div id="hov">Hover a rope particle or the block.</div>
+<h2>Live stats</h2>
+<table>
+<tr><td>Rope particles</td><td id="sP"></td></tr>
+<tr><td>Constraints (segments + long-range)</td><td id="sC"></td></tr>
+<tr><td>Substeps &times; iterations</td><td id="sS"></td></tr>
+<tr><td>Solver ms / frame</td><td id="sMs"></td></tr>
+<tr><td>Max rope stretch</td><td id="sStr"></td></tr>
+<tr><td>Block speed</td><td id="sV"></td></tr>
+<tr><td>Friction state</td><td id="sF"></td></tr>
+<tr><td>Bytes (particles + constraints + bodies)</td><td id="sB"></td></tr>
+</table>
+<h2>Good at</h2>
+<ul><li>Ropes stay stiff without exploding: the substeps keep each correction tiny.</li><li>Static vs sliding comes straight from Coulomb: nothing moves until the pull exceeds &mu;&middot;N.</li><li>Deterministic: fixed step, fixed order, no randomness.</li></ul>
+<h2>Bad at</h2>
+<ul><li>The cost grows with particles &times; substeps &times; iterations.</li><li>A heavy worker on a light rope converges slowly (the mass-ratio problem); long-range constraints patch it.</li><li>The block is kept on the ground: it slides and turns but never tips or lifts.</li></ul>
+<h2>In 3D / for our game:</h2>
+<p>Each block or log carries its own shape (its own field) and transform and asks the terrain SDF where the ground is. Ropes need a deterministic constraint solver. The number of ropes and workers is the CPU budget question: here it is particles &times; 20 substeps &times; 4 iterations, per team, every frame.</p>
+<pre id="selftest"></pre>
+</aside>
+<main><canvas id="cv"></canvas></main>
+<script>
+'use strict';
+const $ = id => document.getElementById(id), ST = location.search.includes('selftest');
+window.onerror = (m) => { $('selftest').textContent = 'FAIL ' + m; };
+
+// ---- constants (SI units: m, kg, s, N) ----
+const G = 9.81, DT = 1 / 30, SUB = 20, IT = 4, SEG = 0.5, NPR = 36, FREE = 6, MROPE = 2, WM = 70, WF = 300, VMAX = 1.5;
+const SL = 0.1 / Math.hypot(1, 0.1), CL = 1 / Math.hypot(1, 0.1); // ramp slope 1:10
+const MU = { bare: 0.6, dry: 0.5, wet: 0.3 }, LOGTEAM = 30;
+
+// ---- terrain: analytic SDF = sand plain U ramp wedge U two pyramid courses ----
+function sdBox(x, y, z, hx, hy, hz) {
+  const qx = Math.abs(x) - hx, qy = Math.abs(y) - hy, qz = Math.abs(z) - hz;
+  return Math.hypot(Math.max(qx, 0), Math.max(qy, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qy, qz), 0);
+}
+function sdf(x, y, z) {
+  let d = y;
+  d = Math.min(d, Math.max(-SL * x + CL * y, x - 30, Math.abs(z) - 5));
+  d = Math.min(d, sdBox(x - 38, y - 1.5, z, 8, 1.5, 12));
+  return Math.min(d, sdBox(x - 38, y - 4.25, z, 5, 1.25, 9));
+}
+function groundY(x, z) { let y = 6; for (let k = 0; k < 40; k++) { const d = sdf(x, y, z); y -= d; if (d < 1e-5) break; } return y; }
+function sdfN(x, y, z) {
+  const e = 0.01, a = sdf(x + e, y, z) - sdf(x - e, y, z), b = sdf(x, y + e, z) - sdf(x, y - e, z), c = sdf(x, y, z + e) - sdf(x, y, z - e), l = Math.hypot(a, b, c);
+  return [a / l, b / l, c / l];
+}
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const norm = a => { const l = Math.hypot(...a); return [a[0] / l, a[1] / l, a[2] / l]; };
+
+// ---- particle + constraint storage (struct of arrays) ----
+const MAXP = 200, MAXC = 400;
+const px = new Float64Array(MAXP), py = new Float64Array(MAXP), pz = new Float64Array(MAXP);
+const ox = new Float64Array(MAXP), oy = new Float64Array(MAXP), oz = new Float64Array(MAXP);
+const vx = new Float64Array(MAXP), vy = new Float64Array(MAXP), vz = new Float64Array(MAXP);
+const w = new Float64Array(MAXP), wk = new Int32Array(MAXP), att = new Int8Array(MAXP); // inverse mass, workers holding, attachment of rope k+1
+const ci = new Int32Array(MAXC), cj = new Int32Array(MAXC), cr = new Float64Array(MAXC), ct = new Uint8Array(MAXC); // ct 1 = long-range (max distance only)
+const PB = 10 * 8 + 4 + 1, CB = 4 + 4 + 8 + 1, BODYB = 30 * 8;
+let np = 0, nc = 0, ropes = [], bodies = [], block = null, log = null, tree = null, surf = 'wet';
+let drag = -1, dragT = [0, 0, 0], dragY = 0, solverMs = 0, simT = 0, playing = true;
+
+// ---- rigid bodies: box kept on the ground; 3 DOF (slide in the tangent plane + turn about the normal) ----
+function makeBody(o) {
+  const B = Object.assign({ v: [0, 0, 0], om: 0, N: 0, state: 'static', F: [0, 0, 0], tau: 0 }, o);
+  B.I = B.M * (B.a * B.a + B.b * B.b) / 3; B.reff = 0.52 * Math.hypot(B.a, B.b); frame(B); return B;
+}
+function frame(B) { // sample the SDF ground under the 4 bottom corners -> height and tilt
+  const c = Math.cos(B.yaw), s = Math.sin(B.yaw), p = B.p, g = [];
+  for (const fa of [1, -1]) for (const sb of [1, -1]) g.push(groundY(p[0] + c * B.a * fa + s * B.b * sb, p[2] - s * B.a * fa + c * B.b * sb));
+  p[1] = (g[0] + g[1] + g[2] + g[3]) / 4;
+  const tf = norm([c, (g[0] + g[1] - g[2] - g[3]) / (4 * B.a), -s]), ts0 = norm([s, (g[0] + g[2] - g[1] - g[3]) / (4 * B.b), c]);
+  B.tf = tf; B.n = norm(cross(ts0, tf)); B.ts = cross(tf, B.n);
+}
+function stepBody(B, h) {
+  const F = [0, -B.M * G, 0], n = B.n; let tau = 0;
+  for (const r of ropes) if (r.body === B) {
+    const a = r.start, rx = px[a] - B.p[0], ry = py[a] - B.p[1], rz = pz[a] - B.p[2], f = r.F;
+    F[0] += f[0]; F[1] += f[1]; F[2] += f[2];
+    tau += (ry * f[2] - rz * f[1]) * n[0] + (rz * f[0] - rx * f[2]) * n[1] + (rx * f[1] - ry * f[0]) * n[2];
+  }
+  const fn = dot(F, n), v = B.v; B.N = Math.max(0, -fn);
+  for (let k = 0; k < 3; k++) v[k] += h * (F[k] - fn * n[k]) / B.M;
+  const vn = dot(v, n); for (let k = 0; k < 3; k++) v[k] -= vn * n[k];
+  const J = B.mu * B.N * h / B.M, sp = Math.hypot(...v); // Coulomb: friction impulse can stop the body, never reverse it
+  if (sp <= J) v.fill(0); else for (let k = 0; k < 3; k++) v[k] *= 1 - J / sp;
+  B.om += h * tau / B.I;
+  const Jr = B.mu * B.N * B.reff * h / B.I;
+  B.om = Math.abs(B.om) <= Jr ? 0 : B.om - Math.sign(B.om) * Jr;
+  B.p[0] += h * v[0]; B.p[2] += h * v[2]; B.yaw += h * B.om; frame(B);
+  B.state = sp <= J && B.om === 0 ? 'static' : 'sliding'; B.Fsum = F; B.tau = tau;
+}
+const attachPos = r => { const B = r.body, l = r.loc; return [0, 1, 2].map(k => B.p[k] + B.tf[k] * l[0] + B.n[k] * l[1] + B.ts[k] * l[2]); };
+
+// ---- ropes ----
+function addRope(B, loc) {
+  const r = { body: B, loc, start: np, F: [0, 0, 0], goal: B === block ? 44 : 26 }, a = attachPos(r);
+  for (let k = 0; k < NPR; k++) {
+    const i = np++, x = a[0] + k * SEG, z = a[2], t = Math.min(1, k / FREE), g = groundY(x, z);
+    px[i] = ox[i] = x; pz[i] = oz[i] = z; py[i] = oy[i] = k ? Math.max(a[1] * (1 - t) + (g + 1) * t, g + 0.05) : a[1];
+    vx[i] = vy[i] = vz[i] = 0; wk[i] = 0; att[i] = 0; w[i] = 1 / MROPE;
+    if (k) { ci[nc] = i - 1; cj[nc] = i; cr[nc] = Math.hypot(px[i] - px[i - 1], py[i] - py[i - 1], pz[i] - pz[i - 1]); ct[nc++] = 0; }
+  }
+  let L = 0; const s0 = nc - (NPR - 1); // long-range attachments: particle k can be no farther from the sled than the rope length up to k
+  for (let k = 1; k < NPR; k++) { L += cr[s0 + k - 1]; if (k > 1) { ci[nc] = r.start; cj[nc] = r.start + k; cr[nc] = L; ct[nc++] = 1; } }
+  w[r.start] = 0; att[r.start] = ropes.length + 1; ropes.push(r);
+}
+function assign() { // spread each team along its rope, starting from the far end
+  const W = +$('work').value, R = ropes.filter(r => r.body === block).length;
+  ropes.forEach((r, q) => {
+    const team = r.body === block ? Math.floor(W / R) + (q < W % R) : LOGTEAM;
+    for (let k = 1; k < NPR; k++) wk[r.start + k] = 0;
+    for (let j = 0; j < team; j++) wk[r.start + NPR - 1 - j % (NPR - FREE)]++;
+    for (let k = 1; k < NPR; k++) { const i = r.start + k; w[i] = i === drag ? 0 : 1 / (MROPE + wk[i] * WM); }
+  });
+}
+function stepRopes(h) {
+  const ih2 = 1 / (h * h);
+  for (const r of ropes) {
+    const a = attachPos(r); r.F[0] = r.F[1] = r.F[2] = 0;
+    for (let i = r.start; i < r.start + NPR; i++) {
+      ox[i] = px[i]; oy[i] = py[i]; oz[i] = pz[i];
+      if (!w[i]) continue;
+      vy[i] -= G * h;
+      if (wk[i] && px[i] < r.goal) vx[i] += h * w[i] * wk[i] * WF * Math.max(0, 1 - vx[i] / VMAX); // workers pull +x, weaker as they walk faster
+      px[i] += h * vx[i]; py[i] += h * vy[i]; pz[i] += h * vz[i];
+    }
+    px[r.start] = a[0]; py[r.start] = a[1]; pz[r.start] = a[2];
+  }
+  if (drag >= 0) { px[drag] = dragT[0]; py[drag] = dragT[1]; pz[drag] = dragT[2]; }
+  for (let it = 0; it < IT; it++) {
+    for (let q = 0; q < nc; q++) {
+      const k = it & 1 ? nc - 1 - q : q, i = ci[k], j = cj[k], wi = w[i], wj = w[j], ws = wi + wj;
+      if (!ws) continue;
+      const dx = px[j] - px[i], dy = py[j] - py[i], dz = pz[j] - pz[i], d = Math.hypot(dx, dy, dz), C = d - cr[k];
+      if (ct[k] && C <= 0) continue;
+      const s = C / (d * ws);
+      px[i] += wi * s * dx; py[i] += wi * s * dy; pz[i] += wi * s * dz;
+      px[j] -= wj * s * dx; py[j] -= wj * s * dy; pz[j] -= wj * s * dz;
+      if (att[i]) { const f = ropes[att[i] - 1].F; f[0] += s * dx * ih2; f[1] += s * dy * ih2; f[2] += s * dz * ih2; } // -m_j dx_j / h^2 -> force on the body
+    }
+    for (let i = 0; i < np; i++) {
+      if (!w[i]) continue;
+      const g = groundY(px[i], pz[i]);
+      if (wk[i]) py[i] = g + 1; else if (py[i] < g + 0.05) py[i] = g + 0.05; // hands at 1 m; rope rests on the ground
+    }
+  }
+  for (let i = 0; i < np; i++) if (w[i]) { vx[i] = (px[i] - ox[i]) / h; vy[i] = (py[i] - oy[i]) / h; vz[i] = (pz[i] - oz[i]) / h; }
+}
+function maxStretch() { let m = 0; for (let k = 0; k < nc; k++) if (!ct[k]) m = Math.max(m, Math.hypot(px[cj[k]] - px[ci[k]], py[cj[k]] - py[ci[k]], pz[cj[k]] - pz[ci[k]]) / cr[k] - 1); return m * 100; }
+
+// ---- tree: hinged at its base, topples as a rigid rod until the trunk touches the SDF ----
+function stepTree(h) {
+  const t = tree; if (t.phase !== 'falling') return;
+  t.om += h * 1.5 * G / t.L * Math.sin(t.th); t.th += h * t.om; // rod about its end: I = mL^2/3, torque = m g L/2 sin
+  for (const s of [0.5, 0.75, 1]) if (sdf(t.x, t.y + s * t.L * Math.cos(t.th), t.z + s * t.L * Math.sin(t.th)) < t.r) { t.om = 0; t.phase = 'down'; break; }
+}
+function fell() { if (tree.phase === 'standing') { tree.phase = 'falling'; tree.th = 0.05; } }
+function ropeLog() {
+  if (tree.phase !== 'down') return;
+  const t = tree, half = t.L / 2;
+  log = makeBody({ name: 'log', M: 600 * Math.PI * t.r * t.r * t.L, a: half, b: t.r, hy: t.r, lift: 0, mu: 0.5, p: [t.x, 0, t.z + half * Math.sin(t.th)], yaw: -Math.PI / 2 });
+  bodies.push(log); t.phase = 'log'; addRope(log, [half, t.r, 0]); assign();
+}
+
+// ---- world ----
+function blockLoc(k, R) { const z = -0.6 + 1.2 * k / (R - 1); return surf === 'bare' ? [1.2, 0.45, z] : [1.5, 0.2, z]; }
+function reset() {
+  np = nc = 0; ropes = []; drag = -1; simT = 0; log = null;
+  block = makeBody({ name: 'block', M: +$('mass').value * 1000, a: 1.2, b: 0.75, hy: 0.6, lift: surf === 'bare' ? 0 : 0.25, mu: MU[surf], p: [3, 0, 0], yaw: 0 });
+  bodies = [block];
+  tree = { x: -8, z: 6, y: groundY(-8, 6), L: 10, r: 0.25, th: 0, om: 0, phase: 'standing' };
+  const R = +$('ropes').value; for (let k = 0; k < R; k++) addRope(block, blockLoc(k, R));
+  assign();
+}
+function step() {
+  const t0 = performance.now(), h = DT / SUB;
+  for (let s = 0; s < SUB; s++) { for (const B of bodies) stepBody(B, h); stepTree(h); stepRopes(h); }
+  simT += DT; solverMs = performance.now() - t0;
+}
+function pull() {
+  const B = block, c = B.n[1], s = Math.sqrt(Math.max(0, 1 - c * c)), req = B.mu * B.M * G * c + B.M * G * s, av = +$('work').value * WF;
+  return { req, av, th: Math.acos(c) * 180 / Math.PI };
+}
+
+// ---- WebGL2 ----
+const cv = $('cv'), gl = cv.getContext('webgl2', { preserveDrawingBuffer: true, antialias: true });
+function sh(type, src) { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
+const prog = gl.createProgram();
+gl.attachShader(prog, sh(gl.VERTEX_SHADER, `#version 300 es
+layout(location=0) in vec3 aP; layout(location=1) in vec3 aN; layout(location=2) in vec3 aC;
+uniform mat4 uVP, uM; uniform float uPs; out vec3 vN, vC;
+void main(){ gl_Position = uVP * uM * vec4(aP, 1.); vN = mat3(uM) * aN; vC = aC; gl_PointSize = uPs; }`));
+gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, `#version 300 es
+precision highp float; in vec3 vN, vC; uniform float uUnlit; out vec4 o;
+void main(){ float l = uUnlit > .5 ? 1. : max(dot(normalize(vN), normalize(vec3(.4,.8,.3))), 0.) * .75 + .3; o = vec4(vC * l, 1.); }`));
+gl.linkProgram(prog); if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+gl.useProgram(prog);
+const U = n => gl.getUniformLocation(prog, n), uVP = U('uVP'), uM = U('uM'), uPs = U('uPs'), uUnlit = U('uUnlit');
+function mesh(P, N, C, I) {
+  const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+  const buf = (d, loc) => { gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer()); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(d), gl.STATIC_DRAW); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 3, gl.FLOAT, false, 0, 0); };
+  buf(P, 0); buf(N, 1); if (C) buf(C, 2);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, gl.createBuffer()); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(I), gl.STATIC_DRAW);
+  gl.bindVertexArray(null); return { vao, n: I.length };
+}
+function boxMesh() {
+  const P = [], N = [], I = [];
+  for (let a = 0; a < 3; a++) for (const s of [-1, 1]) {
+    const o = P.length / 3;
+    for (const [u, v] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) { const p = [0, 0, 0], n = [0, 0, 0]; p[a] = s; p[(a + 1) % 3] = u; p[(a + 2) % 3] = v; n[a] = s; P.push(...p); N.push(...n); }
+    I.push(o, o + 1, o + 2, o, o + 2, o + 3);
+  }
+  return mesh(P, N, null, I);
+}
+function lathe(rings, seg = 12) { // rings: [radius, y, normal r, normal y]
+  const P = [], N = [], I = [];
+  for (const [r, y, nr, ny] of rings) for (let k = 0; k <= seg; k++) { const t = k / seg * 2 * Math.PI, c = Math.cos(t), s = Math.sin(t); P.push(r * c, y, r * s); N.push(nr * c, ny, nr * s); }
+  for (let j = 0; j + 1 < rings.length; j++) for (let k = 0; k < seg; k++) { const a = j * (seg + 1) + k, b = a + seg + 1; I.push(a, b, a + 1, a + 1, b, b + 1); }
+  return mesh(P, N, null, I);
+}
+const capRings = []; for (let k = 0; k <= 6; k++) { const f = k / 12 * Math.PI; capRings.push([Math.sin(f), 2.86 + Math.cos(f), Math.sin(f), Math.cos(f)]); }
+for (let k = 6; k >= 0; k--) { const f = k / 12 * Math.PI; capRings.push([Math.sin(f), -2.86 - Math.cos(f), Math.sin(f), -Math.cos(f)]); }
+const BOX = boxMesh(), CYL = lathe([[0, 1, 0, 1], [1, 1, 0, 1], [1, 1, 1, 0], [1, -1, 1, 0], [1, -1, 0, -1], [0, -1, 0, -1]]), CAP = lathe(capRings, 8);
+const TER = (() => {
+  const P = [], N = [], C = [], I = [], X0 = -30, Z0 = -25, NX = 161, NZ = 101, S = 0.5;
+  for (let j = 0; j < NZ; j++) for (let i = 0; i < NX; i++) {
+    const x = X0 + i * S, z = Z0 + j * S, y = groundY(x, z); P.push(x, y, z); N.push(...sdfN(x, y, z));
+    const stone = x > 29.9 && y > 0.5 && Math.abs(z) < 12.1, ramp = x > 0 && x < 30 && Math.abs(z) < 5;
+    const k = 0.96 + 0.04 * Math.sin(x * 1.7) * Math.sin(z * 2.3);
+    C.push(...(stone ? [0.80, 0.74, 0.60] : ramp ? [0.66, 0.55, 0.40] : [0.84, 0.73, 0.52]).map(c => c * k));
+  }
+  for (let j = 0; j + 1 < NZ; j++) for (let i = 0; i + 1 < NX; i++) { const a = j * NX + i; I.push(a, a + 1, a + NX, a + 1, a + NX + 1, a + NX); }
+  return mesh(P, N, C, I);
+})();
+const lineVao = gl.createVertexArray(), lineBuf = gl.createBuffer(), lineData = new Float32Array(MAXP * 6);
+gl.bindVertexArray(lineVao); gl.bindBuffer(gl.ARRAY_BUFFER, lineBuf); gl.bufferData(gl.ARRAY_BUFFER, lineData.byteLength, gl.DYNAMIC_DRAW);
+gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0); gl.bindVertexArray(null);
+
+// ---- camera (RTS orbit) ----
+const cam = { t: [7, 1, 5], yaw: -2.25, pitch: 0.6, dist: 44 }, FOV = 0.9;
+let VP = null, camB = null, W = 1, H = 1;
+function mul(a, b) { const r = new Float32Array(16); for (let c = 0; c < 4; c++) for (let k = 0; k < 4; k++) for (let i = 0; i < 4; i++) r[c * 4 + i] += a[k * 4 + i] * b[c * 4 + k]; return r; }
+function camMats() {
+  const t = cam.t, cp = Math.cos(cam.pitch), e = [t[0] + cam.dist * cp * Math.cos(cam.yaw), t[1] + cam.dist * Math.sin(cam.pitch), t[2] + cam.dist * cp * Math.sin(cam.yaw)];
+  const z = norm([e[0] - t[0], e[1] - t[1], e[2] - t[2]]), x = norm(cross([0, 1, 0], z)), y = cross(z, x), f = 1 / Math.tan(FOV / 2), as = W / H, n = 0.3, fa = 400;
+  const V = [x[0], y[0], z[0], 0, x[1], y[1], z[1], 0, x[2], y[2], z[2], 0, -dot(x, e), -dot(y, e), -dot(z, e), 1];
+  const Pm = [f / as, 0, 0, 0, 0, f, 0, 0, 0, 0, (fa + n) / (n - fa), -1, 0, 0, 2 * fa * n / (n - fa), 0];
+  VP = mul(Pm, V); camB = { e, x, y, z };
+}
+function toScreen(p) { const m = VP, cx = m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12], cy = m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13], cw = m[3] * p[0] + m[7] * p[1] + m[11] * p[2] + m[15]; return cw > 0 ? [(cx / cw + 1) / 2 * W, (1 - cy / cw) / 2 * H] : null; }
+function ray(mx, my) { const t = Math.tan(FOV / 2), a = (mx / W * 2 - 1) * t * W / H, b = (1 - my / H * 2) * t, { x, y, z } = camB; return norm([x[0] * a + y[0] * b - z[0], x[1] * a + y[1] * b - z[1], x[2] * a + y[2] * b - z[2]]); }
+
+// ---- drawing ----
+const model = (X, Y, Z, O) => new Float32Array([...X, 0, ...Y, 0, ...Z, 0, ...O, 1]);
+const sc = (v, s) => [v[0] * s, v[1] * s, v[2] * s], add = (...vs) => [0, 1, 2].map(k => vs.reduce((s, v) => s + v[k], 0));
+function draw(m, M, col) { gl.uniformMatrix4fv(uM, false, M); gl.vertexAttrib3f(2, ...col); gl.bindVertexArray(m.vao); gl.drawElements(gl.TRIANGLES, m.n, gl.UNSIGNED_INT, 0); }
+const ID = model([1, 0, 0], [0, 1, 0], [0, 0, 1], [0, 0, 0]);
+let hoverP = -1;
+function render() {
+  W = cv.clientWidth || 1; H = cv.clientHeight || 1;
+  const dpr = devicePixelRatio || 1; if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+  gl.viewport(0, 0, cv.width, cv.height); gl.clearColor(0.08, 0.09, 0.1, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT); gl.enable(gl.DEPTH_TEST);
+  camMats(); gl.uniformMatrix4fv(uVP, false, VP); gl.uniform1f(uUnlit, 0); gl.uniform1f(uPs, 1);
+  draw(TER, ID, [1, 1, 1]);
+  const B = block, up = B.n;
+  if (B.lift) { // sled: deck + two runners
+    draw(BOX, model(sc(B.tf, B.a + 0.25), sc(up, 0.05), sc(B.ts, B.b), add(B.p, sc(up, 0.2))), [0.55, 0.38, 0.2]);
+    for (const s of [-1, 1]) draw(BOX, model(sc(B.tf, B.a + 0.4), sc(up, 0.08), sc(B.ts, 0.1), add(B.p, sc(up, 0.08), sc(B.ts, s * 0.6))), [0.45, 0.3, 0.16]);
+  }
+  draw(BOX, model(sc(B.tf, B.a), sc(up, B.hy), sc(B.ts, B.b), add(B.p, sc(up, B.lift + B.hy))), hoverP === -2 ? [0.95, 0.9, 0.6] : [0.78, 0.74, 0.66]);
+  const t = tree;
+  if (log) draw(CYL, model(sc(log.n, log.b), sc(log.tf, log.a), sc(log.ts, log.b), add(log.p, sc(log.n, log.b))), hoverP === -3 ? [0.8, 0.6, 0.4] : [0.5, 0.35, 0.22]);
+  else {
+    const u = [0, Math.cos(t.th), Math.sin(t.th)], e3 = [0, -Math.sin(t.th), Math.cos(t.th)], base = [t.x, t.y, t.z];
+    draw(CYL, model([t.r, 0, 0], sc(u, t.L / 2), sc(e3, t.r), add(base, sc(u, t.L / 2))), [0.5, 0.35, 0.22]);
+    draw(CAP, model([1.4, 0, 0], sc(u, 0.35), sc(e3, 1.4), add(base, sc(u, t.L * 0.85))), [0.25, 0.5, 0.2]);
+  }
+  for (const r of ropes) for (let i = r.start + 1; i < r.start + NPR; i++) if (wk[i]) { // workers as capsules beside the rope
+    const j = Math.min(i + 1, r.start + NPR - 1), k = j === i ? i - 1 : i, d = norm([px[j] - px[k], 0, pz[j] - pz[k]]);
+    for (let m = 0; m < wk[i]; m++) {
+      const side = (m % 2 ? 1 : -1) * (0.45 + 0.35 * (m >> 1)), x = px[i] - d[2] * side, z = pz[i] + d[0] * side;
+      draw(CAP, model([0.22, 0, 0], [0, 0.22, 0], [0, 0, 0.22], [x, groundY(x, z) + 0.85, z]), r.body === block ? [0.75, 0.42, 0.3] : [0.35, 0.5, 0.75]);
+    }
+  }
+  let n = 0; // ropes: segments as lines, particles as points
+  for (let k = 0; k < nc; k++) if (!ct[k]) { const i = ci[k], j = cj[k]; lineData.set([px[i], py[i], pz[i], px[j], py[j], pz[j]], n); n += 6; }
+  gl.bindBuffer(gl.ARRAY_BUFFER, lineBuf); gl.bufferSubData(gl.ARRAY_BUFFER, 0, lineData, 0, n);
+  gl.uniform1f(uUnlit, 1); gl.uniformMatrix4fv(uM, false, ID); gl.bindVertexArray(lineVao);
+  gl.vertexAttrib3f(1, 0, 1, 0); gl.vertexAttrib3f(2, 0.95, 0.85, 0.55); gl.drawArrays(gl.LINES, 0, n / 3);
+  gl.uniform1f(uPs, 3); gl.drawArrays(gl.POINTS, 0, n / 3);
+  const hp = drag >= 0 ? drag : hoverP;
+  if (hp >= 0) { lineData.set([px[hp], py[hp], pz[hp]], 0); gl.bufferSubData(gl.ARRAY_BUFFER, 0, lineData, 0, 3); gl.uniform1f(uPs, 10); gl.vertexAttrib3f(2, 1, 1, 0.2); gl.disable(gl.DEPTH_TEST); gl.drawArrays(gl.POINTS, 0, 1); }
+  gl.bindVertexArray(null);
+}
+
+// ---- stats ----
+const f1 = v => v.toFixed(1), f2 = v => v.toFixed(2);
+function updateStats() {
+  const nd = (nc - ropes.length * (NPR - 2)), bytes = np * PB + nc * CB + bodies.length * BODYB, p = pull();
+  $('vMass').textContent = $('mass').value + ' t'; $('vWork').textContent = $('work').value; $('vRopes').textContent = $('ropes').value;
+  $('sP').textContent = np; $('sC').textContent = `${nd} + ${nc - nd}`; $('sS').textContent = `${SUB} x ${IT}`;
+  $('sMs').textContent = f2(solverMs); $('sStr').textContent = f2(maxStretch()) + ' %';
+  $('sV').textContent = f2(Math.hypot(...block.v)) + ' m/s'; $('sF').textContent = block.state + (log ? ' / log ' + log.state : '');
+  $('sB').textContent = `${np * PB}+${nc * CB}+${bodies.length * BODYB}=${bytes}`;
+  $('pull').innerHTML = `required = &mu;&middot;m&middot;g&middot;cos&theta; + m&middot;g&middot;sin&theta;\n  = ${f1(p.req / 1000)} kN  (&mu;=${block.mu}, ${$('mass').value} t, &theta;=${f1(p.th)}&deg;)\navailable = ${$('work').value} x 300 N = ${f1(p.av / 1000)} kN\n` +
+    (p.av > p.req ? '<b style="color:#8f8">moves</b>' : '<b style="color:#f88">STUCK</b> (static friction holds)') + `   rope pull now ${f1(Math.hypot(...ropes.filter(r => r.body === block).reduce((s, r) => add(s, r.F), [0, 0, 0])) / 1000)} kN`;
+  document.querySelectorAll('[data-surf]').forEach(b => b.classList.toggle('on', b.dataset.surf === surf));
+  $('bPlay').textContent = playing ? 'Pause' : 'Play';
+}
+
+// ---- input ----
+function pickParticle(mx, my) { let best = 12, bi = -1; for (let i = 0; i < np; i++) { if (att[i]) continue; const s = toScreen([px[i], py[i], pz[i]]); if (s) { const d = Math.hypot(s[0] - mx, s[1] - my); if (d < best) { best = d; bi = i; } } } return bi; }
+function hitBody(B, mx, my) { // ray vs oriented box
+  const d = ray(mx, my), c = add(B.p, sc(B.n, B.lift + B.hy)), o = camB.e.map((v, k) => v - c[k]), ax = [B.tf, B.n, B.ts], hx = [B.a, B.hy, B.b];
+  let t0 = -1e9, t1 = 1e9;
+  for (let k = 0; k < 3; k++) { const oo = dot(o, ax[k]), dd = dot(d, ax[k]); if (Math.abs(dd) < 1e-9) { if (Math.abs(oo) > hx[k]) return false; continue; } let a = (-hx[k] - oo) / dd, b = (hx[k] - oo) / dd; if (a > b) [a, b] = [b, a]; t0 = Math.max(t0, a); t1 = Math.min(t1, b); }
+  return t0 <= t1 && t1 > 0;
+}
+const v3 = (a, b, c) => `(${f2(a)}, ${f2(b)}, ${f2(c)})`;
+function inspect(mx, my) {
+  hoverP = pickParticle(mx, my); const h = $('hov');
+  if (hoverP >= 0) {
+    const i = hoverP, r = ropes.findIndex(r => i >= r.start && i < r.start + NPR), q = ropes[r], k = i - q.start;
+    h.textContent = `ROPE PARTICLE #${i} (rope ${r}, link ${k}/${NPR - 1})\npos ${v3(px[i], py[i], pz[i])}\ninverse mass ${w[i].toExponential(2)} 1/kg${w[i] ? ' (' + f1(1 / w[i]) + ' kg)' : ''}\npinned to: ${i === drag ? 'your hand' : k === 1 ? 'next to the ' + q.body.name + ' attachment' : 'nothing (free)'}\nworkers holding: ${wk[i]}`;
+  } else {
+    const B = hitBody(block, mx, my) ? block : log && hitBody(log, mx, my) ? log : null; hoverP = B === block ? -2 : B ? -3 : -1;
+    h.textContent = B ? `RIGID BODY '${B.name}'\nmass ${f1(B.M)} kg  I ${f1(B.I)} kg m^2\npos ${v3(...B.p)}  yaw ${f2(B.yaw)}\nvel ${v3(...B.v)}  omega ${f2(B.om)}\nnormal force N ${f1(B.N / 1000)} kN  mu ${B.mu}\nfriction: ${B.state} (limit ${f1(B.mu * B.N / 1000)} kN)` : 'Hover a rope particle or the block.';
+  }
+}
+let mode = null, last = [0, 0];
+const local = e => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+function dragTarget(mx, my) { const d = ray(mx, my); if (Math.abs(d[1]) < 1e-4) return; const t = (dragY - camB.e[1]) / d[1]; if (t > 0) dragT = [camB.e[0] + d[0] * t, dragY, camB.e[2] + d[2] * t]; }
+cv.addEventListener('mousedown', e => {
+  const [mx, my] = local(e); last = [mx, my]; camMats();
+  const i = e.button === 0 && !e.shiftKey ? pickParticle(mx, my) : -1;
+  if (i >= 0) { drag = i; w[i] = 0; dragY = py[i]; dragT = [px[i], py[i], pz[i]]; mode = 'drag'; }
+  else mode = e.button === 2 || e.shiftKey ? 'pan' : 'rot';
+});
+addEventListener('mousemove', e => {
+  const [mx, my] = local(e), dx = mx - last[0], dy = my - last[1]; last = [mx, my];
+  if (mode === 'drag') dragTarget(mx, my);
+  else if (mode === 'rot') { cam.yaw += dx * 0.006; cam.pitch = Math.min(1.5, Math.max(0.05, cam.pitch + dy * 0.006)); }
+  else if (mode === 'pan') { const s = cam.dist * 0.0015, x = camB.x, f = norm([-camB.z[0], 0, -camB.z[2]]); for (let k = 0; k < 3; k++) cam.t[k] += -x[k] * dx * s + f[k] * dy * s; }
+  else if (e.target === cv) inspect(mx, my);
+});
+addEventListener('mouseup', () => { if (mode === 'drag') { drag = -1; assign(); } mode = null; });
+cv.addEventListener('wheel', e => { e.preventDefault(); cam.dist = Math.min(150, Math.max(5, cam.dist * Math.exp(e.deltaY * 0.001))); }, { passive: false });
+cv.addEventListener('contextmenu', e => e.preventDefault());
+
+// ---- UI wiring ----
+$('bPlay').onclick = () => { playing = !playing; };
+$('bStep').onclick = () => step();
+$('bReset').onclick = () => reset();
+$('mass').oninput = () => { block.M = +$('mass').value * 1000; block.I = block.M * (block.a ** 2 + block.b ** 2) / 3; };
+$('work').oninput = () => assign();
+$('ropes').oninput = () => reset();
+document.querySelectorAll('[data-surf]').forEach(b => b.onclick = () => { surf = b.dataset.surf; reset(); });
+$('bFell').onclick = fell;
+$('bRope').onclick = ropeLog;
+
+// ---- selftest ----
+function scenario(t, n, s, steps) {
+  $('mass').value = t; $('work').value = n; $('ropes').value = 2;
+  document.querySelector(`[data-surf=${s}]`).onclick(); $('mass').oninput(); $('work').oninput();
+  const p0 = [...block.p]; for (let i = 0; i < steps; i++) step();
+  return { d: Math.hypot(block.p[0] - p0[0], block.p[1] - p0[1], block.p[2] - p0[2]), dx: block.p[0] - p0[0], dy: block.p[1] - p0[1], p: [...block.p], str: maxStretch() };
+}
+function selftest() {
+  const out = $('selftest'), must = (c, m) => { if (!c) throw new Error(m); };
+  try {
+    const a = scenario(15, 1, 'bare', 300);
+    must(a.d < 0.01, `15t/1 worker/bare moved ${a.d}`);
+    const b = scenario(15, 80, 'wet', 300), pb = pull(); updateStats();
+    must(b.d < 0.01, `15t/80/wet on ramp moved ${b.d} dx ${b.dx} dy ${b.dy} F ${block.Fsum.map(f2)} N ${block.N}`);
+    must(pb.req > pb.av && $('pull').textContent.includes('STUCK'), 'UI does not show 15t as stuck');
+    const c = scenario(5, 80, 'wet', 300);
+    must(c.dx > 1 && c.dy > 0.05, `5t/80/wet did not go up the ramp dx ${c.dx} dy ${c.dy}`);
+    must(c.str < 3, `rope stretch ${c.str}%`);
+    const d = scenario(5, 80, 'wet', 300);
+    must(d.p.every((v, k) => Object.is(v, c.p[k])), 'not deterministic');
+    $('bFell').onclick(); for (let i = 0; i < 300; i++) step();
+    const deg = tree.th * 180 / Math.PI;
+    must(deg > 80 && Math.abs(tree.om) < 1e-9 && tree.phase === 'down', `tree ${deg} deg om ${tree.om}`);
+    $('bRope').onclick(); const l0 = attachPos(ropes[2]); for (let i = 0; i < 300; i++) step(); const l1 = attachPos(ropes[2]);
+    const lm = Math.hypot(l1[0] - l0[0], l1[2] - l0[2]); // log tip: it swings round to follow the rope
+    must(lm > 1, `log tip moved ${lm}`);
+    render(); // hand tug through the real mouse handlers
+    const i = ropes[0].start + 3, s0 = toScreen([px[i], py[i], pz[i]]), r = cv.getBoundingClientRect(), q0 = [px[i], py[i], pz[i]];
+    must(s0, 'particle offscreen');
+    cv.dispatchEvent(new MouseEvent('mousedown', { clientX: r.left + s0[0], clientY: r.top + s0[1], button: 0, bubbles: true }));
+    must(drag === i, 'mousedown did not grab the particle');
+    dispatchEvent(new MouseEvent('mousemove', { clientX: r.left + s0[0] + 40, clientY: r.top + s0[1] - 40 }));
+    for (let k = 0; k < 10; k++) step();
+    const tug = Math.hypot(px[i] - q0[0], pz[i] - q0[2]);
+    dispatchEvent(new MouseEvent('mouseup', {}));
+    must(tug > 0.3 && drag === -1, `hand tug moved ${tug}`);
+    render(); updateStats();
+    const px8 = new Uint8Array(cv.width * cv.height * 4); gl.readPixels(0, 0, cv.width, cv.height, gl.RGBA, gl.UNSIGNED_BYTE, px8);
+    let fg = 0; for (let k = 0; k < px8.length; k += 4) if (Math.abs(px8[k] - 20) + Math.abs(px8[k + 1] - 23) + Math.abs(px8[k + 2] - 26) > 12) fg++;
+    must(fg > 1000, `only ${fg} non-background pixels`);
+    const err = gl.getError(); must(err === 0, 'gl error ' + err);
+    out.textContent = `PASS 15t/1/bare moved ${a.d.toFixed(4)}m, 15t/80/wet moved ${b.d.toFixed(4)}m (need ${(pb.req / 1000).toFixed(1)}kN vs ${(pb.av / 1000).toFixed(1)}kN), 5t/80/wet +${c.dx.toFixed(2)}m up ${c.dy.toFixed(2)}m stretch ${c.str.toFixed(2)}%, bit-identical, tree ${deg.toFixed(1)}deg, log ${lm.toFixed(2)}m, tug ${tug.toFixed(2)}m, ${fg}px`;
+  } catch (e) { out.textContent = 'FAIL ' + e.message; }
+}
+
+// ---- start: state first, then the loop ----
+reset(); render(); updateStats();
+let acc = 0, tPrev = performance.now();
+(function loop(t) {
+  if (t !== undefined) { if (playing && !ST) { acc += Math.min(0.1, (t - tPrev) / 1000); let k = 0; while (acc >= DT && k++ < 2) { step(); acc -= DT; } if (acc > DT) acc = 0; } tPrev = t; }
+  render(); updateStats(); requestAnimationFrame(loop);
+})();
+if (ST) setTimeout(selftest, 0);
+</script></body></html>

@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>p2 - voxels, graph, pieces, rigid bodies</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;display:flex;height:100vh;background:#14161a;color:#d6dae0;font:13px/1.45 system-ui,sans-serif}
+#side{width:320px;flex:none;overflow-y:auto;padding:12px 14px;background:#1c1f26;border-right:1px solid #2c313b}
+#main{flex:1;display:flex;flex-direction:column;min-width:0}
+#pipe{display:flex;gap:6px;padding:8px;background:#1c1f26;border-bottom:1px solid #2c313b}
+.st{flex:1;padding:6px 8px;border:1px solid #3a4150;border-radius:6px;cursor:pointer;background:#232830}
+.st.on{border-color:#6cf;background:#1f3340}
+.st b{display:block}.st small{color:#9aa4b2}
+canvas{flex:1;width:100%;min-height:0;display:block;cursor:crosshair}
+h1{font-size:16px;margin:4px 0 8px}h2{font-size:12px;margin:12px 0 4px;color:#6cf;text-transform:uppercase;letter-spacing:.05em}
+a{color:#6cf}ul{margin:0;padding-left:18px}
+button,select{background:#2a303b;color:#d6dae0;border:1px solid #3a4150;border-radius:4px;padding:3px 8px;margin:2px 2px 2px 0}
+button:hover{background:#364050}
+#stats{font-family:ui-monospace,monospace;font-size:12px;white-space:pre-wrap}
+pre#selftest{margin:10px 0 0;font-size:10px;color:#7d8795;white-space:pre-wrap}
+</style></head><body>
+<div id="side">
+<a href="index.html">&larr; all toys</a>
+<h1>p2: voxels &rarr; graph &rarr; pieces &rarr; rigid bodies</h1>
+<h2>What it is</h2>
+A rock is a grid of cells (voxels). We promote it step by step: cells become a graph (cells linked to touching cells), a flood fill groups linked cells into pieces, and pieces not resting on the ground become simple rigid bodies (a lump with mass, centre of mass and spin).
+<h2>Controls</h2>
+<div>Stage: click the pipeline bar above. Drag on the rock to use the brush.</div>
+<div>Brush <select id="mode"><option value="0">carve</option><option value="1">paint light</option><option value="2">paint dense</option></select>
+radius <input id="rad" type="range" min="0" max="6" value="2" style="width:80px"> <span id="radv">2</span></div>
+<div><button id="bBfs">Step BFS</button><button id="bAuto">Auto BFS</button><button id="bDrop">Drop</button><button id="bReset">Reset rock</button></div>
+<h2>Live stats</h2><div id="stats"></div>
+<h2>Good at</h2><ul><li>Robust: every step is simple and local.</li><li>Carving anything just edits cells; pieces fall out for free.</li><li>Easy to bench: each stage is a flat array.</li></ul>
+<h2>Bad at</h2><ul><li>Cell size limits the shape (no smooth surfaces).</li><li>A rigid body is still voxels and needs meshing (see p1 toy).</li><li>Memory grows with volume, not surface.</li></ul>
+<h2>In 3D / for our game:</h2>
+Same chain with 6 neighbours and chunked voxels; flood fill after each cut decides what becomes a falling block.
+<pre id="selftest">running...</pre>
+</div>
+<div id="main"><div id="pipe"></div><canvas id="cv"></canvas></div>
+<script>
+const W=64,H=48,DENS=[0,1,3],NAMES=["1 Voxels","2 Graph","3 Pieces","4 Rigid bodies"];
+let g,label,pieces,solid,edges,weak,analysis,sim=[],stage=1,bfs=null,auto=null,mouse=null;
+const T=[0,0,0,0], $=id=>document.getElementById(id), cv=$("cv"), ctx=cv.getContext("2d");
+
+function resetRock(){
+  g=new Uint8Array(W*H); sim=[];
+  for(let x=8;x<56;x++){
+    const top=Math.round(46-30*Math.pow(Math.sin(Math.PI*(x-8)/48),.7));
+    for(let y=Math.max(0,top);y<H;y++){
+      const d1=Math.hypot(x-22,y-36),d2=Math.hypot(x-42,y-30);
+      g[y*W+x]=(d1<7||d2<8||y>=43)?2:1;
+    }
+  }
+  recompute();
+}
+function carveDisc(cx,cy,r,v=0){  // brush: v=0 carve, 1/2 paint
+  for(let y=Math.floor(cy-r);y<=cy+r;y++)for(let x=Math.floor(cx-r);x<=cx+r;x++)
+    if(x>=0&&y>=0&&x<W&&y<H&&Math.hypot(x-cx,y-cy)<=r+.01)g[y*W+x]=v;
+  recompute();
+}
+function recompute(){
+  let t=performance.now(); solid=0; for(let i=0;i<W*H;i++)if(g[i])solid++; T[0]=performance.now()-t;
+  t=performance.now(); edges=0; weak=0;
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++){const i=y*W+x; if(!g[i])continue;
+    if(x+1<W&&g[i+1]){edges++;if(g[i]!==g[i+1])weak++}
+    if(y+1<H&&g[i+W]){edges++;if(g[i]!==g[i+W])weak++}}
+  T[1]=performance.now()-t;
+  t=performance.now(); label=new Uint16Array(W*H); pieces=[null];
+  const q=new Int32Array(W*H);
+  for(let s=0;s<W*H;s++){ if(!g[s]||label[s])continue;
+    const id=pieces.length,cells=[]; let h=0,n=0; q[n++]=s; label[s]=id; let grounded=false;
+    while(h<n){const i=q[h++]; cells.push(i); const x=i%W,y=(i-x)/W; if(y===H-1)grounded=true;
+      for(const j of [x>0?i-1:-1,x<W-1?i+1:-1,y>0?i-W:-1,y<H-1?i+W:-1])
+        if(j>=0&&g[j]&&!label[j]){label[j]=id;q[n++]=j}}
+    pieces.push({id,cells,grounded});
+  }
+  T[2]=performance.now()-t;
+  t=performance.now(); analysis=[];
+  for(const p of pieces.slice(1)){ if(p.grounded)continue;
+    let m=0,cx=0,cy=0,x0=1e9,x1=-1,y0=1e9,y1=-1;
+    for(const i of p.cells){const x=i%W+.5,y=Math.floor(i/W)+.5,d=DENS[g[i]];
+      m+=d;cx+=d*x;cy+=d*y;x0=Math.min(x0,x);x1=Math.max(x1,x);y0=Math.min(y0,y);y1=Math.max(y1,y)}
+    cx/=m;cy/=m; let I=0;
+    for(const i of p.cells){const x=i%W+.5,y=Math.floor(i/W)+.5;I+=DENS[g[i]]*((x-cx)**2+(y-cy)**2)}
+    analysis.push({id:p.id,m,cx,cy,I,bb:[x0,y0,x1,y1],cells:p.cells});
+  }
+  T[3]=performance.now()-t;
+  bfs=null; ui();
+}
+// BFS animation: one frontier layer per step, then next component.
+function stepBFS(){
+  if(!bfs)bfs={seen:new Uint8Array(W*H),comp:new Uint16Array(W*H),front:[],n:0};
+  if(!bfs.front.length){
+    const s=g.findIndex((v,i)=>v&&!bfs.seen[i]); if(s<0)return false;
+    bfs.n++; bfs.seen[s]=1; bfs.comp[s]=bfs.n; bfs.front=[s]; return true;
+  }
+  const nx=[];
+  for(const i of bfs.front){const x=i%W,y=(i-x)/W;
+    for(const j of [x>0?i-1:-1,x<W-1?i+1:-1,y>0?i-W:-1,y<H-1?i+W:-1])
+      if(j>=0&&g[j]&&!bfs.seen[j]){bfs.seen[j]=1;bfs.comp[j]=bfs.n;nx.push(j)}}
+  bfs.front=nx; return true;
+}
+function drop(){
+  for(const b of analysis){
+    sim.push({x:b.cx,y:b.cy,a:0,vx:0,vy:0,w:0,m:b.m,I:Math.max(b.I,1),hue:(b.id*67)%360,
+      cells:b.cells.map(i=>[i%W+.5-b.cx,Math.floor(i/W)+.5-b.cy,g[i]])});
+    for(const i of b.cells)g[i]=0;
+  }
+  recompute();
+}
+function step(dt){
+  for(const b of sim){
+    b.vy+=30*dt; b.x+=b.vx*dt; b.y+=b.vy*dt; b.a+=b.w*dt; b.w*=.999;
+    const c=Math.cos(b.a),s=Math.sin(b.a); let best=null,depth=0;
+    for(const [lx,ly] of b.cells){
+      const rx=c*lx-s*ly,ry=s*lx+c*ly,px=b.x+rx,py=b.y+ry+.5;   // +.5: approx bottom of cell
+      const cx=Math.floor(px),cyy=Math.floor(py); let d=0;
+      if(py>=H)d=py-H; else if(cx>=0&&cx<W&&g[cyy*W+cx])d=py-cyy;
+      if(d>depth){depth=d;best=[rx,ry+.5]}
+    }
+    if(!best)continue;
+    b.y-=Math.min(depth,.5); const [rx,ry]=best;
+    const vpx=b.vx-b.w*ry,vpy=b.vy+b.w*rx,vn=-vpy;
+    if(vn<0){
+      const j=-1.2*vn/(1/b.m+rx*rx/b.I); b.vy-=j/b.m; b.w-=rx*j/b.I;
+      const jt=Math.max(-.6*j,Math.min(.6*j,-vpx/(1/b.m+ry*ry/b.I))); b.vx+=jt/b.m; b.w-=ry*jt/b.I;
+    }
+  }
+}
+// ---- drawing
+let S=10,ox=0,oy=0;
+function layout(){cv.width=cv.clientWidth;cv.height=cv.clientHeight;S=Math.min(cv.width/W,cv.height/H)*.95;ox=(cv.width-S*W)/2;oy=(cv.height-S*H)/2}
+const hsl=(h,s,l)=>`hsl(${h},${s}%,${l}%)`;
+function draw(){
+  ctx.clearRect(0,0,cv.width,cv.height);
+  ctx.fillStyle="#0e1013";ctx.fillRect(ox,oy,S*W,S*H);
+  const cellCol=i=>{
+    if(stage===1||stage===2)return g[i]===1?(stage===2?"#4a5260":"#c9a46a"):(stage===2?"#363c47":"#7a5a3a");
+    const p=pieces[label[i]]; return hsl((p.id*67)%360,p.grounded&&stage===4?15:60,g[i]===2?38:58);
+  };
+  for(let i=0;i<W*H;i++){ if(!g[i])continue; const x=i%W,y=(i-x)/W;
+    if(stage===3&&bfs){ ctx.fillStyle=!bfs.seen[i]?"#2a2f38":bfs.front.includes(i)?"#fff":hsl(bfs.comp[i]*67%360,60,g[i]===2?38:58);}
+    else ctx.fillStyle=cellCol(i);
+    ctx.fillRect(ox+x*S,oy+y*S,S+.5,S+.5);
+  }
+  if(stage===2){
+    ctx.lineCap="round";
+    for(let i=0;i<W*H;i++){ if(!g[i])continue; const x=i%W,y=(i-x)/W;
+      for(const j of [x+1<W?i+1:-1,y+1<H?i+W:-1]){ if(j<0||!g[j])continue;
+        const x2=j%W,y2=(j-x2)/W,w=g[i]!==g[j];
+        ctx.strokeStyle=w?"#f66":"#9fe";ctx.lineWidth=w?Math.max(.5,S*.06):Math.max(1,S*.18);
+        ctx.beginPath();ctx.moveTo(ox+(x+.5)*S,oy+(y+.5)*S);ctx.lineTo(ox+(x2+.5)*S,oy+(y2+.5)*S);ctx.stroke();}
+      ctx.fillStyle="#fff";ctx.fillRect(ox+(x+.5)*S-1,oy+(y+.5)*S-1,2,2);}
+  }
+  ctx.fillStyle="#555";ctx.fillRect(ox-20,oy+S*H,S*W+40,4);
+  if(stage===4){
+    ctx.font="11px monospace";
+    for(const b of analysis){
+      ctx.strokeStyle="#fff";ctx.setLineDash([3,3]);ctx.strokeRect(ox+b.bb[0]*S-S/2,oy+b.bb[1]*S-S/2,(b.bb[2]-b.bb[0]+1)*S,(b.bb[3]-b.bb[1]+1)*S);ctx.setLineDash([]);
+      dot(b.cx,b.cy,`m=${b.m} I=${b.I.toFixed(0)}`);
+    }
+    for(const b of sim){
+      ctx.save();ctx.translate(ox+b.x*S,oy+b.y*S);ctx.rotate(b.a);
+      for(const [lx,ly,m] of b.cells){ctx.fillStyle=hsl(b.hue,60,m===2?38:58);ctx.fillRect((lx-.5)*S,(ly-.5)*S,S+.5,S+.5)}
+      ctx.restore(); dot(b.x,b.y,`m=${b.m} I=${b.I.toFixed(0)}`);
+    }
+  }
+  if(mouse&&stage===1){ctx.strokeStyle="#fff";ctx.beginPath();ctx.arc(ox+(mouse[0]+.5)*S,oy+(mouse[1]+.5)*S,(+$("rad").value+.5)*S,0,7);ctx.stroke()}
+}
+function dot(x,y,txt){ctx.fillStyle="#f33";ctx.beginPath();ctx.arc(ox+x*S,oy+y*S,3,0,7);ctx.fill();ctx.fillStyle="#fff";ctx.fillText(txt,ox+x*S+6,oy+y*S-6)}
+// ---- UI
+function bytes(){const nb=sim.length||analysis.length;return[W*H,edges*8,W*H*2,nb*40]}
+function ui(){
+  const B=bytes(),f=["cells","edges","cells","bodies"],n=[W*H,edges,W*H,sim.length||analysis.length],mul=[1,8,2,40];
+  $("pipe").innerHTML=NAMES.map((nm,i)=>`<div class="st ${stage===i+1?"on":""}" onclick="setStage(${i+1})"><b>${nm}</b><small>${B[i]} B &middot; ${T[i].toFixed(3)} ms</small></div>`).join("");
+  const fl=analysis.length;
+  $("stats").textContent=`solid cells ${solid} (of ${W*H})
+edges ${edges} (${weak} weak, other material)
+pieces ${pieces.length-1} (${fl} floating, ${pieces.length-1-fl} grounded)
+bodies in sim ${sim.length}
+
+memory @ stage ${stage}:
+${n[stage-1]} ${f[stage-1]} x ${mul[stage-1]} B = ${B[stage-1]} B
+(voxels cells x1; graph edges x8;
+ pieces id/cell x2; bodies x40)`;
+}
+function setStage(s){stage=s;ui()}
+function cellAt(e){const r=cv.getBoundingClientRect();return[Math.floor((e.clientX-r.left-ox)/S),Math.floor((e.clientY-r.top-oy)/S)]}
+function brush(e){const[x,y]=cellAt(e);mouse=[x,y];if(e.buttons&1)carveDisc(x,y,+$("rad").value,+$("mode").value)}
+cv.onpointerdown=brush;cv.onpointermove=brush;cv.onpointerleave=()=>mouse=null;
+$("rad").oninput=()=>$("radv").textContent=$("rad").value;
+$("bBfs").onclick=()=>{setStage(3);stepBFS()};
+$("bAuto").onclick=()=>{setStage(3);if(auto){clearInterval(auto);auto=null}else auto=setInterval(()=>{if(!stepBFS()){clearInterval(auto);auto=null}},60)};
+$("bDrop").onclick=()=>{setStage(4);drop()};
+$("bReset").onclick=resetRock;
+onresize=layout;
+window.onerror=(m)=>{$("selftest").textContent="FAIL "+m};
+function frame(){step(1/240);step(1/240);step(1/240);step(1/240);draw();requestAnimationFrame(frame)}
+// ---- selftest
+function selftest(){
+  const ok=(c,m)=>{if(!c)throw new Error(m)};
+  resetRock(); const p0=pieces.length-1; ok(p0===1,"rock should start as 1 piece, got "+p0);
+  setStage(2); ok(edges>1000,"graph edges missing");
+  for(let y=0;y<H;y++)carveDisc(31,y,1.5);
+  const slotPieces=pieces.length-1;ok(slotPieces>=2,"vertical slot gave <2 pieces");
+  stepBFS();ok(bfs.front.length===1,"bfs seed");let mx=0;for(let i=0;i<30;i++){stepBFS();mx=Math.max(mx,bfs.front.length)}ok(mx>1,"bfs wavefront did not grow");
+  for(let y=H-4;y<H;y++)for(let x=33;x<W;x++)g[y*W+x]=0; recompute();
+  ok(analysis.length>=1,"no detached piece");
+  const a=analysis[0]; ok(a.m>0,"mass<=0");
+  ok(a.cx>=a.bb[0]&&a.cx<=a.bb[2]&&a.cy>=a.bb[1]&&a.cy<=a.bb[3],"CoM outside bbox");
+  const n=analysis.length,y0=a.cy; drop(); ok(sim.length===n&&analysis.length===0,"drop failed");
+  for(let i=0;i<20;i++)step(1/60); ok(sim[0].y>y0,"body did not move down");
+  for(let i=0;i<600;i++)step(1/60); ok(sim[0].y<H&&isFinite(sim[0].y),"body fell through ground");
+  $("selftest").textContent=`PASS ${slotPieces} pieces after slot, detached m=${a.m} CoM inside bbox, fell ${(sim[0].y-y0).toFixed(1)} cells`;
+  resetRock(); setStage(1);
+}
+resetRock();layout();
+if(location.search.includes("selftest")){try{selftest()}catch(e){$("selftest").textContent="FAIL "+e.message}}
+else $("selftest").textContent="";
+requestAnimationFrame(frame);
+</script></body></html>

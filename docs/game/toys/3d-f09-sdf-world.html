@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>3D f09 - The world as one SDF</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;display:flex;height:100vh;background:#14161a;color:#d6d9de;font:13px/1.4 system-ui,sans-serif}
+aside{width:320px;flex:none;overflow-y:auto;padding:12px 14px;background:#1b1e24;border-right:1px solid #2c3038}
+main{flex:1;position:relative;min-width:0}
+canvas{position:absolute;inset:0;width:100%;height:100%;cursor:crosshair}
+h1{font-size:17px;margin:6px 0 8px}h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#8a93a3;margin:14px 0 4px}
+a{color:#7ab4ff}p,ul{margin:4px 0}ul{padding-left:18px}
+label{display:block;margin:6px 0 2px}label span{float:right;color:#9fb}
+input[type=range]{width:100%}
+.row{display:flex;gap:4px;margin:4px 0}.row button{flex:1}
+button{background:#272c35;color:#d6d9de;border:1px solid #3a404c;padding:4px 6px;cursor:pointer;border-radius:3px}
+button.on{background:#2f5fa8;border-color:#5b8fe0}
+table{width:100%;border-collapse:collapse}td{padding:1px 0}td:last-child{text-align:right;color:#ffd58a;font-family:monospace}
+#hov{color:#9fe3b0;font-family:monospace;font-size:12px;min-height:7em;white-space:pre-wrap;background:#12141a;border:1px solid #2c3038;padding:6px}
+#selftest{font-size:10px;color:#667;margin:10px 0 0;white-space:pre-wrap}
+</style></head><body>
+<aside>
+<a href="index.html">&larr; all toys</a>
+<h1>3D f09 &mdash; The world as one SDF</h1>
+<h2>What it is</h2>
+<p>The whole 128&times;64&times;128 m world is one signed distance field ("goo"): negative inside rock, positive in air. Untouched terrain is a formula (noise hills + a granite outcrop + tilted strata), so it costs 0 bytes. Only edits are stored, as 8&sup3;-sample bricks that hold distance, damage and material. The picture is ray-marched straight from the field; your click is found by marching the same field on the CPU.</p>
+<h2>Controls</h2>
+<div>Click = apply tool at the surface. Left-drag = orbit, wheel = zoom, right-drag or shift-drag = pan.</div>
+<div class="row"><button data-tool="carve">Carve sphere</button><button data-tool="add">Add sphere</button></div>
+<label>Radius (m) <span id="vRad"></span></label><input id="rad" type="range" min="1" max="12" value="5">
+<div class="row"><button id="bWeak">Weakness overlay</button><button id="bBricks">Show bricks</button></div>
+<div class="row"><button id="reset">Reset world</button></div>
+<h2>Inspect (field record at cursor)</h2><div id="hov">hover the terrain</div>
+<h2>Live stats</h2>
+<table>
+<tr><td>Edits</td><td id="sEd"></td></tr>
+<tr><td>Bricks allocated / possible</td><td id="sBr"></td></tr>
+<tr><td>Bytes stored (bricks &times; 4608)</td><td id="sBy"></td></tr>
+<tr><td>Dense grid, same region</td><td id="sDe"></td></tr>
+<tr><td>Untouched terrain stored</td><td id="sZero"></td></tr>
+<tr><td>Last frame</td><td id="sT"></td></tr>
+</table>
+<h2>Good at</h2>
+<ul><li>Any shape: carve or add anywhere, any size, one rule (max / min).</li><li>Shape, material, weakness and damage come from one query at one point.</li><li>Untouched world is free; memory grows only with what players changed.</li></ul>
+<h2>Bad at</h2>
+<ul><li>No list of separate pieces: a cut-off chunk is still just "field", finding it needs a flood fill.</li><li>Rendering needs ray-marching or meshing; thin features below the sample spacing vanish.</li><li>Brick resolution caps edit detail (here 1 m).</li></ul>
+<h2>In 3D / for our game:</h2>
+<p>This is the world truth. Meshes, dust particles and rigid blocks are views sampled from it; when a block is cut free it is carved out of the field and handed to physics, and when it lands it is written back.</p>
+<pre id="selftest"></pre>
+</aside>
+<main><canvas id="cv"></canvas></main>
+<script>
+const $ = id => document.getElementById(id);
+window.onerror = (m) => { $('selftest').textContent = 'FAIL ' + m; };
+const GX = 128, GY = 64, GZ = 128, B = 8, BX = GX / B, BY = GY / B, BZ = GZ / B, NB = BX * BY * BZ;
+const BRICK_BYTES = B * B * B * (4 + 4 + 1);           // distance f32 + damage f32 + material u8 per sample
+const MATS = ['sandstone', 'shale', 'limestone', 'marl', 'granite', 'rubble'];
+const RES_SCALE = 0.5;                                 // canvas renders at half the CSS resolution
+
+// ---- the procedural base field (mirrored exactly in GLSL below) ----
+function hsh(x, z) {
+  let h = (Math.imul(x, 374761393) + Math.imul(z, 668265263)) >>> 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
+  return (h ^ (h >>> 16)) >>> 0;
+}
+const hf = (x, z) => (hsh(x, z) & 0xffff) / 65535;
+function vn(px, pz) {
+  const ix = Math.floor(px), iz = Math.floor(pz); let fx = px - ix, fz = pz - iz;
+  fx = fx * fx * (3 - 2 * fx); fz = fz * fz * (3 - 2 * fz);
+  const a = hf(ix, iz) + (hf(ix + 1, iz) - hf(ix, iz)) * fx, b = hf(ix, iz + 1) + (hf(ix + 1, iz + 1) - hf(ix, iz + 1)) * fx;
+  return a + (b - a) * fz;
+}
+function height(x, z) { let h = 0, a = 0.5, qx = x / 40, qz = z / 40; for (let k = 0; k < 4; k++) { h += a * vn(qx, qz); qx *= 2.03; qz *= 2.03; a *= 0.5; } return 6 + 26 * h; }
+const outcrop = (x, y, z) => Math.min(Math.hypot(x - 86, y - 26, z - 44) - 11, Math.hypot(x - 76, y - 22, z - 52) - 8);
+const hillD = (x, y, z) => (y - height(x, z)) * 0.6;    // heightfield is not a true distance; 0.6 keeps the march safe
+const baseD = (x, y, z) => Math.min(hillD(x, y, z), outcrop(x, y, z));
+
+// ---- the sparse brick map: only bricks an edit touched exist ----
+let bricks = new Array(NB).fill(null), nBricks = 0, edits = 0;
+const bid = (bx, by, bz) => bx + BX * (by + BY * bz);
+// edit channels at sample (i,j,k): [distance delta vs procedural, damage, rubble flag, allocated flag]
+function corner(i, j, k) {
+  i = Math.min(Math.max(i, 0), GX - 1); j = Math.min(Math.max(j, 0), GY - 1); k = Math.min(Math.max(k, 0), GZ - 1);
+  const b = bricks[bid(i >> 3, j >> 3, k >> 3)];
+  if (!b) return [0, 0, 0, 0];
+  const n = (i & 7) + 8 * ((j & 7) + 8 * (k & 7));
+  return [b.d[n] - baseD(i, j, k), b.dmg[n], b.mat[n], 1];
+}
+function edAt(x, y, z) {                                 // trilinear, same as GPU texture filtering
+  const fx = Math.min(Math.max(x, 0), GX - 1), fy = Math.min(Math.max(y, 0), GY - 1), fz = Math.min(Math.max(z, 0), GZ - 1);
+  const i = Math.floor(fx), j = Math.floor(fy), k = Math.floor(fz), u = fx - i, v = fy - j, w = fz - k, r = [0, 0, 0, 0];
+  for (let c = 0; c < 8; c++) {
+    const a = c & 1, b = (c >> 1) & 1, e = c >> 2, wt = (a ? u : 1 - u) * (b ? v : 1 - v) * (e ? w : 1 - w);
+    if (wt === 0) continue;
+    const s = corner(i + a, j + b, k + e); for (let q = 0; q < 4; q++) r[q] += wt * s[q];
+  }
+  return r;
+}
+const field = (x, y, z) => baseD(x, y, z) + edAt(x, y, z)[0];
+function regionBytes(x0, y0, z0, x1, y1, z1) {            // bytes stored for bricks overlapping a box (m)
+  let s = 0;
+  for (let bz = Math.floor(z0 / B); bz <= Math.floor(z1 / B); bz++) for (let by = Math.floor(y0 / B); by <= Math.floor(y1 / B); by++)
+    for (let bx = Math.floor(x0 / B); bx <= Math.floor(x1 / B); bx++) if (bricks[bid(bx, by, bz)]) s += BRICK_BYTES;
+  return s;
+}
+
+// ---- material + weakness (procedural, mirrored in GLSL) ----
+function material(x, y, z, rub) {
+  if (rub > 0.5) return { id: 5, txt: 'rubble 100%' };
+  if (outcrop(x, y, z) < hillD(x, y, z)) return { id: 4, txt: 'granite 100%' };
+  const s = (y + 0.35 * x - 0.2 * z) / 5 + 100, L = Math.floor(s) % 4, f = s - Math.floor(s);
+  const w = Math.min(Math.max((f - 0.85) / 0.15, 0), 1), sw = w * w * (3 - 2 * w);
+  return { id: L, txt: `${MATS[L]} ${Math.round(100 * (1 - sw))}% / ${MATS[(L + 1) % 4]} ${Math.round(100 * sw)}%` };
+}
+function weakness(x, y, z, mid) {
+  const ss = t => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);
+  const s = (y + 0.35 * x - 0.2 * z) / 5, f = s - Math.floor(s), bed = mid < 4 ? 1 - ss(Math.min(f, 1 - f) / 0.06) : 0;
+  const jf = (0.8 * x + 0.6 * z) / 7, jd = Math.min(jf - Math.floor(jf), 1 - jf + Math.floor(jf)) * 7, joint = 1 - ss(jd / 0.25);
+  return Math.max(0.8 * bed, 0.5 * joint);
+}
+
+// ---- edits: the real handler path (click and selftest both call editAt) ----
+function editAt(kind, p, r) {
+  const [cx, cy, cz] = p, lo = [], hi = [];
+  [[cx, BX], [cy, BY], [cz, BZ]].forEach(([c, n], a) => { lo[a] = Math.max(0, Math.floor((c - r - 1) / B)); hi[a] = Math.min(n - 1, Math.floor((c + r + 1) / B)); });
+  for (let bz = lo[2]; bz <= hi[2]; bz++) for (let by = lo[1]; by <= hi[1]; by++) for (let bx = lo[0]; bx <= hi[0]; bx++) {
+    const id = bid(bx, by, bz); let b = bricks[id]; const fresh = !b; let changed = false;
+    if (fresh) {
+      b = { d: new Float32Array(512), dmg: new Float32Array(512), mat: new Uint8Array(512) };
+      for (let n = 0; n < 512; n++) b.d[n] = baseD(bx * B + (n & 7), by * B + ((n >> 3) & 7), bz * B + (n >> 6));
+    }
+    for (let n = 0; n < 512; n++) {
+      const x = bx * B + (n & 7), y = by * B + ((n >> 3) & 7), z = bz * B + (n >> 6), dist = Math.hypot(x - cx, y - cy, z - cz), s = dist - r;
+      if (kind === 'carve') {
+        if (-s > b.d[n]) { b.d[n] = -s; changed = true; }
+        const e = 1 - dist / (1.5 * r);                  // carve energy soaks into the rock left around the cut
+        if (e > 0 && b.d[n] < 1) { b.dmg[n] += e; changed = true; }
+      } else if (s < b.d[n]) { b.d[n] = s; b.mat[n] = 1; changed = true; }
+    }
+    if (fresh && !changed) continue;                    // an edit that changes nothing stores nothing
+    if (fresh) { bricks[id] = b; nBricks++; }
+    upload(bx, by, bz, b);
+  }
+  edits++; dirty = true; stats();
+}
+function reset() {
+  bricks = new Array(NB).fill(null); nBricks = 0; edits = 0;
+  gl.bindTexture(gl.TEXTURE_3D, tex);
+  gl.texImage3D(gl.TEXTURE_3D, 0, gl.RGBA16F, GX, GY, GZ, 0, gl.RGBA, gl.FLOAT, null);
+  dirty = true; stats();
+}
+
+// ---- GPU ----
+const cv = $('cv'), gl = cv.getContext('webgl2', { preserveDrawingBuffer: true });
+const VS = `#version 300 es
+void main(){ vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2); gl_Position = vec4(p * 2. - 1., 0., 1.); }`;
+const FS = `#version 300 es
+precision highp float; precision highp sampler3D;
+uniform sampler3D uEd; uniform vec3 uCam, uR, uU, uF; uniform vec2 uRes; uniform float uTan, uWeak, uShowB; uniform vec4 uHov;
+out vec4 o;
+const vec3 GS = vec3(${GX}., ${GY}., ${GZ}.);
+uint hsh(int x, int z){ uint h = uint(x) * 374761393u + uint(z) * 668265263u; h = (h ^ (h >> 13u)) * 1274126177u; return h ^ (h >> 16u); }
+float hf(int x, int z){ return float(hsh(x, z) & 0xffffu) / 65535.; }
+float vn(vec2 p){ vec2 i = floor(p), f = p - i; f = f * f * (3. - 2. * f); int x = int(i.x), z = int(i.y);
+  return mix(mix(hf(x, z), hf(x + 1, z), f.x), mix(hf(x, z + 1), hf(x + 1, z + 1), f.x), f.y); }
+float height(vec2 p){ float h = 0., a = .5; vec2 q = p / 40.; for (int k = 0; k < 4; k++){ h += a * vn(q); q *= 2.03; a *= .5; } return 6. + 26. * h; }
+float outcrop(vec3 p){ return min(length(p - vec3(86, 26, 44)) - 11., length(p - vec3(76, 22, 52)) - 8.); }
+float hillD(vec3 p){ return (p.y - height(p.xz)) * .6; }
+vec4 ed(vec3 p){ return textureLod(uEd, (p + .5) / GS, 0.); }
+float mapD(vec3 p){ return min(hillD(p), outcrop(p)) + ed(p).r; }
+const vec3 COL[6] = vec3[6](vec3(.78,.6,.4), vec3(.42,.36,.3), vec3(.8,.75,.62), vec3(.62,.46,.32), vec3(.6,.57,.56), vec3(.5,.44,.36));
+void main(){
+  vec2 uv = (gl_FragCoord.xy * 2. - uRes) / uRes.y;
+  vec3 rd = normalize(uF + uTan * (uv.x * uR + uv.y * uU));
+  vec3 sky = mix(vec3(.55, .68, .85), vec3(.25, .38, .6), clamp(rd.y * 2., 0., 1.));
+  vec3 inv = 1. / rd, ta = (vec3(0) - uCam) * inv, tb = (GS - 1. - uCam) * inv, tmn = min(ta, tb), tmx = max(ta, tb);
+  float tn = max(max(tmn.x, tmn.y), tmn.z), tf = min(min(tmx.x, tmx.y), tmx.z);
+  o = vec4(sky, 1);
+  if (tf < max(tn, 0.)) return;
+  float t = max(tn, 0.); bool hit = false, wall = false; vec3 n;
+  for (int i = 0; i < 110; i++) {
+    float d = mapD(uCam + rd * t);
+    if (d < .002 * t + .02) { hit = true; wall = i == 0 && d < 0.; break; }
+    t += d; if (t > tf) break;
+  }
+  if (!hit) return;
+  if (wall) n = -sign(rd) * step(vec3(tn), tmn);  // box wall cross-section: the axis whose entry t is tn. Branch-free: D3D11 fails to compile the branchy version
+  else { vec2 e = vec2(.3, -.3); vec3 p = uCam + rd * t;
+    n = normalize(e.xyy * mapD(p + e.xyy) + e.yyx * mapD(p + e.yyx) + e.yxy * mapD(p + e.yxy) + e.xxx * mapD(p + e.xxx)); }
+  vec3 p = uCam + rd * t; vec4 e = ed(p); vec3 c; float wk;
+  float s = (p.y + .35 * p.x - .2 * p.z) / 5., f = fract(s);
+  float jf = fract((.8 * p.x + .6 * p.z) / 7.), joint = 1. - smoothstep(0., .25, min(jf, 1. - jf) * 7.);
+  if (e.b > .5) { c = COL[5]; wk = .5 * joint; }
+  else if (outcrop(p) < hillD(p)) { c = COL[4]; wk = .5 * joint; }
+  else { int L = int(floor(s + 100.)) % 4; c = mix(COL[L], COL[(L + 1) % 4], smoothstep(.85, 1., f));
+    wk = max(.8 * (1. - smoothstep(0., .06, min(f, 1. - f))), .5 * joint); }
+  if (uWeak > .5) c = mix(c, vec3(1, .15, .1), wk);
+  c = mix(c, vec3(.85, .25, .2), clamp(e.g * .5, 0., .6));
+  if (uShowB > .5 && e.a > .01) c = mix(c, vec3(.2, .6, 1), .4);
+  float l = .35 + .65 * max(dot(n, normalize(vec3(.5, .8, .3))), 0.) + .15 * n.y;
+  c *= l;
+  if (uHov.w > 0. && abs(length(p - uHov.xyz) - uHov.w) < .3) c = vec3(.9, 1, .9);
+  o = vec4(mix(c, sky, 1. - exp(-t * .0012)), 1);
+}`;
+function sh(type, src) { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
+const prog = gl.createProgram();
+gl.attachShader(prog, sh(gl.VERTEX_SHADER, VS)); gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, FS)); gl.linkProgram(prog);
+if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+gl.useProgram(prog);
+const U = {}; ['uEd', 'uCam', 'uR', 'uU', 'uF', 'uRes', 'uTan', 'uWeak', 'uShowB', 'uHov'].forEach(n => U[n] = gl.getUniformLocation(prog, n));
+// ponytail: dense GPU texture; the real game uses a brick pool + indirection
+const tex = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_3D, tex);
+gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+for (const w of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T, gl.TEXTURE_WRAP_R]) gl.texParameteri(gl.TEXTURE_3D, w, gl.CLAMP_TO_EDGE);
+const up = new Float32Array(512 * 4);
+function upload(bx, by, bz, b) {
+  for (let n = 0; n < 512; n++) {
+    up[n * 4] = b.d[n] - baseD(bx * B + (n & 7), by * B + ((n >> 3) & 7), bz * B + (n >> 6));
+    up[n * 4 + 1] = b.dmg[n]; up[n * 4 + 2] = b.mat[n]; up[n * 4 + 3] = 1;
+  }
+  gl.bindTexture(gl.TEXTURE_3D, tex);
+  gl.texSubImage3D(gl.TEXTURE_3D, 0, bx * B, by * B, bz * B, B, B, B, gl.RGBA, gl.FLOAT, up);
+}
+
+// ---- camera (RTS orbit) ----
+let tgt = [64, 16, 64], yaw = 0.8, pitch = 0.55, dist = 170, tool = 'carve', weak = false, showB = false, hov = null, dirty = true, lastMs = 0;
+const TAN = 0.6, norm = v => { const l = Math.hypot(...v); return v.map(c => c / l); };
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+function camera() {
+  const c = [tgt[0] + dist * Math.cos(pitch) * Math.sin(yaw), tgt[1] + dist * Math.sin(pitch), tgt[2] + dist * Math.cos(pitch) * Math.cos(yaw)];
+  const F = norm([tgt[0] - c[0], tgt[1] - c[1], tgt[2] - c[2]]), R = norm(cross(F, [0, 1, 0])), Up = cross(R, F);
+  return { c, F, R, U: Up };
+}
+// CPU march: same field, same box, same stopping rule as the shader
+function pick(px, py) {
+  const { c, F, R, U: Up } = camera(), w = cv.width, h = cv.height, ux = (px * 2 - w) / h, uy = (h - py * 2) / h;
+  const rd = norm([0, 1, 2].map(a => F[a] + TAN * (ux * R[a] + uy * Up[a])));
+  let tn = -1e9, tf = 1e9;
+  for (let a = 0; a < 3; a++) { const mx = [GX, GY, GZ][a] - 1, t0 = (0 - c[a]) / rd[a], t1 = (mx - c[a]) / rd[a]; tn = Math.max(tn, Math.min(t0, t1)); tf = Math.min(tf, Math.max(t0, t1)); }
+  if (tf < Math.max(tn, 0)) return null;
+  let t = Math.max(tn, 0);
+  for (let i = 0; i < 200; i++) {
+    const p = [c[0] + rd[0] * t, c[1] + rd[1] * t, c[2] + rd[2] * t], d = field(...p);
+    if (d < 0.002 * t + 0.02) return p;
+    t += d; if (t > tf) return null;
+  }
+  return null;
+}
+
+// ---- render + stats ----
+const px1 = new Uint8Array(4);
+function render() {
+  const t0 = performance.now(), { c, F, R, U: Up } = camera();
+  gl.viewport(0, 0, cv.width, cv.height);
+  gl.uniform1i(U.uEd, 0); gl.uniform3fv(U.uCam, c); gl.uniform3fv(U.uR, R); gl.uniform3fv(U.uU, Up); gl.uniform3fv(U.uF, F);
+  gl.uniform2f(U.uRes, cv.width, cv.height); gl.uniform1f(U.uTan, TAN); gl.uniform1f(U.uWeak, weak ? 1 : 0); gl.uniform1f(U.uShowB, showB ? 1 : 0);
+  gl.uniform4f(U.uHov, ...(hov || [0, 0, 0]), hov ? +$('rad').value : 0);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px1);   // sync so the frame time is real GPU time
+  lastMs = performance.now() - t0; dirty = false; stats();
+}
+function stats() {
+  $('vRad').textContent = $('rad').value;
+  $('sEd').textContent = edits;
+  $('sBr').textContent = `${nBricks} / ${NB}`;
+  $('sBy').textContent = (nBricks * BRICK_BYTES).toLocaleString() + ' B';
+  $('sDe').textContent = (GX * GY * GZ * 9).toLocaleString() + ' B';
+  $('sZero').textContent = `${NB - nBricks} bricks: 0 B`;   // unallocated bricks hold nothing: the formula is the data
+  $('sT').textContent = lastMs.toFixed(1) + ' ms';
+  document.querySelectorAll('[data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === tool));
+  $('bWeak').classList.toggle('on', weak); $('bBricks').classList.toggle('on', showB);
+}
+function hoverAt(px, py) {
+  const p = pick(px, py); hov = p; dirty = true;
+  if (!p) { $('hov').textContent = 'sky (outside the field box)'; return; }
+  const [x, y, z] = p, e = edAt(x, y, z), d = baseD(x, y, z) + e[0], m = material(x, y, z, e[2]);
+  const bx = Math.floor(x / B), by = Math.floor(y / B), bz = Math.floor(z / B), bb = regionBytes(x, y, z, x, y, z);
+  $('hov').textContent = `p = (${x.toFixed(1)}, ${y.toFixed(1)}, ${z.toFixed(1)}) m\nd = ${d.toFixed(3)} (${d < 0 ? 'inside' : 'outside'})\nmaterial ${m.id}: ${m.txt}\nweakness ${weakness(x, y, z, m.id).toFixed(2)}  damage ${e[1].toFixed(2)}\nbrick (${bx},${by},${bz}): ${bb ? bb + ' B stored' : '0 B, procedural'}`;
+}
+
+// ---- UI wiring ----
+const cpos = e => { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) * cv.width / r.width, (e.clientY - r.top) * cv.height / r.height]; };
+let drag = null;
+cv.onmousedown = e => { drag = { x: e.clientX, y: e.clientY, pan: e.button === 2 || e.shiftKey, left: e.button === 0, moved: 0 }; };
+window.onmousemove = e => {
+  if (!drag) { if (e.target === cv) hoverAt(...cpos(e)); return; }
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY; drag.moved += Math.abs(dx) + Math.abs(dy);
+  if (drag.pan) {
+    const k = dist * 0.0015, s = Math.sin(yaw), c = Math.cos(yaw);
+    tgt[0] += (-c * dx - s * dy) * k; tgt[2] += (s * dx - c * dy) * k;
+  } else { yaw -= dx * 0.008; pitch = Math.min(1.5, Math.max(0.1, pitch + dy * 0.008)); }
+  dirty = true;
+};
+window.onmouseup = e => {
+  if (drag && drag.left && !drag.pan && drag.moved < 4) { const p = pick(...cpos(e)); if (p) { editAt(tool, p, +$('rad').value); hoverAt(...cpos(e)); } }
+  drag = null;
+};
+cv.oncontextmenu = e => e.preventDefault();
+cv.addEventListener('wheel', e => { e.preventDefault(); dist = Math.min(400, Math.max(20, dist * Math.exp(e.deltaY * 0.001))); dirty = true; }, { passive: false });
+document.querySelectorAll('[data-tool]').forEach(b => b.onclick = () => { tool = b.dataset.tool; stats(); });
+$('rad').oninput = () => { dirty = true; stats(); };
+$('bWeak').onclick = () => { weak = !weak; dirty = true; stats(); };
+$('bBricks').onclick = () => { showB = !showB; dirty = true; stats(); };
+$('reset').onclick = reset;
+function resize() { const r = cv.parentElement.getBoundingClientRect(); cv.width = Math.max(100, Math.floor(r.width * RES_SCALE)); cv.height = Math.max(100, Math.floor(r.height * RES_SCALE)); dirty = true; }
+window.onresize = resize;
+
+// ---- self test ----
+function selftest() {
+  const out = $('selftest'), must = (c, m) => { if (!c) throw new Error(m); };
+  try {
+    reset();
+    const x = 40, z = 40, q = [x, height(x, z) - 1, z], d0 = field(...q);
+    must(d0 < 0 && nBricks === 0, `start not inside / not empty (d ${d0}, bricks ${nBricks})`);
+    editAt('carve', q, 4);
+    const d1 = field(...q), nb = nBricks;
+    must(d1 > 0, `carve did not put point outside (d ${d1})`);
+    must(nb > 0 && nb < NB / 50, `bricks after carve ${nb} / ${NB}`);
+    must(edAt(q[0], q[1] - 4.5, q[2])[1] > 0, 'no damage under the cut');
+    must(regionBytes(100, 40, 100, 127, 63, 127) === 0, 'untouched region stores bytes');
+    must($('sZero').textContent.endsWith(' 0 B'), 'zero-bytes line wrong');
+    editAt('add', q, 2);
+    const d2 = field(...q);
+    must(d2 < 0 && material(...q, edAt(...q)[2]).id === 5, `add did not refill with rubble (d ${d2})`);
+    must($('sEd').textContent === '2', 'edit count not shown');
+    hoverAt(cv.width / 2, cv.height / 2);
+    must(hov && $('hov').textContent.startsWith('p = '), 'centre pick missed terrain');
+    render();
+    const w = cv.width, h = cv.height, px = new Uint8Array(w * h * 4); gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    let ground = 0; for (let i = 0; i < px.length; i += 4) if (px[i + 2] - px[i] < 40) ground++;
+    const err = gl.getError();
+    must(err === 0, 'gl error ' + err);
+    must(ground > w * h * 0.2, `terrain pixels ${ground} / ${w * h}`);
+    out.textContent = `PASS d ${d0.toFixed(2)}->${d1.toFixed(2)}->${d2.toFixed(2)}, bricks 0->${nb}/${NB} (${nBricks * BRICK_BYTES}B vs dense ${GX * GY * GZ * 9}B), untouched 0B, terrain px ${(100 * ground / (w * h)).toFixed(0)}%, ${lastMs.toFixed(0)}ms`;
+  } catch (e) { out.textContent = 'FAIL ' + e.message; }
+}
+resize(); stats();
+if (location.search.includes('selftest')) selftest();
+else (function loop() { if (dirty) render(); requestAnimationFrame(loop); })();
+</script></body></html>

@@ -1,0 +1,913 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>3D Wood - bonded fibre cells</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #111418; color: #d6dae0; font: 13px/1.4 system-ui, sans-serif; }
+  body { display: flex; }
+  #side { width: 320px; flex: none; padding: 10px 14px; box-sizing: border-box; overflow-y: auto; background: #181c22; border-right: 1px solid #2a3038; }
+  #main { flex: 1; position: relative; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; }
+  h1 { font-size: 16px; margin: 6px 0 8px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: #8a94a3; margin: 14px 0 4px; }
+  a { color: #7fb6ff; }
+  label { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 4px 0; }
+  input[type=range] { width: 120px; }
+  select, button { background: #232933; color: #d6dae0; border: 1px solid #3a4250; border-radius: 3px; padding: 2px 6px; }
+  #stats, #inspect, #rec { font: 11px/1.45 ui-monospace, monospace; white-space: pre; background: #12161b; padding: 6px; border-radius: 3px; overflow-x: auto; }
+  #verdict { font-weight: bold; margin: 6px 0; color: #ffd58a; }
+  ul { margin: 2px 0; padding-left: 18px; }
+  p { margin: 4px 0; }
+  .row { display: flex; gap: 4px; margin: 4px 0; } .row button { flex: 1; }
+  #selftest { position: absolute; right: 6px; bottom: 4px; margin: 0; font-size: 10px; color: #6a7380; }
+</style>
+</head>
+<body>
+<div id="side">
+  <a href="index.html">&larr; all toys</a>
+  <h1>3D Wood - bonded fibre cells</h1>
+  <h2>What it is</h2>
+  <p>The trunk is a complex of long fibre cells (growth ring &times; sector &times; length segment) with jittered corners, so no boundary is straight.
+  Neighbouring cells are joined by bonds of three kinds and the material sets their strength:
+  <b>along</b> (fibre continuity, across an end-grain face) is very strong, <b>tang</b> (between growth rings) is weak, and
+  <b>radial</b> (across a ray plane, between neighbouring sectors) is weakest.</p>
+  <p>An axe strike snaps the struck cells' faces onto its cut plane and severs along-bonds in a thin band. A V of a slanted cut and a flat cut releases a chip, which tears free along the grain.
+  A notch plus a back cut leave a hinge whose fibres tear at staggered heights. A wedge drives a crack along the cheapest path of ray bonds, layer by layer down the log.</p>
+  <h2>Controls</h2>
+  <p style="color:#8a94a3">Left-drag rotate, wheel zoom, right/shift-drag pan, click = strike.</p>
+  <label>Scene <select id="scene"><option value="A" selected>A: standing tree (axe)</option><option value="B">B: log on block (maul + wedge)</option></select></label>
+  <label>Material <select id="mat"><option value="oak" selected>oak</option><option value="pine">pine</option></select></label>
+  <label>Moisture <select id="moist"><option value="green" selected>green</option><option value="seasoned">seasoned</option></select></label>
+  <label>Axe angle <select id="angle"><option value="slant" selected>slanted (45&deg; down)</option><option value="flat">flat</option></select></label>
+  <label>Energy <input id="energy" type="range" min="0.5" max="3" step="0.25" value="1.5"><span id="energyV"></span></label>
+  <p style="color:#8a94a3">Scene A: your first click sets the notch spot. Slanted and flat strikes on that side cut the V there (they meet 0.18 m in); strikes on the far side are the back cut. Scene B: click the log; the maul hits a wedge with 8&times; the energy.</p>
+  <div class="row"><button id="bNotch">Chop notch</button><button id="bBack">Back cut</button><button id="bReset">Reset</button></div>
+  <div id="verdict">Click the trunk to strike.</div>
+  <h2>Material record</h2>
+  <div id="rec"></div>
+  <h2>Inspect (hover)</h2>
+  <div id="inspect">-</div>
+  <h2>Live stats</h2>
+  <div id="stats"></div>
+  <h2>Good at</h2>
+  <ul>
+    <li>The notch, chips, hinge splinters and the split all come from the same bonds and differ only in which bonds break.</li>
+    <li>Cut faces lie exactly on the axe plane (sharp, flat), while split faces follow the jittered ray planes (fibrous). Nothing is a voxel step or a sphere.</li>
+    <li>Swapping the material record (oak vs pine, green vs seasoned) changes splinters, crack cost and checks without any per-material code.</li>
+  </ul>
+  <h2>Bad at</h2>
+  <ul>
+    <li>Cut planes snap whole cell faces, so a cut lands to within half a segment (5 cm) of where you aim. Finer cuts need more segments.</li>
+    <li>The falling trunk is one rigid body hinged at the notch apex, and the hinge only damps it. There is no stress solve, and no collision between the trunk and the stump.</li>
+    <li>Chips and split halves are kinematic: they fly and stop, but they don't tumble or collide.</li>
+  </ul>
+  <h2>In 3D / for our game:</h2>
+  <p>This is the same bonded-cell machinery as rock; only the cell shape (long fibre prisms instead of irregular grains) and the bond law (anisotropic: along &#8811; tang &gt; radial) change. That alone makes chopping, felling and splitting look and behave like wood. Cells carry their own corners, so a cut can lie on any plane, and pieces are just body ids with a transform.</p>
+</div>
+<div id="main"><canvas id="cv"></canvas><pre id="selftest"></pre></div>
+<script>
+"use strict";
+const $ = id => document.getElementById(id), selfEl = $('selftest');
+window.onerror = (m, s, l) => { selfEl.textContent = 'FAIL ' + m + ' @' + l; };
+const ST = location.search.includes('selftest');
+
+// ---- constants (SI: m, kg, s) ----
+const G = 9.81, TAU = Math.PI * 2, DT = 1 / 60;
+const DN = 0.18;          // notch depth: the slanted and flat cuts meet this far in
+const BLADE = 0.09;       // axe blade width (strip each strike works)
+const HINGE_W = 0.05;     // hinge thickness left by the back cut
+const LEAN = 4 * Math.PI / 180, KH = 3e7, KS = 600; // lean of the tree, toy holding stiffness, toy crack energy per strength*m^2
+const CODE = ['', 'axe flat', 'axe slant', 'back cut', 'hinge tear', 'wedge split', 'drying check', 'tear-free'];
+const CLS = ['along', 'tang', 'radial'];
+
+function rng(seed) {
+  let a = seed >>> 0;
+  return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const norm = a => { const l = Math.hypot(...a) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+const hsh = (i, s) => { const x = Math.sin(i * 127.1 + s * 311.7) * 43758.5453; return x - Math.floor(x); };
+const vn1 = (t, s) => { const i = Math.floor(t), f = t - i, u = f * f * (3 - 2 * f); return hsh(i, s) * (1 - u) + hsh(i + 1, s) * u; };
+// bark furrows (<= 0, m): V-shaped grooves along the grain that wander, merge and fade; depth and spacing come from the material
+function barkD(W, x, y, z) {
+  const ph = Math.atan2(z, x), cx = Math.cos(ph), sz = Math.sin(ph);
+  const t = (ph / TAU + 0.5) * W.nf + 0.9 * vn1(y * 1.4 + 2 * cx, W.seed) + 0.9 * vn1(y * 1.4 + 2 * sz + 9, W.seed);
+  const i = Math.floor(t), f = t - i, k = ((i % W.nf) + W.nf) % W.nf;
+  const w = 0.2 + 0.25 * hsh(k, W.seed + 1), v = Math.max(0, 1 - Math.abs(f - 0.5) / w);
+  const d = mat.furrow * (v * (0.45 + 0.55 * hsh(k, W.seed + 2)) * (0.4 + 0.6 * vn1(y * 2.3 + k * 7.3, W.seed + 5)) +
+    0.3 * vn1(y * 16 + k * 3.7, W.seed + 7) * (1 - v)); // ridge tops broken into plates along the grain
+  return -Math.min(d, 0.6 * W.R / W.NR);
+}
+function barkN(W, q) { // the furrowed bark's own normal, so the facets of its triangles don't show
+  const rho = Math.hypot(q[0], q[2]), rd = [q[0] / rho, 0, q[2] / rho], e = 0.0015;
+  const dS = (barkD(W, q[0] - rd[2] * e, q[1], q[2] + rd[0] * e) - barkD(W, q[0] + rd[2] * e, q[1], q[2] - rd[0] * e)) / (2 * e);
+  const dY = (barkD(W, q[0], q[1] + e, q[2]) - barkD(W, q[0], q[1] - e, q[2])) / (2 * e);
+  return norm([rd[0] + rd[2] * dS, -dY, rd[2] - rd[0] * dS]);
+}
+const hex = c => '#' + c.map(v => Math.round(v * 255).toString(16).padStart(2, '0')).join('');
+
+// ---- materials: the whole difference between woods is this record ----
+const MATS = {
+  oak:  { along: 1.0, tang: 0.32, radial: 0.12, hard: 1.0, splinter: 0.5, jitter: 0.2, ringsPerM: 110, rays: 0.7, resin: 0, heartR: 0.7, furrow: 0.025, furrowW: 0.06,
+          early: [0.80, 0.64, 0.44], late: [0.55, 0.39, 0.23], bark: [0.36, 0.33, 0.30] },
+  pine: { along: 0.6, tang: 0.2, radial: 0.05, hard: 0.55, splinter: 0.3, jitter: 0.15, ringsPerM: 60, rays: 0.12, resin: 1, heartR: 0.5, furrow: 0.012, furrowW: 0.1,
+          early: [0.93, 0.81, 0.60], late: [0.76, 0.49, 0.26], bark: [0.52, 0.33, 0.22] },
+};
+let mat;
+function readMat() {
+  const b = MATS[$('mat').value], green = $('moist').value === 'green';
+  mat = Object.assign({}, b, { name: $('mat').value, green,
+    along: b.along * (green ? 0.8 : 1), tang: b.tang * (green ? 1.1 : 0.9), radial: b.radial * (green ? 1.2 : 0.85),
+    splinter: Math.min(1, b.splinter * (green ? 1.6 : 0.6)), checks: green ? 0 : 5 });
+  mat.stagger = Math.max(1, Math.round(1 + 3 * mat.splinter));
+  mat.pull = 0.02 + 0.1 * mat.splinter; // longest fibre pull-out on a torn end
+}
+
+// ---- the cell complex ----
+// cell c = (l*NS + s)*NR + r. Each cell owns its 8 corners (bit0 = outer ring side, bit1 = sector+ side, bit2 = top).
+// Bonds are stored forward from each cell: c*3+0 along (to l+1), c*3+1 tang (to r+1), c*3+2 radial (to s+1).
+const FACE = [[0, 1, 3, 2], [4, 5, 7, 6], [0, 2, 6, 4], [1, 3, 7, 5], [0, 1, 5, 4], [2, 3, 7, 6]];
+const FNAME = ['bottom ', 'top    ', 'inner  ', 'outer  ', 'sector-', 'sector+'];
+const cid = (W, r, s, l) => (l * W.NS + ((s % W.NS) + W.NS) % W.NS) * W.NR + r;
+const cr = (W, c) => c % W.NR, cs = (W, c) => ((c / W.NR) | 0) % W.NS, cl = (W, c) => (c / (W.NR * W.NS)) | 0;
+function nbr(W, c, f) {
+  const r = cr(W, c), l = cl(W, c);
+  if (f === 0) return l > 0 ? c - W.NR * W.NS : -1;
+  if (f === 1) return l < W.NL - 1 ? c + W.NR * W.NS : -1;
+  if (f === 2) return r > 0 ? c - 1 : -1;
+  if (f === 3) return r < W.NR - 1 ? c + 1 : -1;
+  return cid(W, r, cs(W, c) + (f === 4 ? -1 : 1), l);
+}
+function bond(W, c, f) { const n = nbr(W, c, f); return n < 0 ? -1 : (f & 1 ? c : n) * 3 + (f >> 1); }
+function centroid(W, c) { const p = [0, 0, 0]; for (let k = 0; k < 8; k++) for (let i = 0; i < 3; i++) p[i] += W.cor[c * 24 + k * 3 + i] / 8; return p; }
+function bondArea(W, bi) {
+  const c = (bi / 3) | 0, k = bi % 3, r = cr(W, c), rb = W.rb;
+  return k === 0 ? Math.PI * (rb[r + 1] ** 2 - rb[r] ** 2) / W.NS : k === 1 ? TAU * rb[r + 1] / W.NS * W.dl : (rb[r + 1] - rb[r]) * W.dl;
+}
+// a torn (not cut) along-bond: the fibres on each side pull out by their own lengths, so the end is ragged, never planar
+function pullOut(W, lo) {
+  const up = lo + W.NR * W.NS;
+  for (let k = 0; k < 4; k++) {
+    W.cor[lo * 24 + (k + 4) * 3 + 1] += mat.pull * (0.1 + 0.5 * hsh(lo * 8 + k, 1));
+    W.cor[up * 24 + k * 3 + 1] -= mat.pull * (0.1 + 0.5 * hsh(up * 8 + k, 2));
+  }
+  W.touched[lo] = W.touched[up] = 1;
+}
+function newBody(kind) { return { kind, off: [0, 0, 0], piv: [0, 0, 0], ax: [1, 0, 0], ang: 0, v: [0, 0, 0], w: 0, rest: true }; }
+
+function makeWood(o) {
+  const { R, H, NR, NS, NL, y0 } = o, N = NR * NS * NL, dl = H / NL, rnd = rng(o.seed);
+  const W = { R, H, NR, NS, NL, N, dl, y0, rb: [], tint: o.tint || [1, 1, 1], bodies: [newBody('main')], phase: 'stand', rnd: rng(o.seed + 7), seed: o.seed, nf: Math.max(3, Math.round(TAU * R / mat.furrowW)) };
+  for (let i = 0; i <= NR; i++) W.rb.push(R * i / NR);
+  // jitter: ring/sector boundaries wander per (ring, sector) and stay put along the grain (fibres run straight); segment ends jitter per node
+  const jr = new Float32Array((NR + 1) * NS), jp = new Float32Array((NR + 1) * NS), jy = new Float32Array((NL + 1) * (NR + 1) * NS);
+  for (let i = 0; i < jr.length; i++) {
+    const ri = (i / NS) | 0;
+    jr[i] = ri === 0 ? 0 : ri === NR ? (rnd() - 0.5) * 0.06 * R : (rnd() - 0.5) * 0.35 * R / NR;
+    jp[i] = (rnd() - 0.5) * (ri === NR ? 0.2 : 0.4);
+  }
+  for (let i = 0; i < jy.length; i++) jy[i] = (rnd() - 0.5) * 0.3 * dl;
+  const node = (l, ri, si) => {
+    si %= NS; const k = ri * NS + si, rho = W.rb[ri] + jr[k], ph = (si + jp[k]) * TAU / NS;
+    const yj = l > 0 && l < NL ? jy[(l * (NR + 1) + ri) * NS + (ri ? si : 0)] : 0;
+    const p = [rho * Math.cos(ph), y0 + l * dl + yj, rho * Math.sin(ph)];
+    if (ri < NR) return p;
+    const q = 1 + barkD(W, ...p) / rho; return [p[0] * q, p[1], p[2] * q]; // bark: the outer corners sit in or between furrows
+  };
+  W.cor = new Float32Array(N * 24);
+  for (let c = 0; c < N; c++) for (let k = 0; k < 8; k++) W.cor.set(node(cl(W, c) + (k >> 2), cr(W, c) + (k & 1), cs(W, c) + ((k >> 1) & 1)), c * 24 + k * 3);
+  W.str = new Float32Array(N * 3); W.brk = new Uint8Array(N * 3); W.body = new Uint8Array(N); W.touched = new Uint8Array(N); W.knot = new Uint8Array(N);
+  const base = [mat.along, mat.tang, mat.radial];
+  for (let i = 0; i < N * 3; i++) W.str[i] = base[i % 3] * (1 + mat.jitter * (rnd() * 2 - 1));
+  for (const k of o.knots || []) for (let l = k.l0; l <= k.l1; l++) for (let r = k.r0; r <= k.r1; r++) W.knot[cid(W, r, k.s, l)] = 1;
+  const kb = new Set(); // knots: cross-grain bonds around a knot are 8x stronger (the grain bends round it)
+  for (let c = 0; c < N; c++) if (W.knot[c]) for (let f = 2; f < 6; f++) { const b = bond(W, c, f); if (b >= 0) kb.add(b); }
+  for (const b of kb) W.str[b] *= 8;
+  if (o.checks) for (let i = 0; i < o.checks; i++) { // drying checks: radial cracks in the outer rings
+    const s = Math.floor(rnd() * NS);
+    for (let l = 0; l < NL; l++) for (let r = NR - 3; r < NR; r++) W.brk[cid(W, r, s, l) * 3 + 2] = 6;
+  }
+  W.colX = new Float32Array(NR * NS); W.colZ = new Float32Array(NR * NS);
+  for (let s = 0; s < NS; s++) for (let r = 0; r < NR; r++) { const p = centroid(W, cid(W, r, s, 0)); W.colX[s * NR + r] = p[0]; W.colZ[s * NR + r] = p[2]; }
+  return W;
+}
+
+// ---- rigid transforms: world = off + piv + R(ax, ang) (p - piv) ----
+function rot(b) {
+  const [x, y, z] = b.ax, c = Math.cos(b.ang), s = Math.sin(b.ang), t = 1 - c;
+  return [t * x * x + c, t * x * y - s * z, t * x * z + s * y, t * x * y + s * z, t * y * y + c, t * y * z - s * x, t * x * z - s * y, t * y * z + s * x, t * z * z + c];
+}
+const mulR = (R, v) => [R[0] * v[0] + R[1] * v[1] + R[2] * v[2], R[3] * v[0] + R[4] * v[1] + R[5] * v[2], R[6] * v[0] + R[7] * v[1] + R[8] * v[2]];
+const mulRT = (R, v) => [R[0] * v[0] + R[3] * v[1] + R[6] * v[2], R[1] * v[0] + R[4] * v[1] + R[7] * v[2], R[2] * v[0] + R[5] * v[1] + R[8] * v[2]];
+const toWorld = (b, p) => add(add(mulR(rot(b), sub(p, b.piv)), b.piv), b.off);
+function bodyMat(b) { const R = rot(b), t = toWorld(b, [0, 0, 0]); return new Float32Array([R[0], R[3], R[6], 0, R[1], R[4], R[7], 0, R[2], R[5], R[8], 0, t[0], t[1], t[2], 1]); }
+
+// ---- scenes ----
+let tree, log, block, curScene = 'A', lastMs = 0, verdictTxt = '', dirty = true;
+function resetAll() {
+  readMat();
+  tree = makeWood({ R: 0.25, H: 4, NR: 6, NS: 20, NL: 40, y0: 0, seed: 11, checks: mat.checks });
+  tree.notch = null;
+  log = makeWood({ R: 0.2, H: 0.45, NR: 6, NS: 24, NL: 6, y0: 0.5, seed: 23, checks: mat.checks, knots: [{ s: 0, r0: 2, r1: 3, l0: 2, l1: 3 }] });
+  block = makeWood({ R: 0.3, H: 0.5, NR: 3, NS: 16, NL: 2, y0: 0, seed: 5, tint: [0.72, 0.68, 0.64] });
+  verdictTxt = curScene === 'A' ? 'Click the trunk to strike.' : 'Click the log to drive the wedge.';
+  dirty = true;
+}
+const woods = () => curScene === 'A' ? [tree] : [log, block];
+
+// ---- axe ----
+function axeStrike(hit, angle, E) {
+  const W = tree; if (W.phase !== 'stand') return null;
+  const T0 = performance.now(), uh = norm([-hit[0], 0, -hit[2]]), nt = W.notch;
+  const side = nt ? dot(uh, nt.u) : 1, back = !!nt && side <= 0;
+  const code = back ? 3 : angle === 'slant' ? 2 : 1;
+  const ud = back ? [-nt.u[0], 0, -nt.u[2]] : nt ? nt.u : uh, v = [-ud[2], 0, ud[0]];
+  const yc = back ? hit[1] : nt ? nt.yc : hit[1], w0 = hit[0] * v[0] + hit[2] * v[2];
+  const tOf = (x, z) => x * ud[0] + z * ud[2] + W.R;               // depth from the struck side's tangent plane
+  const fac = back ? 0 : 0.006 * (hsh(w0 * 97 + code, 9) - 0.5); // each strike lands a few mm off the last: slight facets on the notch faces
+  const plane = (x, z) => code === 2 ? yc + Math.max(fac, DN - tOf(x, z) + fac) : yc + fac; // slanted cut comes down 45 deg to meet the flat one DN in, never below it
+  const tH = nt ? Math.min(nt.reachF, nt.reachS, DN) : 0;
+  const cand = [];
+  for (let s = 0; s < W.NS; s++) for (let r = 0; r < W.NR; r++) {
+    const x = W.colX[s * W.NR + r], z = W.colZ[s * W.NR + r];
+    if (Math.abs(x * v[0] + z * v[2] - w0) > BLADE / 2) continue;
+    if (back && x * nt.u[0] + z * nt.u[2] + W.R < tH + HINGE_W) continue; // the feller leaves the hinge
+    let lb = Math.round((plane(x, z) - W.y0) / W.dl);
+    if (lb < 1 || lb > W.NL - 1) continue;
+    let lo = cid(W, r, s, lb - 1);
+    if (W.brk[lo * 3] && W.brk[lo * 3] !== code) { lb += code === 2 ? 1 : -1; if (lb < 1 || lb > W.NL - 1) continue; lo = cid(W, r, s, lb - 1); }
+    const up = lo + W.NR * W.NS;
+    if (W.brk[lo * 3] || W.body[lo] || W.body[up]) continue; // already cut, or no wood left here
+    cand.push({ lo, up, t: tOf(x, z) });
+  }
+  if (!cand.length) { verdictTxt = 'The axe glances off: no uncut wood in this strip.'; lastMs = performance.now() - T0; return { cut: 0 }; }
+  let reach = Math.min(...cand.map(c => c.t)) + 0.035 * E / mat.hard;
+  if (!back) reach = Math.min(reach, DN + W.R / W.NR / 2); // half a ring past DN, so the column the V closes in is cut too
+  let cut = 0;
+  for (const c of cand) if (c.t <= reach) {
+    for (let k = 4; k < 8; k++) { // move the shared face onto the cut plane: a clean sharp cut across the fibres
+      const i = c.lo * 24 + k * 3, j = c.up * 24 + (k - 4) * 3;
+      const y = Math.min(W.cor[c.up * 24 + k * 3 + 1] - 0.002, Math.max(W.cor[c.lo * 24 + (k - 4) * 3 + 1] + 0.002, plane(W.cor[i], W.cor[i + 2])));
+      W.cor[i + 1] = y; W.cor[j + 1] = y;
+    }
+    W.brk[c.lo * 3] = code; W.touched[c.lo] = W.touched[c.up] = 1; cut++;
+  }
+  if (!nt) W.notch = { u: uh, yc, reachF: 0, reachS: 0 };
+  if (!back) { const n = W.notch; if (code === 1) n.reachF = Math.max(n.reachF, reach); else n.reachS = Math.max(n.reachS, reach); }
+  const chips = releaseChips(W, ud);
+  checkTip(W);
+  dirty = true; lastMs = performance.now() - T0;
+  verdictTxt = W.phase === 'fall' ? `TIMBER: holding moment ${W.Mres.toFixed(0)} < lean ${W.Mlean.toFixed(0)} N m; the hinge tears` :
+    `${CODE[code]}: severed ${cut} along-bonds to ${reach.toFixed(3)} m deep` + (chips ? `, ${chips} chip(s) out` : '');
+  return { cut, chips, reach };
+}
+
+// a chip is the wood between a flat cut (below) and a slanted cut (above) in one fibre column; it tears free along the grain
+function releaseChips(W, ud) {
+  const inC = new Uint8Array(W.N), list = [], lev = new Map(), u = W.notch.u, yF = W.notch.yc;
+  const yS = (x, z) => Math.max(yF + 0.01, yF + DN - (x * u[0] + z * u[2] + W.R));
+  for (let s = 0; s < W.NS; s++) for (let r = 0; r < W.NR; r++) for (let l = 1; l < W.NL; l++) {
+    if (W.brk[cid(W, r, s, l - 1) * 3] !== 1) continue;
+    for (let l2 = l; l2 < Math.min(W.NL, l + 4); l2++) {
+      const c = cid(W, r, s, l2); if (W.body[c]) break;
+      if (W.brk[c * 3] !== 2) continue;
+      for (let q = l; q <= l2; q++) { const cc = cid(W, r, s, q); inC[cc] = 1; list.push(cc); lev.set(cc, [q - l, l2 - l + 1]); }
+      break;
+    }
+  }
+  let n = 0;
+  for (const c0 of list) {
+    if (inC[c0] !== 1) continue;
+    const comp = [c0]; inC[c0] = 2;
+    for (let i = 0; i < comp.length; i++) for (let f = 0; f < 6; f++) { const m = nbr(W, comp[i], f); if (m >= 0 && inC[m] === 1) { inC[m] = 2; comp.push(m); } }
+    // a chip is one thin wedge: no thicker (along u, into the trunk) than a fifth of its length along the grain and no wider
+    // than half of it, and its top and bottom are the two cut planes themselves, so no cell-height step or block survives in it
+    // ponytail: the shape is fitted inside the released cells (the trunk keeps whole rings); a finer radial grid would make it exact
+    const v = [-u[2], 0, u[0]], mn = [9, 9], mx = [-9, -9], cx = [0, 0];
+    for (const c of comp) for (let k = 0; k < 8; k++) {
+      const i = c * 24 + k * 3, a = W.cor[i] * u[0] + W.cor[i + 2] * u[2], t = W.cor[i] * v[0] + W.cor[i + 2] * v[2];
+      mn[0] = Math.min(mn[0], a); mx[0] = Math.max(mx[0], a); mn[1] = Math.min(mn[1], t); mx[1] = Math.max(mx[1], t);
+    }
+    const m0 = (mn[0] + mx[0]) / 2, m1 = (mn[1] + mx[1]) / 2, h = yS(u[0] * mn[0] + v[0] * m1, u[2] * mn[0] + v[2] * m1) - yF;
+    const k0 = Math.min(1, 0.2 * h / (mx[0] - mn[0])), k1 = Math.min(1, 0.5 * h / (mx[1] - mn[1]));
+    for (const c of comp) for (let k = 0; k < 8; k++) {
+      const i = c * 24 + k * 3, a = m0 + (W.cor[i] * u[0] + W.cor[i + 2] * u[2] - m0) * k0, t = m1 + (W.cor[i] * v[0] + W.cor[i + 2] * v[2] - m1) * k1;
+      W.cor[i] = u[0] * a + v[0] * t; W.cor[i + 2] = u[2] * a + v[2] * t;
+      const [q, n] = lev.get(c); W.cor[i + 1] = yF + (yS(W.cor[i], W.cor[i + 2]) - yF) * (q + (k >> 2)) / n;
+      W.touched[c] = 1;
+    }
+    const b = newBody('chip'), bi = W.bodies.push(b) - 1, cen = [0, 0, 0];
+    b.th = (mx[0] - mn[0]) * k0;
+    for (const c of comp) { W.body[c] = bi; const p = centroid(W, c); for (let k = 0; k < 3; k++) cen[k] += p[k] / comp.length; }
+    for (const c of comp) for (let f = 0; f < 6; f++) { const m = nbr(W, c, f), bd = bond(W, c, f); if (m >= 0 && W.body[m] !== bi && !W.brk[bd]) { W.brk[bd] = 7; if (f < 2) pullOut(W, f ? c : m); } }
+    const j = W.rnd() - 0.5;
+    b.piv = cen; b.v = [-ud[0] * 2.2 - ud[2] * j, 2.4 + j, -ud[2] * 2.2 + ud[0] * j]; b.ax = norm([ud[2], 0.3, -ud[0]]); b.w = 7 + 4 * W.rnd(); b.rest = false;
+    n++;
+  }
+  return n;
+}
+
+// does what is left of the cross-section still hold the tree's lean? hinge fibres bend, they don't hold
+function checkTip(W) {
+  const nt = W.notch, u = nt.u, tH = Math.min(nt.reachF, nt.reachS, DN), conn = [];
+  let Mres = 0;
+  for (let s = 0; s < W.NS; s++) for (let r = 0; r < W.NR; r++) {
+    let ok = true;
+    for (let l = 0; l < W.NL - 1 && ok; l++) if (W.brk[cid(W, r, s, l) * 3]) ok = false;
+    if (!ok) continue;
+    conn.push([r, s]);
+    const d = W.colX[s * W.NR + r] * u[0] + W.colZ[s * W.NR + r] * u[2] + W.R - tH;
+    if (d < 0 || d > HINGE_W) Mres += KH * mat.along * bondArea(W, cid(W, r, s, 0) * 3) * Math.abs(d);
+  }
+  const mass = 700 * Math.PI * W.R * W.R * W.H;
+  W.Mres = Mres; W.Mlean = mass * G * W.H / 2 * Math.sin(LEAN);
+  if (Mres < W.Mlean) startFall(W, conn, tH);
+}
+function startFall(W, conn, tH) {
+  const nt = W.notch, u = nt.u, f = [-u[0], 0, -u[2]], b = newBody('trunk'), bi = W.bodies.push(b) - 1;
+  b.piv = [u[0] * (tH - W.R), nt.yc, u[2] * (tH - W.R)]; b.ax = [f[2], 0, -f[0]]; b.rest = false;
+  W.trunk = bi; W.Lt = W.H - nt.yc; W.offT = [f[0] * 0.35, tH - nt.yc, f[2] * 0.35];
+  const split = new Int16Array(W.NR * W.NS).fill(-1), base = Math.round((nt.yc - W.y0) / W.dl), rnd = rng(77);
+  W.hinge = [];
+  for (const [r, s] of conn) { // hinge fibres: each column lets go at its own segment height
+    const lb = Math.max(1, Math.min(W.NL - 1, base + Math.round((rnd() * 2 - 1) * mat.stagger)));
+    split[s * W.NR + r] = lb; W.hinge.push({ r, s, lb, th: 0.03 + 0.25 * rnd(), torn: false });
+  }
+  for (let s = 0; s < W.NS; s++) for (let r = 0; r < W.NR; r++) {
+    if (split[s * W.NR + r] >= 0) continue;
+    for (let l = 1; l < W.NL; l++) if (W.brk[cid(W, r, s, l - 1) * 3]) { split[s * W.NR + r] = l; break; }
+  }
+  for (let c = 0; c < W.N; c++) if (!W.body[c] && cl(W, c) >= split[cs(W, c) * W.NR + cr(W, c)]) W.body[c] = bi;
+  for (let c = 0; c < W.N; c++) if (W.body[c] === bi) for (let f = 2; f < 6; f++) { const m = nbr(W, c, f), bd = bond(W, c, f); if (m >= 0 && W.body[m] === 0 && !W.brk[bd]) W.brk[bd] = 7; }
+  W.phase = 'fall'; dirty = true;
+}
+function stepTrunk(W, b, dt) {
+  if (W.phase === 'fall') {
+    let left = 0; for (const h of W.hinge) if (!h.torn) left++;
+    b.w += dt * 1.5 * G / W.Lt * Math.sin(b.ang + LEAN);
+    if (W.hinge.length) b.w *= 1 - dt * 4 * left / W.hinge.length; // intact hinge fibres slow the fall
+    b.ang += b.w * dt;
+    for (const h of W.hinge) if (!h.torn && b.ang >= h.th) { h.torn = true; W.brk[cid(W, h.r, h.s, h.lb - 1) * 3] = 4; pullOut(W, cid(W, h.r, h.s, h.lb - 1)); dirty = true; }
+    if (toWorld(b, [0, W.y0 + W.H, 0])[1] - W.R * Math.sin(b.ang) <= 0) { W.phase = 'settle'; b.s = 0; b.a0 = b.ang; b.o0 = [...b.off]; }
+  } else { // the tip hit the ground: the butt kicks off the stump and the log comes to rest lying flat
+    b.s = Math.min(1, b.s + dt * 2); const e = b.s * b.s;
+    b.ang = b.a0 + (Math.PI / 2 - b.a0) * e;
+    for (let k = 0; k < 3; k++) b.off[k] = b.o0[k] + (W.offT[k] - b.o0[k]) * e;
+    if (b.s >= 1) { b.rest = true; b.w = 0; W.phase = 'down'; verdictTxt = 'The trunk is down and at rest. Look at the stump: torn hinge splinters.'; }
+  }
+}
+function stepWorld(dt) {
+  for (const W of [tree, log]) for (let i = 0; i < W.bodies.length; i++) {
+    const b = W.bodies[i]; if (b.rest) continue;
+    if (b.kind === 'chip') {
+      b.v[1] -= G * dt; for (let k = 0; k < 3; k++) b.off[k] += b.v[k] * dt; b.ang += b.w * dt;
+      if (b.piv[1] + b.off[1] < b.th / 2) { b.off[1] = b.th / 2 - b.piv[1]; b.ang = Math.round(b.ang / Math.PI - 0.5) * Math.PI + Math.PI / 2; b.rest = true; } // lands on its broad face
+    } else if (b.kind === 'trunk') stepTrunk(W, b, dt);
+    else if (b.fall) { b.w += dt * 1.5 * G / W.H * Math.sin(b.ang); b.ang += b.w * dt; if (b.ang >= Math.PI / 2) { b.ang = Math.PI / 2; b.fall = 0; b.s = 0; b.o0 = [...b.off]; } }
+    else { // lying flat on the block's edge with most of it hanging over: it drops beside the block onto the ground
+      b.s = Math.min(1, b.s + dt * 2.5); const e = b.s * b.s;
+      for (let k = 0; k < 3; k++) b.off[k] = b.o0[k] + (b.dir[k] * 0.15 - (k === 1 ? W.y0 : 0)) * e;
+      if (b.s >= 1) b.rest = true;
+    }
+  }
+}
+
+// ---- wedge: the crack takes the cheapest path through the cross-section, layer by layer down from the struck end ----
+function crackPath(W, l, pb, s0, prev) {
+  const NR = W.NR, NS = W.NS, P = NR * NS, wr = s => ((s % NS) + NS) % NS;
+  const inP = (r, s) => W.body[cid(W, r, s, l)] === pb;
+  const nid = (ri, si) => ri === 0 ? P : (ri - 1) * NS + wr(si);
+  const pos = id => { if (id === P) return [0, 0]; const ri = ((id / NS) | 0) + 1, a = (id % NS) * TAU / NS; return [W.rb[ri] * Math.cos(a), W.rb[ri] * Math.sin(a)]; };
+  const edges = id => {
+    const out = [];
+    if (id === P) { for (let s = 0; s < NS; s++) if (inP(0, s - 1) && inP(0, s)) out.push([nid(1, s), cid(W, 0, s - 1, l) * 3 + 2, 'r0,' + s]); return out; }
+    const ri = ((id / NS) | 0) + 1, si = id % NS;
+    if (inP(ri - 1, si - 1) && inP(ri - 1, si)) out.push([nid(ri - 1, si), cid(W, ri - 1, si - 1, l) * 3 + 2, 'r' + (ri - 1) + ',' + si]);
+    if (ri < NR) {
+      if (inP(ri, si - 1) && inP(ri, si)) out.push([nid(ri + 1, si), cid(W, ri, si - 1, l) * 3 + 2, 'r' + ri + ',' + si]);
+      if (inP(ri - 1, si) && inP(ri, si)) out.push([nid(ri, si + 1), cid(W, ri - 1, si, l) * 3 + 1, 't' + ri + ',' + si]);
+      if (inP(ri - 1, si - 1) && inP(ri, si - 1)) out.push([nid(ri, si - 1), cid(W, ri - 1, si - 1, l) * 3 + 1, 't' + ri + ',' + wr(si - 1)]);
+    }
+    return out;
+  };
+  const boundary = id => {
+    let a = 0, b = 0;
+    if (id === P) { for (let s = 0; s < NS; s++) if (inP(0, s)) a++; else b++; return a > 0 && b > 0; }
+    const ri = ((id / NS) | 0) + 1, si = id % NS, cells = [[ri - 1, si - 1], [ri - 1, si]];
+    if (ri < NR) cells.push([ri, si - 1], [ri, si]); else b++;
+    for (const [r, s] of cells) if (inP(r, s)) a++; else b++;
+    return a > 0 && b > 0;
+  };
+  const st = nid(NR, s0), sp = pos(st), cen = [0, 0]; let nc = 0;
+  for (let s = 0; s < NS; s++) for (let r = 0; r < NR; r++) if (inP(r, s)) {
+    const rr = (W.rb[r] + W.rb[r + 1]) / 2, a = (s + 0.5) * TAU / NS; cen[0] += rr * Math.cos(a); cen[1] += rr * Math.sin(a); nc++;
+  }
+  cen[0] /= nc; cen[1] /= nc;
+  const dc = Math.hypot(cen[0] - sp[0], cen[1] - sp[1]), dir = [(cen[0] - sp[0]) / dc, (cen[1] - sp[1]) / dc];
+  const goal = id => { // a boundary node on the far side of the piece, roughly in line with the wedge
+    if (id === st || !boundary(id)) return false;
+    const q = pos(id), dx = q[0] - sp[0], dz = q[1] - sp[1], d = Math.hypot(dx, dz);
+    return d > dc + 1e-6 && (dx * dir[0] + dz * dir[1]) / d > Math.cos(35 * Math.PI / 180);
+  };
+  const dist = new Float64Array(P + 1).fill(Infinity), done = new Uint8Array(P + 1), from = new Int32Array(P + 1).fill(-1), via = new Array(P + 1);
+  dist[st] = 0;
+  for (;;) { // ponytail: O(V^2) Dijkstra, V = rings*sectors+1 = 145
+    let u = -1; for (let i = 0; i <= P; i++) if (!done[i] && dist[i] < Infinity && (u < 0 || dist[i] < dist[u])) u = i;
+    if (u < 0) return null;
+    done[u] = 1;
+    if (goal(u)) {
+      const bonds = [], keys = []; for (let x = u; x !== st; x = from[x]) { bonds.push(via[x][0]); keys.push(via[x][1]); }
+      return { bonds, keys, cost: dist[u] };
+    }
+    for (const [m, bi, key] of edges(u)) {
+      const c = W.brk[bi] ? 0 : W.str[bi] * bondArea(W, bi) * KS * (prev.has(key) ? 0.6 : 1); // a crack prefers to run on along its own plane
+      if (dist[u] + c < dist[m]) { dist[m] = dist[u] + c; from[m] = u; via[m] = [bi, key]; }
+    }
+  }
+}
+function wedgeStrike(hit, c0, E) {
+  const W = log, T0 = performance.now(), pb = W.body[c0], NR = W.NR, NS = W.NS, ph = Math.atan2(hit[2], hit[0]);
+  let s0 = -1, bd = 9;
+  for (let s = 0; s < NS; s++) {
+    if (W.body[cid(W, NR - 1, s - 1, NS && W.NL - 1)] !== pb || W.body[cid(W, NR - 1, s, W.NL - 1)] !== pb) continue;
+    let d = Math.abs(s * TAU / NS - ph) % TAU; d = Math.min(d, TAU - d);
+    if (d < bd) { bd = d; s0 = s; }
+  }
+  if (s0 < 0) { verdictTxt = 'No bark edge to set the wedge on.'; return null; }
+  const before = W.brk.slice(), sl = new Int32Array(W.NL); let cost = 0, layers = 0, prev = new Set(), left = E, s1 = s0;
+  // the crack wanders: layer by layer its bark end may step a sector, mostly with the grain twist, and away from a knot
+  const tw = hsh(W.seed, 9) < 0.5 ? -1 : 1, knotAt = (l, s) => { for (let r = 0; r < NR; r++) if (W.knot[cid(W, r, s, l)]) return true; return false; };
+  for (let l = W.NL - 1; l >= 0; l--) {
+    if (l < W.NL - 1) {
+      const x = hsh(W.seed * 31 + l, 10);
+      let st = knotAt(l, s1) ? -1 : knotAt(l, s1 - 1) ? 1 : x < 0.45 ? tw : x < 0.6 ? -tw : 0;
+      if (W.body[cid(W, NR - 1, s1 + st - 1, l)] !== pb || W.body[cid(W, NR - 1, s1 + st, l)] !== pb) st = 0;
+      s1 = ((s1 + st) % NS + NS) % NS;
+    }
+    sl[l] = s1;
+    const p = crackPath(W, l, pb, s1, prev);
+    if (!p || p.cost > left) break;
+    left -= p.cost; cost += p.cost; layers++; prev = new Set(p.keys);
+    for (const bi of p.bonds) if (!W.brk[bi]) W.brk[bi] = 5;
+  }
+  const pieces = layers === W.NL ? separate(W, pb, sl) : 0;
+  const area = [0, 0, 0];
+  for (let i = 0; i < W.N * 3; i++) if (W.brk[i] && !before[i]) area[i % 3] += bondArea(W, i);
+  const tot = area[0] + area[1] + area[2];
+  W.lastSplit = { area, radialShare: tot ? area[2] / tot : 0, cost, layers, pieces };
+  dirty = true; lastMs = performance.now() - T0;
+  verdictTxt = pieces ? `SPLIT: crack ran ${layers}/${W.NL} layers for ${cost.toFixed(2)} of ${E.toFixed(1)} energy; ${(100 * W.lastSplit.radialShare).toFixed(0)}% of the broken area is radial (ray) bonds` :
+    `crack ran ${layers}/${W.NL} layers (${cost.toFixed(2)} energy) and stopped; hit again`;
+  return W.lastSplit;
+}
+// label each layer's two sides from the wedge edge; fibres that cross sides between layers tear (along bonds)
+function separate(W, pb, sl) {
+  const side = new Int8Array(W.N).fill(-1), L = W.NR * W.NS;
+  for (let l = 0; l < W.NL; l++) {
+    const seed = cid(W, W.NR - 1, sl[l], l), st = [seed]; side[seed] = 1;
+    while (st.length) { const c = st.pop(); for (let f = 2; f < 6; f++) { const m = nbr(W, c, f); if (m >= 0 && W.body[m] === pb && side[m] < 0 && !W.brk[bond(W, c, f)]) { side[m] = 1; st.push(m); } } }
+    let other = 0; for (let c = l * L; c < (l + 1) * L; c++) if (W.body[c] === pb && side[c] < 0) { side[c] = 0; other++; }
+    if (!other) return 0;
+  }
+  const nb = newBody('half'), bi = W.bodies.push(nb) - 1, A = [0, 0, 0, 0], B = [0, 0, 0, 0];
+  nb.off = [...W.bodies[pb].off];
+  for (let c = 0; c < W.N; c++) {
+    if (W.body[c] !== pb) continue;
+    if (cl(W, c) < W.NL - 1 && side[c + L] >= 0 && side[c + L] !== side[c] && !W.brk[c * 3]) { W.brk[c * 3] = 5; pullOut(W, c); }
+    const p = centroid(W, c), T = side[c] ? A : B; for (let k = 0; k < 3; k++) T[k] += p[k]; T[3]++;
+  }
+  for (let c = 0; c < W.N; c++) if (W.body[c] === pb && side[c] === 0) W.body[c] = bi;
+  const d = norm([B[0] / B[3] - A[0] / A[3], 0, B[2] / B[3] - A[2] / A[3]]);
+  // each half tips outward about its bottom outer edge, then slides off the block to lie on the ground
+  for (const [b, s] of [[nb, 1], [W.bodies[pb], -1]]) {
+    const e = d.map(x => x * s); b.kind = 'half'; b.dir = e; b.rest = false; b.w = 0; b.ang = 0.03; b.fall = 1;
+    b.piv = [e[0] * W.R, W.y0, e[2] * W.R]; b.ax = [e[2], 0, -e[0]];
+    for (let k = 0; k < 3; k++) b.off[k] += e[k] * 0.035;
+  }
+  return 2;
+}
+
+// ---- WebGL ----
+const cv = $('cv');
+const gl = cv.getContext('webgl2', { preserveDrawingBuffer: true, antialias: true });
+const VS = `#version 300 es
+layout(location=0) in vec3 aP; layout(location=1) in vec3 aN; layout(location=2) in vec2 aUV; layout(location=3) in vec3 aK;
+uniform mat4 uVP, uM; out vec3 vL; out vec3 vW; out vec3 vN; out vec2 vUV; flat out vec3 vK;
+void main(){ vec4 w = uM * vec4(aP, 1.0); vW = w.xyz; vL = aP; vN = mat3(uM) * aN; vUV = aUV; vK = aK; gl_Position = uVP * w; }`;
+const FS = `#version 300 es
+precision highp float;
+in vec3 vL; in vec3 vW; in vec3 vN; in vec2 vUV; flat in vec3 vK;
+uniform vec3 uEarly, uLate, uBark, uTint; uniform float uRingF, uRays, uResin, uHeartR, uR, uGreen, uHover;
+out vec4 o;
+float h21(vec2 p){ vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+float vn(vec2 p){ vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(h21(i), h21(i + vec2(1.0, 0.0)), f.x), mix(h21(i + vec2(0.0, 1.0)), h21(i + vec2(1.0, 1.0)), f.x), f.y); }
+float fbm(vec2 p){ return 0.5 * vn(p) + 0.25 * vn(p * 2.03 + 7.1) + 0.125 * vn(p * 4.01 + 3.3) + 0.0625 * vn(p * 8.05 + 1.7); }
+void main(){
+  vec3 n = normalize(vN);
+  float kind = vK.x; int fl = int(vK.y + 0.5);
+  float rho = length(vL.xz); float y = vL.y;
+  vec3 col;
+  if (kind > 2.5) {               // ground
+    float g = fbm(vW.xz * 0.7);
+    col = mix(vec3(0.40, 0.33, 0.22), vec3(0.30, 0.38, 0.19), smoothstep(0.35, 0.65, g)) * (0.8 + 0.35 * vn(vW.xz * 14.0));
+  } else if (kind > 1.5) {        // bark: networks of vertical furrows
+    float a = fbm(vec2(vL.x * 11.0 - vL.z * 7.0, y * 1.1));
+    float b = fbm(vec2(vL.z * 11.0 + vL.x * 7.0, y * 1.1 + 4.0));
+    float fur = smoothstep(0.25, 0.9, 1.0 - abs(a - b) * 5.0);
+    col = uBark * mix(1.15, 0.3, fur) * (0.8 + 0.4 * vn(vec2(vL.x * 90.0 + vL.z * 60.0, y * 30.0)));
+    // fine bark relief (bump from screen-space derivatives): fissures along the grain cut by short cross-cracks
+    vec2 bq = vec2(vL.x * 0.8 - vL.z * 0.6, vL.z * 0.8 + vL.x * 0.6);
+    float hb = 0.006 * abs(fbm(vec2(bq.x * 120.0 + bq.y * 80.0, y * 7.0)) - 0.5)              // sharp fissures along the grain
+             + 0.002 * abs(vn(vec2(bq.x * 300.0 - bq.y * 200.0, y * 40.0)) - 0.5);             // and a rough, flaky surface
+    col *= 1.0 - 0.65 * smoothstep(0.006, 0.022, uR - rho);                                    // the furrow floors are in shadow
+    vec3 dx = dFdx(vW), dy = dFdy(vW), r1 = cross(dy, n), r2 = cross(n, dx); float det = dot(dx, r1);
+    n = normalize(abs(det) * n - sign(det) * (dFdx(hb) * r1 + dFdy(hb) * r2));
+  } else {                        // wood: rings from radius, rays from angle, fibre streaks along y
+    float wob = (fbm(vL.xz * 9.0 + y * 0.4) - 0.5) * 0.02 + (vn(vL.xz * 40.0) - 0.5) * 0.004;
+    float fr = fract((rho + wob) * uRingF);
+    float late = smoothstep(0.55, 0.8, fr) * (1.0 - smoothstep(0.9, 1.0, fr));
+    col = mix(uEarly, uLate, late);
+    col *= mix(0.8, 1.0, smoothstep(uHeartR - 0.04, uHeartR + 0.04, rho / uR));
+    float phi = atan(vL.z, vL.x);
+    float rl = smoothstep(0.43, 0.49, abs(fract(phi * 40.0 / 6.2831853 + vn(vec2(rho * 25.0, 1.0)) * 0.6) - 0.5));
+    float fleck = kind > 0.5 ? smoothstep(0.5, 0.65, vn(vec2(phi * 40.0, y * 25.0))) : 1.0;
+    col = mix(col, col * 1.3 + 0.04, rl * fleck * uRays);
+    float st = vn(vec2((vL.x * 0.6 + vL.z * 0.8) * 260.0, y * 4.0)) * 0.5 + vn(vec2((vL.z * 0.6 - vL.x * 0.8) * 260.0, y * 4.0 + 9.0)) * 0.5;
+    float pores = vn(vL.xz * 500.0);
+    col *= kind > 0.5 ? 0.86 + 0.28 * st : 0.9 + 0.2 * pores;
+    col = mix(col, vec3(0.78, 0.47, 0.13), uResin * late * 0.6 * smoothstep(0.6, 0.85, vn(vec2(phi * 20.0, y * 2.0))));
+    if (fl >= 16) col = uLate * (0.45 + 0.25 * fract(length(vL.xz - vec2(0.1, 0.0)) * 140.0));
+    col *= mix(vec3(1.02, 1.0, 0.95), vec3(0.9, 0.87, 0.8), uGreen);
+  }
+  float e = 1.0;                  // cracks inside one piece (checks, partial splits) as dark lines along cell edges
+  if ((fl & 1) != 0) e = min(e, smoothstep(0.02, 0.09, vUV.x));
+  if ((fl & 2) != 0) e = min(e, smoothstep(0.02, 0.09, 1.0 - vUV.x));
+  if ((fl & 4) != 0) e = min(e, smoothstep(0.02, 0.09, vUV.y));
+  if ((fl & 8) != 0) e = min(e, smoothstep(0.02, 0.09, 1.0 - vUV.y));
+  col *= mix(0.1, 1.0, e);
+  vec3 L = normalize(vec3(0.45, 0.85, 0.3));
+  float d = max(dot(n, L), 0.0); float hemi = 0.5 + 0.5 * n.y;
+  vec3 c = col * uTint * (0.28 * vec3(0.9, 0.95, 1.05) + 0.35 * hemi + 0.85 * d * vec3(1.0, 0.95, 0.85));
+  if (abs(vK.z - uHover) < 0.5) c = mix(c, vec3(1.0, 0.9, 0.4), 0.45);
+  o = vec4(c, 1.0);
+}`;
+function shader(type, src) { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
+const prog = gl.createProgram();
+gl.attachShader(prog, shader(gl.VERTEX_SHADER, VS)); gl.attachShader(prog, shader(gl.FRAGMENT_SHADER, FS));
+gl.linkProgram(prog); if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+gl.useProgram(prog);
+const U = {}; for (const n of ['uVP', 'uM', 'uEarly', 'uLate', 'uBark', 'uTint', 'uRingF', 'uRays', 'uResin', 'uHeartR', 'uR', 'uGreen', 'uHover']) U[n] = gl.getUniformLocation(prog, n);
+const vao = gl.createVertexArray(), vbo = gl.createBuffer(); gl.bindVertexArray(vao); gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+for (const [i, n, o] of [[0, 3, 0], [1, 3, 12], [2, 2, 24], [3, 3, 32]]) { gl.enableVertexAttribArray(i); gl.vertexAttribPointer(i, n, gl.FLOAT, false, 44, o); }
+const VF = 11; // floats per vertex: pos3 nrm3 uv2 kind flag cell
+let mesh = new Float32Array(0), draws = [];
+const GROUND = []; for (const [x, z] of [[-40, -40], [40, -40], [40, 40], [-40, -40], [40, 40], [-40, 40]]) GROUND.push(x, 0, z, 0, 1, 0, 0, 0, 3, 0, -5);
+
+function emitFace(a, W, c, f) {
+  const r = cr(W, c), base = c * 24, F = FACE[f];
+  const kind = f < 2 ? 0 : f === 3 && r === W.NR - 1 ? 2 : 1;
+  let fl = W.knot[c] ? 16 : 0;
+  if (f < 2 || kind === 2) {
+    const crack = g => { const b = bond(W, c, g); return b >= 0 && W.brk[b] && W.body[nbr(W, c, g)] === W.body[c]; };
+    if (crack(4)) fl |= 1; if (crack(5)) fl |= 2;
+    if (f < 2) { if (crack(2)) fl |= 4; if (crack(3)) fl |= 8; }
+  }
+  const P = F.map(k => [W.cor[base + k * 3], W.cor[base + k * 3 + 1], W.cor[base + k * 3 + 2]]);
+  const UV = F.map(k => f < 2 ? [(k >> 1) & 1, k & 1] : f < 4 ? [(k >> 1) & 1, k >> 2] : [k & 1, k >> 2]);
+  const cc = centroid(W, c), lerp = (A, B, t) => [A[0] * (1 - t) + B[0] * t, A[1] * (1 - t) + B[1] * t, A[2] * (1 - t) + B[2] * t];
+  const Q = (u, v) => lerp(lerp(P[0], P[1], u), lerp(P[3], P[2], u), v); // bilinear over the face; u,v as FACE orders the corners
+  let out = cross(sub(P[2], P[0]), sub(P[3], P[1])); if (dot(out, sub(Q(0.5, 0.5), cc)) < 0) out = out.map(x => -x);
+  out = norm(out);
+  // bark between two corners A,B (t along): back to the round, plus the furrow profile that the straight edge misses
+  const barkOff = (q, A, B, t) => {
+    const rq = Math.hypot(q[0], q[2]) || 1, rA = Math.hypot(A[0], A[2]), rB = Math.hypot(B[0], B[2]);
+    const want = rA * (1 - t) + rB * t + barkD(W, ...q) - (barkD(W, ...A) * (1 - t) + barkD(W, ...B) * t);
+    return [q[0] / rq * (want - rq), 0, q[2] / rq * (want - rq)];
+  };
+  const brokeTo = (e, g) => { const n = nbr(W, e, g), b = bond(W, e, g); return b >= 0 && W.body[n] !== W.body[e] ? W.brk[b] : 0; };
+  const code = brokeTo(c, f), sideTorn = x => x === 5 || x === 6 || x === 7;
+  const bark = kind === 2, rim = f < 2 && r === W.NR - 1;
+  const tornEnd = f < 2 && (code === 4 || code === 5 || code === 7), tornSide = f > 1 && sideTorn(code);
+  const nu = bark ? 8 : tornEnd ? 3 : tornSide ? 4 : 1, nv = rim ? 8 : bark ? 5 : tornEnd ? 3 : tornSide ? 2 : 1;
+  // a torn side face ripples in ridges along the grain; both faces of the break share the plane's ridges so they would interlock
+  const key = f === 4 ? cid(W, r, cs(W, c), 0) : f === 5 ? cid(W, r, cs(W, c) + 1, 0) : f === 2 ? cid(W, r, cs(W, c), 0) + W.N : cid(W, r + 1, cs(W, c), 0) + W.N;
+  const pinch = j => (j === 0 || j === nv) && (() => { const e = nbr(W, c, j ? 1 : 0); return e < 0 || W.body[e] !== W.body[c] || !sideTorn(brokeTo(e, f)); })();
+  const G = [];
+  for (let j = 0; j <= nv; j++) for (let i = 0; i <= nu; i++) {
+    const u = i / nu, v = j / nv, q = Q(u, v), q0 = q.slice();
+    if (bark) { const o = barkOff(q, lerp(P[0], P[3], v), lerp(P[1], P[2], v), u); for (let k = 0; k < 3; k++) q[k] += o[k]; }
+    if (rim && u > 0) { const o = barkOff(Q(1, v), P[1], P[2], v); for (let k = 0; k < 3; k++) q[k] += o[k] * u; }
+    if (tornEnd && i > 0 && i < nu && j > 0 && j < nv) q[1] += (f ? 1 : -1) * mat.pull * (0.3 + 0.7 * hsh(c * 16 + j * 4 + i, 3)); // fibre bundles pulled out to points
+    if (tornSide && i > 0 && i < nu && !pinch(j)) { const h = (f & 1 ? 1 : -1) * 0.1 * mat.pull * (2 * hsh(key * 8 + i, 4) - 1); for (let k = 0; k < 3; k++) q[k] += out[k] * h; }
+    G.push([q, q0, bark ? barkN(W, q) : null, [UV[0][0] * (1 - u) * (1 - v) + UV[1][0] * u * (1 - v) + UV[2][0] * u * v + UV[3][0] * (1 - u) * v,
+                    UV[0][1] * (1 - u) * (1 - v) + UV[1][1] * u * (1 - v) + UV[2][1] * u * v + UV[3][1] * (1 - u) * v]]);
+  }
+  const tri = (A, B, C) => {
+    let n = cross(sub(B[0], A[0]), sub(C[0], A[0])); const l = Math.hypot(...n); if (l < 1e-12) return;
+    if (dot(cross(sub(B[1], A[1]), sub(C[1], A[1])), out) < 0) n = n.map(x => -x / l); else n = n.map(x => x / l);
+    for (const g of [A, B, C]) { const m = g[2] || n; a.push(g[0][0], g[0][1], g[0][2], m[0], m[1], m[2], g[3][0], g[3][1], kind, fl, c); }
+  };
+  for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) {
+    const g = (ii, jj) => G[(j + jj) * (nu + 1) + i + ii];
+    tri(g(0, 0), g(1, 0), g(1, 1)); tri(g(0, 0), g(1, 1), g(0, 1));
+  }
+}
+// visible faces only: open to another body, or next to a cell whose corners a cut moved
+function buildMesh() {
+  const a = GROUND.slice(); draws = [];
+  for (const W of woods()) {
+    const per = W.bodies.map(() => []);
+    for (let c = 0; c < W.N; c++) {
+      const b = W.body[c], r = cr(W, c);
+      for (let f = 0; f < 6; f++) {
+        if (f === 2 && r === 0) continue;
+        const n = nbr(W, c, f);
+        if (n >= 0 && W.body[n] === b && !W.touched[c] && !W.touched[n]) continue;
+        emitFace(per[b], W, c, f);
+      }
+    }
+    per.forEach((p, b) => { if (!p.length) return; draws.push({ W, b, first: a.length / VF, count: p.length / VF }); for (let i = 0; i < p.length; i++) a.push(p[i]); });
+  }
+  mesh = new Float32Array(a);
+  gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.bufferData(gl.ARRAY_BUFFER, mesh, gl.DYNAMIC_DRAW);
+  dirty = false;
+}
+
+// ---- camera (RTS orbit) ----
+const cam = { yaw: 1.2, pitch: 0.25, dist: 6.5, tx: 0, ty: 1.3, tz: 0 };
+function setScene(s) {
+  curScene = s;
+  Object.assign(cam, s === 'A' ? { yaw: 1.2, pitch: 0.25, dist: 6.5, tx: 0, ty: 1.3, tz: 0 } : { yaw: 1.0, pitch: 0.65, dist: 2.2, tx: 0, ty: 0.75, tz: 0 });
+  hover = null; dirty = true;
+  verdictTxt = s === 'A' ? 'Click the trunk to strike.' : 'Click the log to drive the wedge.';
+}
+function camVecs() {
+  const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch), cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw);
+  const eye = [cam.tx + cam.dist * cp * sy, cam.ty + cam.dist * sp, cam.tz + cam.dist * cp * cy];
+  const f = norm([cam.tx - eye[0], cam.ty - eye[1], cam.tz - eye[2]]);
+  const r = norm([-f[2], 0, f[0]]), u = cross(r, f);
+  return { eye, f, r, u };
+}
+const FOV = 0.8;
+function vpMatrix() {
+  const { eye, f, r, u } = camVecs(), asp = cv.width / cv.height, t = 1 / Math.tan(FOV / 2), n = 0.05, fa = 200;
+  const V = [r[0], u[0], -f[0], 0, r[1], u[1], -f[1], 0, r[2], u[2], -f[2], 0, -dot(r, eye), -dot(u, eye), dot(f, eye), 1];
+  const P = [t / asp, 0, 0, 0, 0, t, 0, 0, 0, 0, (fa + n) / (n - fa), -1, 0, 0, 2 * fa * n / (n - fa), 0];
+  const m = new Float32Array(16);
+  for (let c = 0; c < 4; c++) for (let rr = 0; rr < 4; rr++) { let s = 0; for (let k = 0; k < 4; k++) s += P[k * 4 + rr] * V[c * 4 + k]; m[c * 4 + rr] = s; }
+  return m;
+}
+
+let hover = null;
+function render() {
+  const w = cv.clientWidth || 1, h = cv.clientHeight || 1;
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+  if (dirty) buildMesh();
+  gl.viewport(0, 0, cv.width, cv.height);
+  gl.clearColor(0.55, 0.63, 0.72, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE);
+  gl.useProgram(prog); gl.bindVertexArray(vao);
+  gl.uniformMatrix4fv(U.uVP, false, vpMatrix());
+  gl.uniform3fv(U.uEarly, mat.early); gl.uniform3fv(U.uLate, mat.late); gl.uniform3fv(U.uBark, mat.bark);
+  gl.uniform1f(U.uRingF, mat.ringsPerM); gl.uniform1f(U.uRays, mat.rays); gl.uniform1f(U.uResin, mat.resin); gl.uniform1f(U.uHeartR, mat.heartR); gl.uniform1f(U.uGreen, mat.green ? 1 : 0);
+  gl.uniformMatrix4fv(U.uM, false, new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]));
+  gl.uniform3fv(U.uTint, [1, 1, 1]); gl.uniform1f(U.uHover, -10); gl.uniform1f(U.uR, 1);
+  gl.drawArrays(gl.TRIANGLES, 0, 6);
+  for (const d of draws) {
+    gl.uniformMatrix4fv(U.uM, false, bodyMat(d.W.bodies[d.b])); gl.uniform3fv(U.uTint, d.W.tint); gl.uniform1f(U.uR, d.W.R);
+    gl.uniform1f(U.uHover, hover && hover.W === d.W ? hover.c : -10);
+    gl.drawArrays(gl.TRIANGLES, d.first, d.count);
+  }
+}
+
+// ---- picking: ray vs the rendered triangles, in each body's local frame ----
+function pick(px, py) {
+  const { eye, f, r, u } = camVecs(), t = Math.tan(FOV / 2), asp = cv.width / cv.height;
+  const nx = (px / cv.width * 2 - 1) * t * asp, ny = (1 - py / cv.height * 2) * t;
+  const dw = norm([0, 1, 2].map(k => f[k] + r[k] * nx + u[k] * ny));
+  let best = null, bt = 1e9;
+  for (const dr of draws) {
+    const B = dr.W.bodies[dr.b], R = rot(B), o = add(mulRT(R, sub(eye, add(B.piv, B.off))), B.piv), d = mulRT(R, dw);
+    for (let v = dr.first; v < dr.first + dr.count; v += 3) {
+      const i = v * VF, p0 = [mesh[i], mesh[i + 1], mesh[i + 2]];
+      const e1 = [mesh[i + VF] - p0[0], mesh[i + VF + 1] - p0[1], mesh[i + VF + 2] - p0[2]], e2 = [mesh[i + 2 * VF] - p0[0], mesh[i + 2 * VF + 1] - p0[1], mesh[i + 2 * VF + 2] - p0[2]];
+      const pv = cross(d, e2), det = dot(e1, pv); if (Math.abs(det) < 1e-12) continue;
+      const tv = sub(o, p0), a = dot(tv, pv) / det; if (a < 0 || a > 1) continue;
+      const qv = cross(tv, e1), b = dot(d, qv) / det; if (b < 0 || a + b > 1) continue;
+      const tt = dot(e2, qv) / det;
+      if (tt > 0 && tt < bt) { bt = tt; best = { W: dr.W, c: mesh[i + 10], p: add(o, d.map(x => x * tt)) }; }
+    }
+  }
+  return best;
+}
+function useTool(h) {
+  const E = +$('energy').value;
+  if (curScene === 'A') return h.W === tree && tree.body[h.c] === 0 ? axeStrike(h.p, $('angle').value, E) : null;
+  return h.W === log ? wedgeStrike(h.p, h.c, E * 8) : null;
+}
+function clickAt(px, py) { const h = pick(px, py); return h ? useTool(h) : null; }
+function notchHit(w, back) {
+  const nt = tree.notch, u = nt ? nt.u : [-1, 0, 0], s = back ? -1 : 1, d = Math.sqrt(Math.max(0, tree.R ** 2 - w * w)), v = [-u[2], 0, u[0]];
+  return [-u[0] * s * d + v[0] * w, nt ? nt.yc + (back ? 0.04 : 0) : 0.6, -u[2] * s * d + v[2] * w];
+}
+const STRIPS = [-0.24, -0.16, -0.08, 0, 0.08, 0.16, 0.24];
+function autoNotch() {
+  const E = +$('energy').value;
+  for (let k = 0; k < 10 && tree.phase === 'stand'; k++) {
+    for (const w of STRIPS) { axeStrike(notchHit(w, false), 'slant', E); axeStrike(notchHit(w, false), 'flat', E); }
+  }
+  if (tree.phase === 'stand') verdictTxt = `Notch cut ${Math.min(tree.notch.reachF, tree.notch.reachS, DN).toFixed(2)} m deep. Now the back cut.`;
+}
+function autoBack() {
+  if (!tree.notch) return;
+  const E = +$('energy').value;
+  for (let k = 0; k < 14 && tree.phase === 'stand'; k++) for (const w of STRIPS) if (tree.phase === 'stand') axeStrike(notchHit(w, true), 'flat', E);
+}
+
+// ---- sidebar ----
+function inspect() {
+  const h = hover; if (!h) { $('inspect').textContent = '-'; return; }
+  const W = h.W, c = h.c, b = W.bodies[W.body[c]], lines = [];
+  lines.push(`${W === tree ? 'tree' : W === log ? 'log' : 'block'} cell #${c}  ${b.kind}${W.body[c] ? ' ' + W.body[c] : ''}${W.knot[c] ? '  KNOT' : ''}`);
+  lines.push(`ring ${cr(W, c)}/${W.NR - 1}  sector ${cs(W, c)}/${W.NS - 1}  segment ${cl(W, c)}/${W.NL - 1}`);
+  lines.push('face     bond    state         strength');
+  for (let f = 0; f < 6; f++) {
+    const bd = bond(W, c, f);
+    lines.push(`${FNAME[f]}  ${CLS[f >> 1].padEnd(6)}  ` + (bd < 0 ? (f === 3 ? 'bark surface' : f === 2 ? 'pith' : 'end of log') :
+      `${W.brk[bd] ? 'BROKEN ' + CODE[W.brk[bd]] : 'intact'}`.padEnd(14) + W.str[bd].toFixed(3)));
+  }
+  $('inspect').textContent = lines.join('\n');
+}
+function updateStats() {
+  $('energyV').textContent = (+$('energy').value).toFixed(2);
+  let cells = 0, bonds = [0, 0, 0], brk = [0, 0, 0], bytes = 0, chips = 0, frags = 0;
+  for (const W of woods()) {
+    cells += W.N;
+    bonds[0] += W.NR * W.NS * (W.NL - 1); bonds[1] += (W.NR - 1) * W.NS * W.NL; bonds[2] += W.N;
+    for (let i = 0; i < W.N * 3; i++) if (W.brk[i]) brk[i % 3]++;
+    for (const b of W.bodies) { if (b.kind === 'chip') chips++; }
+    frags += W.bodies.length;
+    bytes += W.cor.byteLength + W.str.byteLength + W.brk.byteLength + W.body.byteLength + W.touched.byteLength + W.knot.byteLength;
+  }
+  const T = tree, ls = log.lastSplit;
+  $('stats').textContent =
+    `cells         ${cells}\n` +
+    `bonds         ${bonds[0] + bonds[1] + bonds[2]} (along ${bonds[0]} tang ${bonds[1]} radial ${bonds[2]})\n` +
+    `broken along  ${brk[0]}\n` +
+    `broken tang   ${brk[1]}\n` +
+    `broken radial ${brk[2]}\n` +
+    `chips         ${chips}\n` +
+    `fragments     ${frags} bodies\n` +
+    `memory bytes  ${bytes} cells+bonds (24 B/cell corners x4)\n` +
+    `              ${mesh.byteLength} render mesh\n` +
+    `solve ms      ${lastMs.toFixed(2)}\n` +
+    (curScene === 'A' ? `tree          ${T.phase}${T.Mres !== undefined ? `  hold ${T.Mres.toFixed(0)} / lean ${T.Mlean.toFixed(0)} N m` : ''}`
+      : `last split    ${ls ? `${ls.layers}/${log.NL} layers, radial ${(100 * ls.radialShare).toFixed(0)}%` : '-'}`);
+  $('verdict').textContent = verdictTxt;
+  const f3 = x => x.toFixed(3);
+  $('rec').textContent =
+    `struct Wood {  // ${mat.name}, ${mat.green ? 'green' : 'seasoned'}\n` +
+    `  cell   ring ${f3(T.R / T.NR)} m  sector ${(360 / T.NS).toFixed(0)} deg  seg ${f3(T.dl)} m\n` +
+    `  bond   along ${f3(mat.along)}  tang ${f3(mat.tang)}  radial ${f3(mat.radial)}\n` +
+    `         (+-${(mat.jitter * 100).toFixed(0)}% per bond, knots x8 cross-grain)\n` +
+    `  splinter ${mat.splinter.toFixed(2)}  hinge tear stagger +-${mat.stagger} seg\n` +
+    `  axe_pen  ${f3(0.035 / mat.hard)} m per unit energy\n` +
+    `  checks   ${mat.checks} drying cracks on rays\n` +
+    `  rings    ${mat.ringsPerM}/m  rays ${mat.rays}  resin ${mat.resin}\n` +
+    `  colour   early ${hex(mat.early)} late ${hex(mat.late)}\n` +
+    `           bark ${hex(mat.bark)}\n}`;
+  $('bNotch').disabled = $('bBack').disabled = curScene !== 'A';
+}
+
+// ---- UI wiring ----
+$('scene').onchange = () => setScene($('scene').value);
+$('mat').onchange = $('moist').onchange = () => resetAll();
+$('bReset').onclick = () => resetAll();
+$('bNotch').onclick = autoNotch;
+$('bBack').onclick = autoBack;
+let drag = null;
+cv.oncontextmenu = e => e.preventDefault();
+cv.onmousedown = e => { drag = { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, pan: e.button === 2 || e.shiftKey, btn: e.button }; };
+window.onmouseup = e => {
+  if (drag && drag.btn === 0 && !drag.pan && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) < 4) { const r = cv.getBoundingClientRect(); clickAt(e.clientX - r.left, e.clientY - r.top); }
+  drag = null;
+};
+window.onmousemove = e => {
+  const r = cv.getBoundingClientRect();
+  if (drag) {
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY;
+    if (drag.pan) { const { r: rr, u } = camVecs(), k = cam.dist * 0.0015; cam.tx -= (rr[0] * dx - u[0] * dy) * k; cam.ty -= (rr[1] * dx - u[1] * dy) * k; cam.tz -= (rr[2] * dx - u[2] * dy) * k; }
+    else { cam.yaw -= dx * 0.008; cam.pitch = Math.max(-0.2, Math.min(1.5, cam.pitch + dy * 0.008)); }
+  } else if (e.target === cv) { hover = pick(e.clientX - r.left, e.clientY - r.top); inspect(); }
+};
+cv.addEventListener('wheel', e => { e.preventDefault(); cam.dist = Math.max(0.6, Math.min(40, cam.dist * Math.exp(e.deltaY * 0.001))); }, { passive: false });
+
+// ---- start: state first, then the loop ----
+resetAll(); setScene('A'); render(); updateStats();
+let lastT = performance.now();
+(function loop(now) {
+  const dt = Math.min(0.05, (now - lastT) / 1000 || 0); lastT = now;
+  if (!ST) for (let t = dt; t > 1e-6; t -= DT) stepWorld(Math.min(DT, t));
+  render(); updateStats(); requestAnimationFrame(loop);
+})(lastT);
+
+// ---- self-test ----
+function chipAngle(W, bi) { // angle between the chip's principal axis and the grain (y)
+  const pts = []; for (let c = 0; c < W.N; c++) if (W.body[c] === bi) for (let k = 0; k < 8; k++) pts.push([W.cor[c * 24 + k * 3], W.cor[c * 24 + k * 3 + 1], W.cor[c * 24 + k * 3 + 2]]);
+  const m = [0, 1, 2].map(i => pts.reduce((s, p) => s + p[i], 0) / pts.length), C = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+  for (const p of pts) for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) C[i * 3 + j] += (p[i] - m[i]) * (p[j] - m[j]);
+  let v = [0.3, 0.5, 0.4]; for (let it = 0; it < 60; it++) v = norm(mulR(C, v));
+  return Math.acos(Math.min(1, Math.abs(v[1]))) * 180 / Math.PI;
+}
+function selftest() {
+  const must = (c, m) => { if (!c) throw new Error(m); };
+  $('mat').value = 'oak'; $('moist').value = 'green'; $('scene').value = 'A'; $('energy').value = 1.5; $('angle').value = 'slant';
+  resetAll(); setScene('A'); render();
+  const h0 = pick(cv.width / 2, cv.height / 2); must(h0 && h0.W === tree, 'center pick missed the tree');
+  // axe: upper slanted + lower flat at the same spot -> a chip, long along the grain
+  const spot = [tree.R, 0.6, 0];
+  axeStrike(spot, 'slant', 1.5); const a2 = axeStrike(spot, 'flat', 1.5);
+  const chipIds = []; tree.bodies.forEach((b, i) => { if (b.kind === 'chip') chipIds.push(i); });
+  must(chipIds.length >= 1, `V produced no chip (flat cut ${a2 && a2.cut})`);
+  const angs = chipIds.map(i => chipAngle(tree, i)); must(Math.max(...angs) <= 30, `chip axis ${Math.max(...angs).toFixed(1)} deg off the grain`);
+  // damage only in the struck band
+  let far = 0, outBand = 0;
+  for (let i = 0; i < tree.N * 3; i++) if (tree.brk[i]) {
+    const y = (cl(tree, (i / 3) | 0) + 1) * tree.dl;
+    if (y < 0.6 - 0.2 || y > 0.6 + DN + 0.2) outBand++;
+    if (cl(tree, (i / 3) | 0) >= tree.NL / 2) far++;
+  }
+  must(far === 0 && outBand === 0, `axe damage outside the band: ${outBand} (far end ${far})`);
+  // felling: notch + back cut -> tips about the hinge, hinge tears at staggered heights, trunk at rest lying down
+  autoNotch(); must(tree.phase === 'stand', 'tree fell from the notch alone');
+  // the notch is an open V: at the bark, in the outer-ring column facing the cut, the gap is about as tall as the notch is deep
+  const nu = tree.notch.u, nDepth = Math.min(tree.notch.reachF, tree.notch.reachS, DN);
+  let ns = 0; for (let s = 1; s < tree.NS; s++) if (tree.colX[s * tree.NR + tree.NR - 1] * nu[0] + tree.colZ[s * tree.NR + tree.NR - 1] * nu[2] < tree.colX[ns * tree.NR + tree.NR - 1] * nu[0] + tree.colZ[ns * tree.NR + tree.NR - 1] * nu[2]) ns = s;
+  let ga = 1; while (!tree.body[cid(tree, tree.NR - 1, ns, ga)]) ga++;
+  let gb = ga; while (tree.body[cid(tree, tree.NR - 1, ns, gb)]) gb++;
+  const cy = (c, k) => tree.cor[c * 24 + k * 3 + 1];
+  const nLo = cid(tree, tree.NR - 1, ns, ga - 1), nUp = cid(tree, tree.NR - 1, ns, gb);
+  const nOpen = Math.min(cy(nUp, 1), cy(nUp, 3)) - Math.max(cy(nLo, 5), cy(nLo, 7));
+  must(nOpen >= 0.6 * nDepth, `notch opening ${nOpen.toFixed(3)} m at the bark vs depth ${nDepth.toFixed(3)} m`);
+  autoBack(); must(tree.phase === 'fall', `back cut did not tip the tree (hold ${tree.Mres.toFixed(0)} vs lean ${tree.Mlean.toFixed(0)})`);
+  let k = 0; while (tree.phase !== 'down' && k++ < 5000) stepWorld(DT);
+  must(tree.phase === 'down', `trunk never came to rest (${tree.phase})`);
+  const hs = new Set(); for (let c = 0; c < tree.N; c++) if (tree.brk[c * 3] === 4) hs.add(cl(tree, c));
+  must(hs.size >= 3, `hinge splinters at only ${hs.size} heights`);
+  // torn hinge ends are jagged: every corner pulled out of the break, each by its own length
+  const hc = [...Array(tree.N).keys()].find(c => tree.brk[c * 3] === 4), hu = hc + tree.NR * tree.NS;
+  const gaps = [0, 1, 2, 3].map(k => tree.cor[hc * 24 + (k + 4) * 3 + 1] - tree.cor[hu * 24 + k * 3 + 1]);
+  must(Math.min(...gaps) > 0 && Math.max(...gaps) - Math.min(...gaps) > 0.001, `torn end corner offsets ${gaps.map(g => g.toFixed(3))}`);
+  const tb = tree.bodies[tree.trunk], ax = mulR(rot(tb), [0, 1, 0]), tilt = Math.asin(Math.abs(ax[1])) * 180 / Math.PI;
+  must(tilt < 10 && tb.rest && tb.w === 0, `trunk tilt ${tilt.toFixed(1)} deg, rest ${tb.rest}`);
+  const lowest = toWorld(tb, [0, tree.H / 2, 0])[1] - tree.R; must(Math.abs(lowest) < 0.05, `trunk not on the ground (${lowest.toFixed(3)})`);
+  render();
+  // splitting
+  $('scene').value = 'B'; setScene('B');
+  const sp = wedgeStrike([log.R * 0.95, log.y0 + log.H, 0], cid(log, log.NR - 1, 0, log.NL - 1), 1.5 * 8);
+  const pieces = new Set(log.body).size;
+  must(pieces >= 2, `wedge made ${pieces} piece(s), crack ${sp && sp.layers} layers cost ${sp && sp.cost.toFixed(2)}`);
+  must(sp.radialShare >= 0.8, `radial share of broken area ${(sp.radialShare * 100).toFixed(1)}%`);
+  // the halves fall apart: each rotates outward and rests with its axis tipped past 45 deg
+  const halves = log.bodies.filter(b => b.kind === 'half'); must(halves.length === 2, `${halves.length} half bodies`);
+  k = 0; while (halves.some(b => !b.rest) && k++ < 5000) stepWorld(DT);
+  const ht = halves.map(b => Math.acos(Math.abs(mulR(rot(b), [0, 1, 0])[1])) * 180 / Math.PI);
+  must(Math.min(...ht) > 45 && halves.every(b => b.rest), `split halves tilt ${ht.map(t => t.toFixed(0))} deg, rest ${halves.map(b => b.rest)}`);
+  render();
+  const px = new Uint8Array(cv.width * cv.height * 4); gl.readPixels(0, 0, cv.width, cv.height, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  let lit = 0; for (let i = 0; i < px.length; i += 4) if (Math.abs(px[i] - 140) + Math.abs(px[i + 1] - 161) + Math.abs(px[i + 2] - 184) > 12) lit++;
+  must(lit > 1000, `only ${lit} non-background pixels`);
+  const err = gl.getError(); must(err === 0, 'gl error ' + err);
+  updateStats();
+  return `chips ${chipIds.length} (axis ${Math.max(...angs).toFixed(0)}deg off grain), band ok; notch open ${nOpen.toFixed(2)}/${nDepth.toFixed(2)} m; felled: hinge ${tree.hinge.length} cols torn at ${hs.size} heights, trunk tilt ${tilt.toFixed(1)}deg at rest; ` +
+    `split ${pieces} pieces (halves tilt ${Math.min(...ht).toFixed(0)}deg), torn ends ${(Math.min(...gaps) * 1000).toFixed(0)}-${(Math.max(...gaps) * 1000).toFixed(0)}mm, radial ${(sp.radialShare * 100).toFixed(0)}% (${sp.cost.toFixed(1)} energy, ${sp.layers} layers); ${lit} px; gl ok`;
+}
+if (ST) { try { selfEl.textContent = 'PASS ' + selftest(); } catch (e) { selfEl.textContent = 'FAIL ' + e.message; } }
+// ?shot&state=stand|notch|felled|split: set that state up through the normal paths, settle it, close camera on the interesting part
+if (location.search.includes('shot')) {
+  const st = new URLSearchParams(location.search).get('state') || 'stand';
+  $('side').style.display = 'none';
+  const settle = () => { for (let k = 0; k < 3000; k++) stepWorld(DT); };
+  if (st === 'split') {
+    $('scene').value = 'B'; setScene('B');
+    wedgeStrike([log.R * 0.95, log.y0 + log.H, 0], cid(log, log.NR - 1, 0, log.NL - 1), 1.5 * 8); settle();
+    Object.assign(cam, { yaw: 1.3, pitch: 0.95, dist: 2.0, tx: 0, ty: 0.2, tz: 0 });
+  } else {
+    if (st !== 'stand') autoNotch();
+    if (st === 'felled') autoBack();
+    settle();
+    Object.assign(cam, st === 'stand' ? { yaw: 1.2, pitch: 0.15, dist: 0.9, tx: 0, ty: 1.0, tz: 0 } :
+      st === 'notch' ? (() => { // side-on to the notch, so its V profile shows against the sky-and-ground behind
+        const u = tree.notch.u;
+        return { yaw: Math.atan2(-u[2] - 0.4 * u[0], u[0] - 0.4 * u[2]), pitch: 0.22, dist: 0.75, tx: -u[0] * 0.15, ty: 0.66, tz: -u[2] * 0.15 }; })() : { yaw: 0.6, pitch: 0.75, dist: 1.0, tx: 0, ty: 0.6, tz: 0 });
+  }
+  dirty = true;
+}
+</script>
+</body>
+</html>

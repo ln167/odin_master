@@ -27,15 +27,12 @@ ui_event :: proc(ev: ^sdl.Event) {
 	imsdl.process_event(ev)
 }
 
-// Build the frame's UI and finalize draw data; ui_draw blits it after the
-// sim framebuffer so panels float above the game.
+// Build the frame's UI and finalize draw data; ui_draw blits it over the cleared screen.
 ui_frame :: proc() {
 	imr3.new_frame()
 	imsdl.new_frame()
 	im.new_frame()
-	if g_mem.hud {
-		hud_window()
-	}
+	hud_window()
 	im.render()
 }
 
@@ -49,56 +46,14 @@ ui_shutdown :: proc() {
 	im.destroy_context()
 }
 
-// The debug section: a fixed full-height panel in the strip right of the sim
-// viewport. ImGui never draws over the game.
 hud_window :: proc() {
-	s := &g_mem.sim
-	// (Re)register live observations once per DLL load — the registry resets on each hot-reload,
-	// so the len==0 guard refills it with the (still-valid) pointers into persistent g_mem.
 	if len(tele.observe_list()) == 0 {
-		tele.observe("frame", &s.frame)
-		tele.observe("paused", &s.paused)
-		tele.observe("pos", &s.particle.pos)
+		tele.observe("counter", &g_mem.counter)
 	}
-	im.set_next_window_pos({FB_W + 6, 6}, .Always)
-	im.set_next_window_size({PANEL_W - 12, FB_H - 12}, .Always)
-	if im.begin("debug", nil, {.No_Resize, .No_Move, .No_Collapse}) {
-		im.text_unformatted(fmt.ctprintf("frame %d  %s", s.frame, "PAUSED" if s.paused else "RUNNING"))
-		if s.arena {
-			im.separator_text(fmt.ctprintf("arena round %d", ROUND))
-			// 2x2 listing mirrors the tile layout on screen
-			tile_label(0)
-			im.same_line(im.get_window_width() * 0.5)
-			tile_label(1)
-			tile_label(2)
-			im.same_line(im.get_window_width() * 0.5)
-			tile_label(3)
-			im.separator()
-			if g_mem.voted_round == ROUND {
-				im.text_unformatted("voted - waiting for the next round")
-			} else if g_mem.vote_sel > 0 {
-				im.text_unformatted(fmt.ctprintf("selected %d - press %d again to commit", g_mem.vote_sel, g_mem.vote_sel))
-			} else {
-				im.text_unformatted("press 1-4 to select a tile")
-			}
-			im.text_unformatted("R replays the drop")
-		} else {
-			v := s.particle.pos - s.particle.pos_prev
-			im.text_unformatted(fmt.ctprintf("pos %.1f,%.1f  vel %.2f,%.2f", s.particle.pos.x, s.particle.pos.y, v.x, v.y))
-		}
-		im.separator_text("observe")
+	if im.begin("debug") {
 		for o in tele.observe_list() {
 			im.text_unformatted(fmt.ctprintf("%s = %v", o.label, tele.observe_value(o)))
 		}
 	}
 	im.end()
-}
-
-tile_label :: proc(i: int) {
-	p := ARENA_PARAMS[i]
-	sel := " "
-	if g_mem.vote_sel == i + 1 {
-		sel = ">"
-	}
-	im.text_unformatted(fmt.ctprintf("%s%d) g=%.0f d=%.2f", sel, i + 1, p.gravity.y, p.damping))
 }

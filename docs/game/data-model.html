@@ -1,0 +1,525 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>World data model: what the ground is made of (draft)</title>
+<style>
+  body { background:#14161a; color:#d8dde3; font:15px/1.55 system-ui, sans-serif; margin:0; }
+  main { max-width:980px; margin:0 auto; padding:28px 32px 80px; }
+  h1 { font-size:26px; margin:0 0 4px; }
+  h2 { font-size:19px; color:#e8edf2; margin:44px 0 10px; border-bottom:1px solid #2a3038; padding-bottom:6px; }
+  h3 { font-size:15px; color:#8fa3b8; text-transform:uppercase; letter-spacing:.06em; margin:24px 0 8px; }
+  p, li { max-width:860px; }
+  .status { color:#c9a63a; }
+  .lead { color:#9aa4ae; }
+  code, pre { font-family:ui-monospace, Consolas, monospace; font-size:13px; }
+  pre { background:#1d2127; border:1px solid #2a3038; border-radius:6px; padding:12px 14px; overflow-x:auto; }
+  table { border-collapse:collapse; margin:10px 0; font-size:14px; }
+  th, td { border:1px solid #2a3038; padding:6px 9px; vertical-align:top; text-align:left; }
+  th { background:#1d2127; color:#e8edf2; }
+  .why { background:#1b2229; border-left:3px solid #5b8fd0; padding:8px 14px; margin:12px 0; }
+  .why b { color:#9cc3f0; }
+  .open { background:#241f16; border-left:3px solid #c9a63a; padding:8px 14px; margin:12px 0; }
+  .wrong { background:#261a1a; border-left:3px solid #c05050; padding:8px 14px; margin:12px 0; }
+  figure { margin:16px 0 22px; }
+  figcaption { color:#9aa4ae; font-size:13px; margin-top:6px; }
+  svg { background:#1a1d22; border:1px solid #2a3038; border-radius:6px; display:block; max-width:100%; height:auto; }
+  svg text { font-family:system-ui, sans-serif; fill:#d8dde3; }
+  nav ol { columns:2; color:#9aa4ae; }
+  nav a { color:#8fb6e8; text-decoration:none; }
+  .good { color:#7cc47c; } .bad { color:#e07a7a; } .meh { color:#d8b860; }
+</style>
+<main>
+
+<h1>World data model: what the ground is made of</h1>
+<p class="status">Draft, 2026-10-07. Brainstorm, not agreed. Nothing here is being built. Research notes and sources: <code>docs/game/primitives.md</code>. Owner rulings: <code>docs/game/DESIGN.md</code>.</p>
+<p class="lead">Every choice below is written as <i>why this and not the alternatives</i>, together with the evidence that would change it. Statements are hypotheses unless marked as an owner ruling or a research finding.</p>
+
+<nav><ol>
+  <li><a href="#rules">What decides the design</a></li>
+  <li><a href="#queries">What the data must answer</a></li>
+  <li><a href="#three">Defined, computed, stored</a></li>
+  <li><a href="#cracks">Why cracks come first</a></li>
+  <li><a href="#matter">The matter representation, options compared</a></li>
+  <li><a href="#proposal">Proposal: matter on a grid, cracks as planes</a></li>
+  <li><a href="#angles">The 30° rule as physics</a></li>
+  <li><a href="#layout">Data layout (data-oriented)</a></li>
+  <li><a href="#promotion">Promotion and demotion</a></li>
+  <li><a href="#breaking">How breaking changes the data</a></li>
+  <li><a href="#weight">Weight: the contact law</a></li>
+  <li><a href="#algdata">Algorithm vs data</a></li>
+  <li><a href="#unknown">What would change this</a></li>
+</ol></nav>
+
+<!-- ============================================================ -->
+<h2 id="rules">1. What decides the design</h2>
+<p>These are the owner rulings that actually constrain the data model. Anything not on this list is a free choice.</p>
+<table>
+  <tr><th>Ruling</th><th>What it forces on the data</th></tr>
+  <tr><td>Material decides how things break</td><td>Material and its weaknesses (beds, joints, grain) must be queryable at any point, before anything breaks.</td></tr>
+  <tr><td>No generated angle under ~30° (except carve mode, sharp weapons)</td><td>Something must check every shape we generate, and repair it.</td></tr>
+  <tr><td>Contact is dead and heavy</td><td>Pieces need true mass, inertia and shape. The ground must be able to respond to pressure.</td></tr>
+  <tr><td>RTS camera; closest zoom ≈ AoE villager, 1 px ≈ 7–11 cm</td><td>Detail below ~5 cm is never seen as geometry, so it can be shading only.</td></tr>
+  <tr><td>True scale, km world; dust → boulders; size cap on one piece</td><td>Untouched land must cost ~nothing. Detail exists only where work happens.</td></tr>
+  <tr><td>Single player; exact replay, rewind, slow motion; no speed-up</td><td>Everything must be reproducible from a seed plus the player's commands, on one machine. The sim never has to run faster than real time.</td></tr>
+  <tr><td>Carving is a separate blueprint mode, applied over time, still breakable</td><td>The matter representation must be able to lose material bit by bit in any shape.</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="queries">2. What the data must answer</h2>
+<p>The model should be picked by what gets asked of it, not by what it looks like. These are the questions, ordered by how often they're asked:</p>
+<ol>
+  <li><b>What is the surface here?</b> Drawing and collision, every frame, for everything in view.</li>
+  <li><b>What material is at point p, and what's its state?</b> Every tool hit or impact.</li>
+  <li><b>If I hit here with this energy, where does it break?</b> Every tool hit or impact.</li>
+  <li><b>Which matter is still connected?</b> After any break: what falls, and what becomes a separate piece.</li>
+  <li><b>What changed?</b> Saving, rewind, replay.</li>
+</ol>
+<p>Question 3 is the one that separates this game from others. Most games answer it from the impact alone, for example a Voronoi pattern centred on the hit. We have to answer it from the <i>material</i>.</p>
+
+<!-- ============================================================ -->
+<h2 id="three">3. Defined, computed, stored: why untouched rock costs nothing</h2>
+<p>The owner asked: why would untouched rock ever need crack data, and why isn't it produced on demand? It is produced on demand. My earlier wording ("the rock comes from its crack pattern") made it sound stored. The model separates three states, and untouched rock is only in the first:</p>
+
+<figure>
+<svg viewBox="0 0 900 250" width="900">
+  <rect x="20" y="30" width="270" height="190" rx="8" fill="#1f2a36" stroke="#5b8fd0"/>
+  <text x="155" y="58" text-anchor="middle" font-size="17" font-weight="bold">DEFINED</text>
+  <text x="155" y="80" text-anchor="middle" font-size="13" fill="#9aa4ae">a rule, the whole world, ~KB</text>
+  <text x="40" y="112" font-size="13">rock(p) = f(seed, geology, p)</text>
+  <text x="40" y="136" font-size="13">• strata, faults</text>
+  <text x="40" y="156" font-size="13">• crack families per rock type</text>
+  <text x="40" y="176" font-size="13">• soil rules</text>
+  <text x="40" y="204" font-size="12" fill="#9cc3f0">nothing evaluated until asked</text>
+
+  <rect x="315" y="30" width="270" height="190" rx="8" fill="#22281f" stroke="#7cc47c"/>
+  <text x="450" y="58" text-anchor="middle" font-size="17" font-weight="bold">COMPUTED</text>
+  <text x="450" y="80" text-anchor="middle" font-size="13" fill="#9aa4ae">a cache near the action, MB</text>
+  <text x="335" y="112" font-size="13">evaluate f() in a region</text>
+  <text x="335" y="136" font-size="13">• matter grid, crack planes</text>
+  <text x="335" y="156" font-size="13">• meshes, collision hulls</text>
+  <text x="335" y="176" font-size="13">• moving pieces</text>
+  <text x="335" y="204" font-size="12" fill="#a8e0a8">thrown away when no one is near</text>
+
+  <rect x="610" y="30" width="270" height="190" rx="8" fill="#2c2418" stroke="#c9a63a"/>
+  <text x="745" y="58" text-anchor="middle" font-size="17" font-weight="bold">STORED</text>
+  <text x="745" y="80" text-anchor="middle" font-size="13" fill="#9aa4ae">only what the player changed</text>
+  <text x="630" y="112" font-size="13">edits, in order</text>
+  <text x="630" y="136" font-size="13">• split here, removed this</text>
+  <text x="630" y="156" font-size="13">• damage, dug, dumped</text>
+  <text x="630" y="176" font-size="13">• pieces left in new places</text>
+  <text x="630" y="204" font-size="12" fill="#e8cc80">this is the save file</text>
+
+  <path d="M290 125 L315 125" stroke="#d8dde3" stroke-width="2" marker-end="url(#ar)"/>
+  <path d="M585 125 L610 125" stroke="#d8dde3" stroke-width="2" marker-end="url(#ar)"/>
+  <text x="450" y="242" text-anchor="middle" font-size="12" fill="#9aa4ae">computed = defined + stored, evaluated in a region. Delete the cache and recompute: you get the same answer.</text>
+  <defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#d8dde3"/></marker></defs>
+</svg>
+<figcaption>Untouched rock lives only in DEFINED: a rule shared by the whole world, a few KB, with no per-rock data and nothing evaluated.</figcaption>
+</figure>
+
+<div class="why"><b>Why the rule has to exist before anyone touches the rock</b> (instead of inventing cracks at the moment of the first hit):
+<ul>
+  <li><b>Consistency.</b> Two workers on opposite sides of the same outcrop must find the same crack. If cracks were invented per hit, the second worker's crack would depend on who hit first.</li>
+  <li><b>Rewind and replay.</b> Re-running the same commands must give bit-identical rock. A pure function of position does this for free. Cracks that depend on hit order make replay fragile.</li>
+  <li><b>You can see cracks before touching.</b> A cliff face shows its bedding and joints from a distance, and Roman quarrymen chose where to work by reading them. Rendering the untouched cliff needs the same rule, evaluated for drawing only.</li>
+  <li><b>Cost.</b> A rule is O(1) memory however big the world is. Storing cracks per rock would grow with the world.</li>
+</ul>
+"Defined" is not "computed": nothing is evaluated for rock no one looks at or touches.</div>
+
+<div class="open"><b>Open:</b> whether the rule should be <i>statistical crack families</i> (section 4), or something simpler such as only bedding planes plus impact-driven cracks. That changes the rule, not the defined/computed/stored split.</div>
+
+<!-- ============================================================ -->
+<h2 id="cracks">4. Why pre-existing cracks decide where rock breaks</h2>
+<p>Question 3 ("where does it break?") has three possible sources. Each one was considered:</p>
+<table>
+  <tr><th>Option</th><th>How it answers "where does it break"</th><th>For</th><th>Against</th></tr>
+  <tr><td><b>a. Pre-existing weaknesses</b> (beds, joint families) in the rule</td><td>Along the nearest weak plane the energy can open</td><td>This is how real rock is (geology research R3). It gives material-specific shapes for free: granite → cubes and sheets, slate → thin slabs, sandstone → beds. It matches how Romans quarried.</td><td>Intact rock between cracks still needs (b) or (c). The rule needs authoring per rock type.</td></tr>
+  <tr><td><b>b. Stress solve at impact</b> (FEM, peridynamics, boundary elements)</td><td>Where computed stress exceeds strength</td><td>Physically general.</td><td>Costly per hit, and still blind to pre-existing joints unless fed them. Results are particle clouds or meshes that need cleanup.</td></tr>
+  <tr><td><b>c. Pattern placed at the impact</b> (Voronoi, radial)</td><td>A stamp centred on the hit</td><td>Cheap and common in games.</td><td>Ignores the material. Voronoi cells average 15.5 faces; real fragments average 6.6 (Domokos 2020). That gap is exactly where the slivers in the toys came from.</td></tr>
+</table>
+<div class="why"><b>Proposal:</b> (a) for where big breaks go; a cheap version of (b) for intact rock, meaning one split plane through the impact, oriented by material (grain for wood, cleavage for slate, any direction for granite). Repeated two-way splits reproduce the measured 6.6-face statistics; (c) does not.</div>
+
+<figure>
+<svg viewBox="0 0 900 260" width="900">
+  <text x="150" y="24" text-anchor="middle" font-size="14" font-weight="bold">granite</text>
+  <text x="450" y="24" text-anchor="middle" font-size="14" font-weight="bold">slate</text>
+  <text x="750" y="24" text-anchor="middle" font-size="14" font-weight="bold">sandstone</text>
+  <!-- granite: 2 near orthogonal sets + sheeting -->
+  <g stroke="#b8b0a8" stroke-width="1.6" fill="none">
+    <rect x="40" y="40" width="220" height="190" fill="#4a4846"/>
+    <path d="M95 40 L92 230 M158 40 L162 230 M214 40 L210 230"/>
+    <path d="M40 92 Q150 86 260 95 M40 160 Q150 152 260 163"/>
+  </g>
+  <!-- slate: tilted thin cleavage -->
+  <g stroke="#7a8590" stroke-width="1.1" fill="none">
+    <rect x="340" y="40" width="220" height="190" fill="#353c44"/>
+    <path d="M340 70 L560 40 M340 92 L560 62 M340 114 L560 84 M340 136 L560 106 M340 158 L560 128 M340 180 L560 150 M340 202 L560 172 M340 224 L560 194"/>
+    <path d="M420 40 L405 230 M505 40 L490 230" stroke-dasharray="5 4"/>
+  </g>
+  <!-- sandstone: thick beds + offset joints -->
+  <g stroke="#c9a070" stroke-width="1.6" fill="none">
+    <rect x="640" y="40" width="220" height="190" fill="#6e5a40"/>
+    <path d="M640 85 L860 85 M640 140 L860 140 M640 190 L860 190"/>
+    <path d="M700 40 L700 85 M790 40 L790 85 M665 85 L665 140 M745 85 L745 140 M830 85 L830 140 M705 140 L705 190 M800 140 L800 190 M680 190 L680 230 M770 190 L770 230"/>
+  </g>
+  <text x="450" y="252" text-anchor="middle" font-size="12" fill="#9aa4ae">Same rule, different settings. Each family = direction + spacing + scatter + how far each crack runs. Dashed = crack that stops (rock bridge).</text>
+</svg>
+<figcaption>Crack families per rock type, sketched in 2D. Only drawn here; in the game they exist as a rule until asked for.</figcaption>
+</figure>
+
+<!-- ============================================================ -->
+<h2 id="matter">5. The matter representation, options compared</h2>
+<p>Once a region is computed (work is happening there), it needs a working form. I previously dismissed voxels because "the 30° rule can't be enforced on them". <b>That was wrong.</b> The 30° rule is a property of the shape we output, so any representation can enforce it with a post-pass that recognises spikes and repairs them (section 7). It doesn't separate the options. What does separate them:</p>
+
+<figure>
+<svg viewBox="0 0 900 230" width="900">
+  <g font-size="13">
+  <text x="112" y="22" text-anchor="middle" font-weight="bold">A. voxels only</text>
+  <text x="337" y="22" text-anchor="middle" font-weight="bold">B. convex cells only</text>
+  <text x="562" y="22" text-anchor="middle" font-weight="bold">C. voxels + crack planes</text>
+  <text x="787" y="22" text-anchor="middle" font-weight="bold">D. Voronoi (rejected)</text>
+  </g>
+  <!-- A: staircase -->
+  <g fill="#5a5856" stroke="#2a2a2a">
+    <rect x="30" y="140" width="20" height="20"/><rect x="50" y="140" width="20" height="20"/><rect x="70" y="140" width="20" height="20"/><rect x="90" y="140" width="20" height="20"/><rect x="110" y="140" width="20" height="20"/><rect x="130" y="140" width="20" height="20"/><rect x="150" y="140" width="20" height="20"/><rect x="170" y="140" width="20" height="20"/>
+    <rect x="30" y="120" width="20" height="20"/><rect x="50" y="120" width="20" height="20"/><rect x="70" y="120" width="20" height="20"/><rect x="90" y="120" width="20" height="20"/><rect x="110" y="120" width="20" height="20"/><rect x="130" y="120" width="20" height="20"/><rect x="150" y="120" width="20" height="20"/>
+    <rect x="30" y="100" width="20" height="20"/><rect x="50" y="100" width="20" height="20"/><rect x="70" y="100" width="20" height="20"/><rect x="90" y="100" width="20" height="20"/><rect x="110" y="100" width="20" height="20"/>
+    <rect x="30" y="80" width="20" height="20"/><rect x="50" y="80" width="20" height="20"/><rect x="70" y="80" width="20" height="20"/>
+    <rect x="30" y="60" width="20" height="20"/>
+  </g>
+  <path d="M30 55 L195 140" stroke="#e07a7a" stroke-width="2" stroke-dasharray="5 3"/>
+  <text x="112" y="190" text-anchor="middle" font-size="12" fill="#9aa4ae">crack at an angle = staircase</text>
+  <text x="112" y="206" text-anchor="middle" font-size="12" fill="#9aa4ae">(10 cm steps ≈ 1 px; invisible far)</text>
+  <!-- B: polygons -->
+  <g stroke="#2a2a2a" stroke-width="1.5">
+    <polygon points="250,160 300,160 305,110 255,95" fill="#5a5856"/>
+    <polygon points="300,160 360,160 365,125 305,110" fill="#625f5c"/>
+    <polygon points="360,160 425,160 420,140 365,125" fill="#56534f"/>
+    <polygon points="255,95 305,110 310,70 262,55" fill="#68645f"/>
+  </g>
+  <text x="337" y="190" text-anchor="middle" font-size="12" fill="#9aa4ae">exact planes, few faces</text>
+  <text x="337" y="206" text-anchor="middle" font-size="12" fill="#9aa4ae">hard to carve or erode arbitrarily</text>
+  <!-- C: voxels with plane cut -->
+  <g fill="#5a5856" stroke="#3a3a3a">
+    <rect x="480" y="140" width="20" height="20"/><rect x="500" y="140" width="20" height="20"/><rect x="520" y="140" width="20" height="20"/><rect x="540" y="140" width="20" height="20"/><rect x="560" y="140" width="20" height="20"/><rect x="580" y="140" width="20" height="20"/><rect x="600" y="140" width="20" height="20"/><rect x="620" y="140" width="20" height="20"/>
+    <rect x="480" y="120" width="20" height="20"/><rect x="500" y="120" width="20" height="20"/><rect x="520" y="120" width="20" height="20"/><rect x="540" y="120" width="20" height="20"/><rect x="560" y="120" width="20" height="20"/><rect x="580" y="120" width="20" height="20"/><rect x="600" y="120" width="20" height="20"/>
+    <rect x="480" y="100" width="20" height="20"/><rect x="500" y="100" width="20" height="20"/><rect x="520" y="100" width="20" height="20"/><rect x="540" y="100" width="20" height="20"/><rect x="560" y="100" width="20" height="20"/>
+    <rect x="480" y="80" width="20" height="20"/><rect x="500" y="80" width="20" height="20"/><rect x="520" y="80" width="20" height="20"/>
+    <rect x="480" y="60" width="20" height="20"/>
+  </g>
+  <polygon points="480,55 645,140 640,160 480,160" fill="#7a7672" fill-opacity=".55"/>
+  <path d="M480 55 L645 140" stroke="#7cc47c" stroke-width="2.5"/>
+  <text x="562" y="190" text-anchor="middle" font-size="12" fill="#9aa4ae">grid holds matter; plane gives</text>
+  <text x="562" y="206" text-anchor="middle" font-size="12" fill="#9aa4ae">the exact face (Hermite data)</text>
+  <!-- D: voronoi slivers -->
+  <g stroke="#2a2a2a" stroke-width="1.5">
+    <polygon points="700,160 760,160 735,60" fill="#5a5856"/>
+    <polygon points="760,160 870,160 735,60" fill="#625f5c"/>
+    <polygon points="700,160 735,60 705,52" fill="#6b4d4d"/>
+    <polygon points="735,60 870,160 868,140" fill="#6b4d4d"/>
+  </g>
+  <text x="787" y="190" text-anchor="middle" font-size="12" fill="#9aa4ae">slivers (red), wrong face count</text>
+  <text x="787" y="206" text-anchor="middle" font-size="12" fill="#9aa4ae">ignores the material</text>
+</svg>
+<figcaption>Four ways to hold rock in a computed region, in 2D.</figcaption>
+</figure>
+
+<table>
+  <tr><th>Need</th><th>A. voxels</th><th>B. convex cells</th><th>C. voxels + crack planes</th></tr>
+  <tr><td>Crack faces at true angle</td><td class="meh">staircase at 10 cm (≈1 px at closest zoom)</td><td class="good">exact</td><td class="good">exact (plane stored per cell)</td></tr>
+  <tr><td>Blueprint carving, lost bit by bit</td><td class="good">clear voxels over time</td><td class="bad">many splits; fragile</td><td class="good">clear voxels over time</td></tr>
+  <tr><td>Arbitrary damage, dynamite to smithereens</td><td class="good">damage per voxel, flood fill</td><td class="meh">recursive splits</td><td class="good">damage per voxel, flood fill</td></tr>
+  <tr><td>Material varies inside a block (veins, weathered rind)</td><td class="good">per voxel</td><td class="bad">one material per cell</td><td class="good">per voxel</td></tr>
+  <tr><td>Collision for heavy rolling pieces</td><td class="meh">hulls must be derived</td><td class="good">is already a convex hull</td><td class="good">derived, but cell = convex hull for free</td></tr>
+  <tr><td>Features thinner than a voxel (slate 2–5 cm, wood chips)</td><td class="bad">lost</td><td class="good">fine</td><td class="meh">a plane per cell helps; two cracks in one cell don't fit</td></tr>
+  <tr><td>Memory, one 20 m region</td><td>200³ × 1–3 B ≈ 8–24 MB</td><td>KB</td><td>8–24 MB + planes</td></tr>
+  <tr><td>Data-oriented processing (SIMD, flood fill, CA)</td><td class="good">uniform arrays</td><td class="meh">variable polygons</td><td class="good">uniform arrays</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="proposal">6. Proposal: matter on a grid, cracks as planes (option C)</h2>
+<p>Neither pure option fits the game. B is what the <i>geology</i> looks like: cracks are planes, and blocks between them are convex. A is what <i>work</i> looks like: matter removed in any shape, damage anywhere, material varying point to point. C keeps both, so each answers the question it's good at:</p>
+
+<figure>
+<svg viewBox="0 0 900 300" width="900">
+  <!-- grid -->
+  <g stroke="#2e333a">
+    <path d="M40 40 V260 M70 40 V260 M100 40 V260 M130 40 V260 M160 40 V260 M190 40 V260 M220 40 V260 M250 40 V260 M280 40 V260 M310 40 V260 M340 40 V260"/>
+    <path d="M40 40 H340 M40 70 H340 M40 100 H340 M40 130 H340 M40 160 H340 M40 190 H340 M40 220 H340 M40 250 H340"/>
+  </g>
+  <polygon points="40,40 175,40 160,260 40,260" fill="#5c5853" fill-opacity=".8"/>
+  <polygon points="175,40 340,40 340,150 168,155" fill="#666158" fill-opacity=".8"/>
+  <polygon points="168,155 340,150 340,260 160,260" fill="#5a554e" fill-opacity=".8"/>
+  <path d="M175 40 L160 260" stroke="#7cc47c" stroke-width="3"/>
+  <path d="M168 155 L340 150" stroke="#7cc47c" stroke-width="3"/>
+  <path d="M168 155 L250 152" stroke="#c9a63a" stroke-width="3" stroke-dasharray="6 4"/>
+  <circle cx="100" cy="100" r="28" fill="#14161a" fill-opacity=".85"/>
+  <text x="100" y="104" text-anchor="middle" font-size="11" fill="#9aa4ae">carved</text>
+  <text x="250" y="96" text-anchor="middle" font-size="13">cell 2</text>
+  <text x="250" y="210" text-anchor="middle" font-size="13">cell 3</text>
+  <text x="80" y="200" text-anchor="middle" font-size="13">cell 1</text>
+  <!-- legend -->
+  <g font-size="13">
+    <rect x="380" y="50" width="16" height="16" fill="#5c5853"/><text x="406" y="63">voxel (10 cm): material, damage, cell id</text>
+    <path d="M380 92 H396" stroke="#7cc47c" stroke-width="3"/><text x="406" y="97">crack plane (from the rule): exact face between cells</text>
+    <path d="M380 126 H396" stroke="#c9a63a" stroke-width="3" stroke-dasharray="6 4"/><text x="406" y="131">rock bridge: the crack stops, so the cells are bonded here</text>
+    <circle cx="388" cy="160" r="8" fill="#14161a" stroke="#9aa4ae"/><text x="406" y="165">voxels removed: carving, damage, chipping</text>
+  </g>
+  <g font-size="13" fill="#9cc3f0">
+    <text x="380" y="210">Surface to draw: crack planes where a cell face is exposed,</text>
+    <text x="380" y="228">voxel surface (meshed, spike-repaired) where carved or damaged.</text>
+    <text x="380" y="252">Collision: each cell is convex by construction, so the hull is free.</text>
+    <text x="380" y="270">A carved cell's hull is rebuilt from its remaining voxels.</text>
+  </g>
+</svg>
+<figcaption>One computed region in 2D. A moving piece is a set of cells plus its voxels.</figcaption>
+</figure>
+
+<div class="why"><b>Why C over B (convex cells only), which I proposed before:</b> B can't do blueprint carving, can't vary material inside a block, and turns "dynamite to smithereens" into a cascade of fragile splits. Those are owner rulings, not edge cases.<br>
+<b>Why C over A (voxels only):</b> A loses the true crack angles and thin beds, and it throws away the free convex hulls the geology hands us. At 10 cm the staircase is about 1 px at the closest zoom, so A is closer than it looks. The thin-feature problem (slate, wood) is the real reason.<br>
+<b>Why 10 cm:</b> it's about one pixel at the closest zoom, so voxel steps never show as geometry. 0.2 m pieces (the grain cut-off) are 2 voxels across, so the smallest rigid pieces get their shape from planes and spike repair, not from the grid.</div>
+
+<div class="open"><b>Open, and the deciding test:</b> two cracks inside one 10 cm cell (thin slate beds, wood splinters). Options: a finer grid for that material, or several planes per cell. A test region of slate would decide it.</div>
+
+<!-- ============================================================ -->
+<h2 id="angles">7. The 30° rule as physics, not geometry</h2>
+<p>The owner's point applies to every representation: the rule is enforced on the shape we output, by a pass that recognises spikes and repairs them. Thinking past "smoothing", there's a better reason for the repair than looks: <b>a thin wedge of rock is physically weak.</b> Real stone doesn't keep a needle tip because it chips off under the smallest load. So the rule can live in the material:</p>
+<ul>
+  <li><b>Matter level:</b> every material has a minimum thickness. Voxels attached through less than that, such as a spike one voxel thick, break off as grains or dust. That conserves mass, and it's exactly what real rock does.</li>
+  <li><b>Mesh level:</b> after meshing, any vertex with a face angle under 30° is cut off by a small plane. One tip becomes several corners, which is the owner's "jagged tip with several points". The same pass runs on wood chips.</li>
+  <li><b>Exceptions:</b> carve mode and sharp weapons set a flag that skips both passes for that surface.</li>
+</ul>
+<figure>
+<svg viewBox="0 0 900 200" width="900">
+  <polygon points="60,170 260,170 150,30" fill="#5c5853" stroke="#9aa4ae"/>
+  <path d="M150 30 L150 60" stroke="#e07a7a" stroke-width="2"/>
+  <text x="160" y="50" font-size="12" fill="#e07a7a">18° tip</text>
+  <text x="160" y="192" text-anchor="middle" font-size="13">generated</text>
+  <path d="M300 110 H380" stroke="#d8dde3" stroke-width="2" marker-end="url(#ar)"/>
+  <text x="340" y="100" text-anchor="middle" font-size="12" fill="#9aa4ae">chip</text>
+  <polygon points="430,170 630,170 553,62 541,55 532,62 522,58" fill="#5c5853" stroke="#9aa4ae"/>
+  <text x="530" y="192" text-anchor="middle" font-size="13">repaired: jagged tip, every angle ≥ 30°</text>
+  <g fill="#8a857e"><circle cx="560" cy="40" r="3"/><circle cx="571" cy="47" r="2"/><circle cx="548" cy="33" r="2"/></g>
+  <text x="600" y="38" font-size="12" fill="#9aa4ae">removed matter → grains/dust (mass kept)</text>
+</svg>
+<figcaption>A spike repaired by chipping off its tip, not by rounding it.</figcaption>
+</figure>
+
+<!-- ============================================================ -->
+<h2 id="layout">8. Data layout (data-oriented)</h2>
+<p>Laid out as flat arrays, grouped by what gets processed together. No objects, no pointers between them, only indices. Every array is either part of the rule (tiny), a cache (rebuildable), or the edit store (the save).</p>
+
+<figure>
+<svg viewBox="0 0 900 470" width="900">
+  <g font-size="13">
+  <!-- rule -->
+  <text x="20" y="28" font-weight="bold" fill="#9cc3f0">DEFINED (whole world, KB)</text>
+  <rect x="20" y="38" width="130" height="34" fill="#1f2a36" stroke="#5b8fd0"/><text x="85" y="60" text-anchor="middle">seed</text>
+  <rect x="150" y="38" width="190" height="34" fill="#1f2a36" stroke="#5b8fd0"/><text x="245" y="60" text-anchor="middle">units[]: strata + material</text>
+  <rect x="340" y="38" width="150" height="34" fill="#1f2a36" stroke="#5b8fd0"/><text x="415" y="60" text-anchor="middle">faults[]</text>
+  <rect x="490" y="38" width="210" height="34" fill="#1f2a36" stroke="#5b8fd0"/><text x="595" y="60" text-anchor="middle">crack_families[] per unit</text>
+  <rect x="700" y="38" width="180" height="34" fill="#1f2a36" stroke="#5b8fd0"/><text x="790" y="60" text-anchor="middle">materials[] (table)</text>
+
+  <!-- soil -->
+  <text x="20" y="104" font-weight="bold" fill="#e8cc80">SOIL COLUMNS (baked once, then edited; 1 m grid)</text>
+  <g stroke="#c9a63a" fill="#2c2418">
+    <rect x="20" y="114" width="90" height="34"/><rect x="110" y="114" width="90" height="34"/><rect x="200" y="114" width="90" height="34"/><rect x="290" y="114" width="90" height="34"/>
+  </g>
+  <text x="65" y="136" text-anchor="middle">col 0</text><text x="155" y="136" text-anchor="middle">col 1</text><text x="245" y="136" text-anchor="middle">col 2</text><text x="335" y="136" text-anchor="middle">…</text>
+  <text x="400" y="128" font-size="12" fill="#9aa4ae">Column = rock_top f32 + 4 × Layer{mat u8, thick u16, porosity u8}</text>
+  <text x="400" y="145" font-size="12" fill="#9aa4ae">≈ 20 B; a 4×4 km map ≈ 320 MB, or paged by 64 m chunk</text>
+
+  <!-- region -->
+  <text x="20" y="182" font-weight="bold" fill="#a8e0a8">COMPUTED REGIONS (cache, pooled, 8³ voxel bricks)</text>
+  <g stroke="#7cc47c" fill="#22281f">
+    <rect x="20" y="192" width="200" height="30"/><text x="120" y="212" text-anchor="middle">brick_mat[n][512] u8</text>
+    <rect x="220" y="192" width="200" height="30"/><text x="320" y="212" text-anchor="middle">brick_dmg[n][512] u8</text>
+    <rect x="420" y="192" width="200" height="30"/><text x="520" y="212" text-anchor="middle">brick_cell[n][512] u16</text>
+    <rect x="620" y="192" width="260" height="30"/><text x="750" y="212" text-anchor="middle">brick_pos[n], brick_owner[n]</text>
+    <rect x="20" y="226" width="300" height="30"/><text x="170" y="246" text-anchor="middle">cell_planes[m] → span into planes[]</text>
+    <rect x="320" y="226" width="280" height="30"/><text x="460" y="246" text-anchor="middle">bonds[k] {cell a, cell b, area, dmg}</text>
+    <rect x="600" y="226" width="280" height="30"/><text x="740" y="246" text-anchor="middle">mesh[], hull[] (derived, dirty flags)</text>
+  </g>
+
+  <!-- pieces -->
+  <text x="20" y="290" font-weight="bold" fill="#a8e0a8">MOVING PIECES (structure of arrays)</text>
+  <g stroke="#7cc47c" fill="#22281f">
+    <rect x="20" y="300" width="120" height="30"/><text x="80" y="320" text-anchor="middle">pos[p]</text>
+    <rect x="140" y="300" width="120" height="30"/><text x="200" y="320" text-anchor="middle">rot[p]</text>
+    <rect x="260" y="300" width="120" height="30"/><text x="320" y="320" text-anchor="middle">vel[p], ang[p]</text>
+    <rect x="380" y="300" width="140" height="30"/><text x="450" y="320" text-anchor="middle">mass[p], inertia[p]</text>
+    <rect x="520" y="300" width="130" height="30"/><text x="585" y="320" text-anchor="middle">sleep_t[p]</text>
+    <rect x="650" y="300" width="230" height="30"/><text x="765" y="320" text-anchor="middle">bricks span[p] (its own grid)</text>
+  </g>
+  <text x="20" y="350" font-size="12" fill="#9aa4ae">A piece owns its bricks in its own frame. Promotion re-owns bricks (brick_owner) instead of copying voxels. Grains are another SoA: pos, vel, r, mat.</text>
+
+  <!-- edits -->
+  <text x="20" y="386" font-weight="bold" fill="#e8cc80">STORED (the save; append-only per 64 m chunk)</text>
+  <g stroke="#c9a63a" fill="#2c2418">
+    <rect x="20" y="396" width="150" height="30"/><text x="95" y="416" text-anchor="middle">tick, cmd 0</text>
+    <rect x="170" y="396" width="150" height="30"/><text x="245" y="416" text-anchor="middle">tick, cmd 1</text>
+    <rect x="320" y="396" width="150" height="30"/><text x="395" y="416" text-anchor="middle">…</text>
+    <rect x="470" y="396" width="200" height="30"/><text x="570" y="416" text-anchor="middle">snapshot (compacted)</text>
+  </g>
+  <text x="690" y="410" font-size="12" fill="#9aa4ae">rewind = load snapshot,</text>
+  <text x="690" y="426" font-size="12" fill="#9aa4ae">replay commands</text>
+  <text x="20" y="450" font-size="12" fill="#9aa4ae">Commands are the player's (and AI's) intents: "strike here with energy E", "split along this drilled line".</text>
+  <text x="20" y="466" font-size="12" fill="#9aa4ae">The sim is deterministic, so results don't need storing; snapshots only bound replay time.</text>
+  </g>
+</svg>
+<figcaption>Proposed memory layout. Sizes are estimates, not measurements.</figcaption>
+</figure>
+
+<div class="why"><b>Why bricks of 8³ instead of one big grid per region:</b> a quarried block is only a few bricks. Promoting it to a moving piece then means changing <code>brick_owner</code>, not copying data, and empty space costs nothing.<br>
+<b>Why store commands, not results:</b> the owner wants rewind and slow motion, never speed-up, on one machine. Determinism on one binary is cheap (fixed tick, fixed order, no fast-math), and then commands are by far the smallest save.</div>
+
+<!-- ============================================================ -->
+<h2 id="promotion">9. Promotion and demotion</h2>
+<figure>
+<svg viewBox="0 0 900 380" width="900">
+  <g font-size="13">
+  <rect x="20" y="40" width="150" height="54" rx="8" fill="#1f2a36" stroke="#5b8fd0"/><text x="95" y="63" text-anchor="middle" font-weight="bold">rule</text><text x="95" y="81" text-anchor="middle" font-size="11" fill="#9aa4ae">untouched rock, 0 B</text>
+  <rect x="250" y="40" width="170" height="54" rx="8" fill="#22281f" stroke="#7cc47c"/><text x="335" y="63" text-anchor="middle" font-weight="bold">computed region</text><text x="335" y="81" text-anchor="middle" font-size="11" fill="#9aa4ae">voxels + planes, asleep</text>
+  <rect x="500" y="40" width="160" height="54" rx="8" fill="#22281f" stroke="#7cc47c"/><text x="580" y="63" text-anchor="middle" font-weight="bold">moving piece</text><text x="580" y="81" text-anchor="middle" font-size="11" fill="#9aa4ae">own bricks + transform</text>
+  <rect x="730" y="40" width="150" height="54" rx="8" fill="#2c2418" stroke="#c9a63a"/><text x="805" y="63" text-anchor="middle" font-weight="bold">placed</text><text x="805" y="81" text-anchor="middle" font-size="11" fill="#9aa4ae">at rest somewhere new</text>
+
+  <path d="M170 60 H250" stroke="#d8dde3" stroke-width="2" marker-end="url(#ar)"/><text x="210" y="52" text-anchor="middle" font-size="11">work nearby</text>
+  <path d="M250 80 H170" stroke="#9aa4ae" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#ar)"/><text x="210" y="100" text-anchor="middle" font-size="11" fill="#9aa4ae">no one near (edits kept)</text>
+  <path d="M420 60 H500" stroke="#d8dde3" stroke-width="2" marker-end="url(#ar)"/><text x="460" y="52" text-anchor="middle" font-size="11">bonds gone</text>
+  <path d="M660 60 H730" stroke="#d8dde3" stroke-width="2" marker-end="url(#ar)"/><text x="695" y="52" text-anchor="middle" font-size="11">settles</text>
+  <path d="M730 82 H660" stroke="#9aa4ae" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#ar)"/><text x="695" y="104" text-anchor="middle" font-size="11" fill="#9aa4ae">touched / support lost</text>
+
+  <rect x="250" y="180" width="170" height="54" rx="8" fill="#22281f" stroke="#7cc47c"/><text x="335" y="203" text-anchor="middle" font-weight="bold">grains</text><text x="335" y="221" text-anchor="middle" font-size="11" fill="#9aa4ae">pieces &lt; 0.2 m, moving</text>
+  <rect x="20" y="180" width="150" height="54" rx="8" fill="#2c2418" stroke="#c9a63a"/><text x="95" y="203" text-anchor="middle" font-weight="bold">soil column</text><text x="95" y="221" text-anchor="middle" font-size="11" fill="#9aa4ae">layer keeps material</text>
+  <rect x="500" y="180" width="160" height="54" rx="8" fill="#22281f" stroke="#7cc47c"/><text x="580" y="203" text-anchor="middle" font-weight="bold">dust</text><text x="580" y="221" text-anchor="middle" font-size="11" fill="#9aa4ae">drawn only; mass credited</text>
+
+  <path d="M580 94 L360 180" stroke="#d8dde3" stroke-width="2" marker-end="url(#ar)"/><text x="500" y="150" font-size="11">chip / split &lt; 0.2 m</text>
+  <path d="M310 94 L310 180" stroke="#d8dde3" stroke-width="2" marker-end="url(#ar)"/><text x="230" y="140" font-size="11">thin spike breaks</text>
+  <path d="M250 200 H170" stroke="#d8dde3" stroke-width="2" marker-end="url(#ar)"/><text x="210" y="192" text-anchor="middle" font-size="11">comes to rest</text>
+  <path d="M170 222 H250" stroke="#9aa4ae" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#ar)"/><text x="210" y="248" text-anchor="middle" font-size="11" fill="#9aa4ae">dig / too steep</text>
+  <path d="M420 207 H500" stroke="#d8dde3" stroke-width="2" marker-end="url(#ar)"/><text x="460" y="199" text-anchor="middle" font-size="11">&lt; 1 cm</text>
+
+  <rect x="20" y="290" width="120" height="50" rx="8" fill="#1f2a36" stroke="#5b8fd0"/><text x="80" y="313" text-anchor="middle" font-weight="bold">tree seed</text><text x="80" y="330" text-anchor="middle" font-size="11" fill="#9aa4ae">32 B</text>
+  <rect x="200" y="290" width="130" height="50" rx="8" fill="#22281f" stroke="#7cc47c"/><text x="265" y="313" text-anchor="middle" font-weight="bold">rod skeleton</text><text x="265" y="330" text-anchor="middle" font-size="11" fill="#9aa4ae">first axe strike</text>
+  <rect x="390" y="290" width="170" height="50" rx="8" fill="#22281f" stroke="#7cc47c"/><text x="475" y="313" text-anchor="middle" font-weight="bold">segments + joints</text><text x="475" y="330" text-anchor="middle" font-size="11" fill="#9aa4ae">falling; branches break</text>
+  <rect x="620" y="290" width="150" height="50" rx="8" fill="#2c2418" stroke="#c9a63a"/><text x="695" y="313" text-anchor="middle" font-weight="bold">log pieces</text><text x="695" y="330" text-anchor="middle" font-size="11" fill="#9aa4ae">placed</text>
+  <path d="M140 315 H200" stroke="#d8dde3" stroke-width="2" marker-end="url(#ar)"/>
+  <path d="M330 315 H390" stroke="#d8dde3" stroke-width="2" marker-end="url(#ar)"/>
+  <path d="M560 315 H620" stroke="#d8dde3" stroke-width="2" marker-end="url(#ar)"/>
+  </g>
+  <text x="450" y="370" text-anchor="middle" font-size="12" fill="#9aa4ae">Solid arrows: always happen. Dashed: return paths. Nothing returns to "rule": an edit is permanent and lives in the stored layer.</text>
+</svg>
+<figcaption>The ladder. Blue = defined, green = computed (cache), gold = stored.</figcaption>
+</figure>
+
+<div class="why"><b>Why return paths never lose anything:</b> demotion only throws away the <i>computed</i> layer. Everything that changes future behaviour (removed matter, damage, a piece's new place) is in the stored layer before the cache is dropped. Recomputing gives the same region. That's the reversibility the owner asked about, and it falls out of the three-state split instead of needing a special "bake back" algorithm.</div>
+
+<!-- ============================================================ -->
+<h2 id="breaking">10. How breaking changes the data</h2>
+<figure>
+<svg viewBox="0 0 900 220" width="900">
+  <g font-size="12">
+  <!-- step 1 -->
+  <g stroke="#2a2a2a" stroke-width="1.5"><rect x="20" y="50" width="70" height="60" fill="#5c5853"/><rect x="90" y="50" width="70" height="60" fill="#625e58"/><rect x="20" y="110" width="70" height="60" fill="#58544f"/><rect x="90" y="110" width="70" height="60" fill="#5f5b55"/></g>
+  <g stroke="#c9a63a" stroke-width="4"><path d="M90 65 V95"/><path d="M35 110 H75"/><path d="M90 125 V155"/><path d="M105 110 H145"/></g>
+  <text x="90" y="30" text-anchor="middle" font-size="13" font-weight="bold">bonded cells</text>
+  <text x="90" y="192" text-anchor="middle" fill="#9aa4ae">gold = rock bridge</text>
+  <path d="M180 110 H230" stroke="#d8dde3" stroke-width="2" marker-end="url(#ar)"/><text x="205" y="100" text-anchor="middle">wedges</text>
+  <!-- step 2 -->
+  <g stroke="#2a2a2a" stroke-width="1.5"><rect x="250" y="50" width="70" height="60" fill="#5c5853"/><rect x="320" y="50" width="70" height="60" fill="#625e58"/><rect x="250" y="110" width="70" height="60" fill="#58544f"/><rect x="320" y="110" width="70" height="60" fill="#5f5b55"/></g>
+  <g stroke="#c9a63a" stroke-width="4"><path d="M320 125 V155"/><path d="M335 110 H375"/><path d="M265 110 H305"/></g>
+  <path d="M320 65 V95" stroke="#e07a7a" stroke-width="2" stroke-dasharray="3 3"/>
+  <text x="320" y="30" text-anchor="middle" font-size="13" font-weight="bold">one bond opens</text>
+  <text x="320" y="192" text-anchor="middle" fill="#9aa4ae">edit: opened(bond)</text>
+  <path d="M410 110 H460" stroke="#d8dde3" stroke-width="2" marker-end="url(#ar)"/><text x="435" y="100" text-anchor="middle">more</text>
+  <!-- step 3 -->
+  <g stroke="#2a2a2a" stroke-width="1.5"><rect x="480" y="50" width="70" height="60" fill="#5c5853"/><rect x="565" y="40" width="70" height="60" fill="#7a746b"/><rect x="480" y="110" width="70" height="60" fill="#58544f"/><rect x="550" y="110" width="70" height="60" fill="#5f5b55"/></g>
+  <g stroke="#c9a63a" stroke-width="4"><path d="M550 125 V155"/><path d="M495 110 H535"/></g>
+  <text x="560" y="30" text-anchor="middle" font-size="13" font-weight="bold">flood fill → free set</text>
+  <text x="560" y="192" text-anchor="middle" fill="#9aa4ae">top-right has no bonds left</text>
+  <path d="M650 110 H700" stroke="#d8dde3" stroke-width="2" marker-end="url(#ar)"/>
+  <!-- step 4 -->
+  <g transform="rotate(14 790 100)"><rect x="755" y="70" width="70" height="60" fill="#7a746b" stroke="#2a2a2a" stroke-width="1.5"/></g>
+  <text x="790" y="30" text-anchor="middle" font-size="13" font-weight="bold">moving piece</text>
+  <text x="790" y="192" text-anchor="middle" fill="#9aa4ae">its bricks re-owned + transform</text>
+  </g>
+</svg>
+<figcaption>Persistent cracks are not bonds; they are friction contacts. The contact solver decides whether a free cell actually moves (it may just sit there, wedged).</figcaption>
+</figure>
+
+<table>
+  <tr><th>Event</th><th>Stored edit</th><th>Computed effect</th></tr>
+  <tr><td>Hammer hit, too weak to break</td><td>damage at a point</td><td>voxel damage rises; bond damage rises</td></tr>
+  <tr><td>Drill line + wedges (plug-and-feather)</td><td>split plane through the drilled holes</td><td>voxels re-assigned to two cells; bonds across the plane open</td></tr>
+  <tr><td>Chisel, chipping</td><td>removed matter at a point</td><td>voxels cleared; matter → grains/dust</td></tr>
+  <tr><td>Dynamite</td><td>blast at a point with energy</td><td>damage field → many small pieces + grains</td></tr>
+  <tr><td>Chiselling a mass bigger than the size cap</td><td>opened bonds</td><td>cracks, stays put (owner ruling)</td></tr>
+  <tr><td>Blueprint carving step</td><td>"carve step k of design D"</td><td>voxels in section k cleared over time</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="weight">11. Weight: why the contact law, not mass, makes things feel heavy</h2>
+<p>In a standard game contact model, mass cancels out. A 10 t block and a 1 kg block of the same shape follow the same path, which is why games feel like empty boxes. Engineering rockfall software (RAMMS, research R1) does it differently:</p>
+<figure>
+<svg viewBox="0 0 900 200" width="900">
+  <path d="M20 170 L880 170" stroke="#6b6560" stroke-width="2"/>
+  <text x="220" y="24" text-anchor="middle" font-size="13" font-weight="bold">typical game: bounce coefficient</text>
+  <path d="M40 40 Q70 170 100 170 Q130 90 160 170 Q185 120 210 170 Q230 140 250 170 Q265 155 280 170 Q300 162 330 170 L400 170" stroke="#e07a7a" stroke-width="2" fill="none"/>
+  <text x="220" y="196" text-anchor="middle" font-size="12" fill="#9aa4ae">same for 1 kg or 10 t; hops, rolls on</text>
+  <text x="670" y="24" text-anchor="middle" font-size="13" font-weight="bold">proposed: plastic impact + gouging friction</text>
+  <path d="M500 40 Q530 170 560 170 Q575 150 590 170 L615 170" stroke="#7cc47c" stroke-width="2.5" fill="none"/>
+  <path d="M550 170 Q590 182 620 170" stroke="#8a6e4e" stroke-width="3" fill="none"/>
+  <rect x="612" y="152" width="22" height="18" fill="#7a746b" stroke="#2a2a2a"/>
+  <text x="670" y="196" text-anchor="middle" font-size="12" fill="#9aa4ae">no rebound; a small tip-over hop from the shape; dents soil; stops</text>
+</svg>
+</figure>
+<ul>
+  <li><b>No rebound off the ground</b> (all downward speed is absorbed). Any hop comes from the shape: a corner hits and the piece pivots over an edge. A cube keeps about 6% of its energy per edge it rolls over, so it stops unless the slope is steep. That's the owner's "rolls only on very steep ground".</li>
+  <li><b>Friction grows as the piece gouges</b> into the ground. Drag in contact scales with mass. The ground category (meadow, scree, bedrock) is data.</li>
+  <li><b>Pressure dents the ground</b> above a threshold. A 2 m block presses about 50 kPa on the ground, the same order as soil strength, so heavy things visibly sink and light things don't. This is where mass stops cancelling out.</li>
+  <li><b>True scale, true gravity, small time step</b> (1–2 ms). Big things then look slow, as in real video.</li>
+</ul>
+<div class="open"><b>Unverified:</b> nobody has compared this to real video yet, and the parameters come from 5–30 m/s rockfall, not 1–3 m/s drops. It needs a test against footage.</div>
+
+<!-- ============================================================ -->
+<h2 id="algdata">12. Algorithm vs data</h2>
+<table>
+  <tr><th>Data only (tables, tuning)</th><th>Needs an algorithm</th></tr>
+  <tr><td>
+    <ul>
+      <li>Material: density, strength, minimum thickness, friction category, dent threshold, cohesion, porosity, cut-face look, colours</li>
+      <li>Crack families per rock unit</li>
+      <li>Strata and faults (authored)</li>
+      <li>Soil rules</li>
+      <li>Tree species</li>
+      <li>Grain / dust cut-offs (0.2 m / 1 cm), size cap</li>
+    </ul>
+  </td><td>
+    <ol>
+      <li><code>rule(p)</code>: material, cell and crack planes at a point</li>
+      <li>Compute region: fill bricks from the rule, then apply stored edits</li>
+      <li>Surface: planes + voxel mesher + spike repair (30°)</li>
+      <li>Split / remove / damage → re-assign voxels, open bonds</li>
+      <li>Flood fill over bonds → free sets → pieces</li>
+      <li>Contact solver: plastic, gouging friction, dents</li>
+      <li>Grains ↔ soil columns (mass kept, porosity)</li>
+      <li>Tree ladder (seed → rods → segments)</li>
+      <li>Blueprint carving scheduler</li>
+      <li>Snapshot + command replay</li>
+    </ol>
+  </td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="unknown">13. What would change this</h2>
+<table>
+  <tr><th>If this turns out true…</th><th>…then</th></tr>
+  <tr><td>Slate beds and wood splinters need more than one plane per voxel too often</td><td>Use a finer grid per material, or move wood off voxels onto its own fibre model (as in the wood toy)</td></tr>
+  <tr><td>The voxel mesher + spike repair still looks blobby at game zoom</td><td>Lean on planes: carve-and-damage surfaces get faceted chip planes instead of a smooth isosurface</td></tr>
+  <tr><td>Computing a region from the rule is too slow when work starts</td><td>Compute in the background ahead of workers; keep a few regions warm</td></tr>
+  <tr><td>Statistical crack families can't be authored to look right</td><td>Hand-author cracks per outcrop, stored as data (bigger, but still small)</td></tr>
+  <tr><td>The contact law doesn't look like video</td><td>Change the law; the data model doesn't care</td></tr>
+</table>
+
+<p class="lead" style="margin-top:36px">Not covered here yet: workers and ropes (hauling), water, structures as built objects, and the order of systems in a tick. Those come after the owner has reviewed this document.</p>
+
+</main>

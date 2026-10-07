@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>P1 Field to mesh</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;display:flex;height:100vh;background:#14161a;color:#d6d9de;font:13px/1.4 system-ui,sans-serif}
+#side{width:320px;padding:12px;overflow-y:auto;background:#1b1e24;border-right:1px solid #2c3038}
+#main{flex:1;position:relative}canvas{position:absolute;left:0;top:0;width:100%;height:100%}
+a{color:#7ab8ff}h1{font-size:17px;margin:6px 0}h2{font-size:12px;text-transform:uppercase;color:#8a93a0;margin:14px 0 4px}
+p,ul{margin:0}ul{padding-left:16px}label{display:block;margin:4px 0}input[type=range]{width:100%}
+button,select{background:#2a2f38;color:#d6d9de;border:1px solid #3a404b;padding:3px 8px;margin:2px 2px 2px 0}
+button:hover{background:#363c48}table{width:100%;border-collapse:collapse}td{padding:1px 0}td+td{text-align:right;font-family:monospace}
+#cellinfo{font-family:monospace;color:#ffd866;margin-top:4px;min-height:3em;white-space:pre}
+#selftest{font-size:10px;color:#667;margin:10px 0 0;white-space:pre-wrap}
+</style></head><body>
+<div id="side">
+<a href="index.html">&larr; all toys</a>
+<h1>P1 &middot; Field &harr; surface mesh</h1>
+<h2>What it is</h2>
+<p>A field stores one number per grid point: negative inside the rock, positive outside (a signed distance field). Marching squares walks every cell, reads the signs of its 4 corners, and draws the line where the sign flips, which turns the field into an outline mesh. The reverse (a distance transform) rebuilds the field from that outline.</p>
+<h2>Controls</h2>
+<label>Grid resolution: <b id="resv"></b><input id="res" type="range" min="4" max="128" value="24"></label>
+<label>Brush radius: <b id="brv"></b><input id="br" type="range" min="2" max="20" value="7"></label>
+<label><input id="interp" type="checkbox" checked> Interpolate crossings (off = staircase)</label>
+<label><input id="step" type="checkbox"> Step-through (click picks a cell)</label>
+<div><button id="prev">&lt; prev cell</button><button id="next">next cell &gt;</button></div>
+<div id="cellinfo"></div>
+<label>View <select id="view"><option value="split">side by side</option><option value="overlay">overlay</option></select>
+Heatmap <select id="heat"><option value="orig">original field</option><option value="rebuilt">rebuilt field</option><option value="err">error</option></select></label>
+<div><button id="rev">Mesh &rarr; field</button><button id="reset">Reset rock</button></div>
+<p style="color:#8a93a0">Click on the rock: carve. Shift-click: add rock.</p>
+<h2>Live stats</h2>
+<table>
+<tr><td>Grid cells</td><td id="s_cells"></td></tr>
+<tr><td>Field bytes</td><td id="s_fb"></td></tr>
+<tr><td>Segments</td><td id="s_seg"></td></tr>
+<tr><td>Mesh bytes</td><td id="s_mb"></td></tr>
+<tr><td>Extraction</td><td id="s_ms"></td></tr>
+<tr><td>Round-trip max err</td><td id="s_err"></td></tr>
+</table>
+<p style="color:#8a93a0;font-size:11px">field bytes = (res+1)&sup2; &times; 4 &middot; mesh bytes = verts &times; 8 (2 float32; closed loops, so verts = segments) &middot; error is measured within 1 cell of the surface, in cells.</p>
+<h2>Good at</h2>
+<ul><li>Robust and simple: one table lookup per cell.</li><li>Local: an edit only needs its nearby cells re-extracted.</li><li>Works on any field, any shape or topology.</li></ul>
+<h2>Bad at</h2>
+<ul><li>Sharp corners get rounded (dual contouring fixes this by placing a vertex inside the cell).</li><li>Detail is capped by the grid; thin features vanish.</li><li>Saddle cells (5, 10) are ambiguous; the centre value breaks the tie.</li></ul>
+<h2>In 3D / for our game</h2>
+<p>Marching cubes (256 cases) turns a voxel rock field into a triangle mesh we can render and collide with.</p>
+<pre id="selftest"></pre>
+</div>
+<div id="main"><canvas id="cv"></canvas></div>
+<script>
+const $=id=>document.getElementById(id);
+const S={R:24,interp:true,step:false,cell:0,ops:[],F:null,segs:null,nseg:0,rebuilt:null,errArr:null,err:null,ms:0,view:'split',heat:'orig',brush:0.07};
+const cv=$('cv'),ctx=cv.getContext('2d');
+
+// ---- field: base rock (circle union box) + list of carve/add circles ----
+function field(x,y){
+  const d1=Math.hypot(x-.42,y-.45)-.26;
+  const qx=Math.abs(x-.66)-.15,qy=Math.abs(y-.62)-.13;
+  const d2=Math.hypot(Math.max(qx,0),Math.max(qy,0))+Math.min(Math.max(qx,qy),0);
+  let f=Math.min(d1,d2);
+  for(const o of S.ops){const c=Math.hypot(x-o.x,y-o.y)-o.r; f=o.add?Math.min(f,c):Math.max(f,-c);}
+  return f;
+}
+function sample(){
+  const n=S.R+1; S.F=new Float32Array(n*n);
+  for(let j=0;j<n;j++)for(let i=0;i<n;i++)S.F[j*n+i]=field(i/S.R,j/S.R);
+}
+// ---- marching squares ----
+// edges: 0 top, 1 right, 2 bottom, 3 left. corners: tl=8 tr=4 br=2 bl=1.
+const TABLE=[[],[[3,2]],[[2,1]],[[3,1]],[[0,1]],null,[[0,2]],[[3,0]],[[3,0]],[[0,2]],null,[[0,1]],[[3,1]],[[2,1]],[[3,2]],[]];
+function cellCorners(i,j){const n=S.R+1,k=j*n+i,F=S.F;return [F[k],F[k+1],F[k+n+1],F[k+n]];} // tl,tr,br,bl
+function caseOf(c){return (c[0]<0?8:0)|(c[1]<0?4:0)|(c[2]<0?2:0)|(c[3]<0?1:0);}
+function cellEdges(c,cs){ // list of [edgeA,edgeB]
+  if(cs===5||cs===10){
+    const inside=(c[0]+c[1]+c[2]+c[3])/4<0; // centre value decides whether the two inside corners connect
+    const sep=cs===5?[[[3,0],[2,1]],[[0,1],[3,2]]]:[[[0,1],[3,2]],[[3,0],[2,1]]];
+    return inside?sep[0]:sep[1]; // inside-connected: segments cut off the 2 outside corners
+  }
+  return TABLE[cs];
+}
+function edgePt(e,i,j,c){
+  const R=S.R,I=S.interp;
+  const t=(a,b)=>I?a/(a-b):.5;
+  if(e===0)return [(i+t(c[0],c[1]))/R,j/R];
+  if(e===1)return [(i+1)/R,(j+t(c[1],c[2]))/R];
+  if(e===2)return [(i+t(c[3],c[2]))/R,(j+1)/R];
+  return [i/R,(j+t(c[0],c[3]))/R];
+}
+function cellSegs(i,j){const c=cellCorners(i,j),cs=caseOf(c);
+  return {c,cs,segs:cellEdges(c,cs).map(([a,b])=>[...edgePt(a,i,j,c),...edgePt(b,i,j,c)])};}
+function extract(){
+  const t0=performance.now(),out=[];
+  for(let j=0;j<S.R;j++)for(let i=0;i<S.R;i++){const c=cellCorners(i,j),cs=caseOf(c);if(cs===0||cs===15)continue;
+    for(const [a,b] of cellEdges(c,cs))out.push(...edgePt(a,i,j,c),...edgePt(b,i,j,c));}
+  S.segs=new Float32Array(out);S.nseg=out.length/4;S.ms=performance.now()-t0;
+}
+// ---- reverse: brute-force distance + even-odd sign ----
+function reverse(){
+  const n=S.R+1,s=S.segs,m=S.nseg;S.rebuilt=new Float32Array(n*n);S.errArr=new Float32Array(n*n);let maxE=0;
+  for(let j=0;j<n;j++)for(let i=0;i<n;i++){
+    const px=i/S.R,py=j/S.R;let d2=1e9,inside=false;
+    for(let k=0;k<m;k++){const x1=s[4*k],y1=s[4*k+1],x2=s[4*k+2],y2=s[4*k+3];
+      const dx=x2-x1,dy=y2-y1,L=dx*dx+dy*dy;
+      let t=L?((px-x1)*dx+(py-y1)*dy)/L:0;t=Math.max(0,Math.min(1,t));
+      const ex=px-x1-t*dx,ey=py-y1-t*dy;d2=Math.min(d2,ex*ex+ey*ey);
+      if((y1>py)!==(y2>py)&&px<x1+(py-y1)*dx/dy)inside=!inside;}
+    const d=Math.sqrt(d2)*(inside?-1:1),o=S.F[j*n+i];
+    S.rebuilt[j*n+i]=d;const e=Math.abs(d-o)*S.R;S.errArr[j*n+i]=e;
+    if(Math.abs(o)*S.R<1&&e>maxE)maxE=e;}
+  S.err=maxE;return maxE;
+}
+// ---- edit / state changes (same functions the UI and selftest call) ----
+function refresh(){sample();extract();S.rebuilt=null;S.errArr=null;S.err=null;if(S.heat!=='orig'){S.heat='orig';$('heat').value='orig';}draw();}
+function setRes(r){S.R=r;S.cell=0;refresh();}
+function edit(x,y,add){S.ops.push({x,y,r:S.brush,add});refresh();}
+function setInterp(v){S.interp=v;extract();draw();}
+function nextCell(dir){const N=S.R*S.R;let k=S.cell;
+  for(let t=0;t<N;t++){k=(k+dir+N)%N;const cs=caseOf(cellCorners(k%S.R,(k/S.R)|0));if(cs!==0&&cs!==15)break;}
+  S.cell=k;draw();}
+function runReverse(){reverse();S.heat='rebuilt';$('heat').value='rebuilt';draw();}
+// ---- drawing ----
+function panels(){const W=cv.width,H=cv.height;
+  if(S.view==='overlay'){const s=Math.min(W,H)-20;return [{x:(W-s)/2,y:(H-s)/2,s,field:1,mesh:1}];}
+  const s=Math.min(W/2,H)-20;return [{x:W/4-s/2,y:(H-s)/2,s,field:1,mesh:0},{x:3*W/4-s/2,y:(H-s)/2,s,field:0,mesh:1}];}
+function col(v){const t=Math.max(-1,Math.min(1,v/.25));const a=1-Math.abs(t);
+  return t<0?`rgb(${30+a*60|0},${70+(1-a)*60+a*60|0},${110+(1-a)*100|0})`:`rgb(${110+(1-a)*100|0},${70+(1-a)*40+a*60|0},${40+a*60|0})`;}
+function drawHeat(p){const R=S.R,n=R+1,cs=p.s/R;
+  const A=S.heat==='rebuilt'&&S.rebuilt?S.rebuilt:S.F,E=S.heat==='err'&&S.errArr;
+  for(let j=0;j<R;j++)for(let i=0;i<R;i++){const k=j*n+i;
+    if(E){const e=(S.errArr[k]+S.errArr[k+1]+S.errArr[k+n]+S.errArr[k+n+1])/4;ctx.fillStyle=`rgb(${Math.min(255,e*120)|0},20,40)`;}
+    else ctx.fillStyle=col((A[k]+A[k+1]+A[k+n]+A[k+n+1])/4);
+    ctx.fillRect(p.x+i*cs,p.y+j*cs,cs+.5,cs+.5);}
+  if(R<=64){ctx.strokeStyle='rgba(255,255,255,.18)';ctx.lineWidth=1;ctx.beginPath();
+    for(let i=0;i<=R;i++){ctx.moveTo(p.x+i*cs,p.y);ctx.lineTo(p.x+i*cs,p.y+p.s);ctx.moveTo(p.x,p.y+i*cs);ctx.lineTo(p.x+p.s,p.y+i*cs);}ctx.stroke();}
+  if(R<=32){for(let j=0;j<=R;j++)for(let i=0;i<=R;i++){
+    ctx.fillStyle=S.F[j*n+i]<0?'#8cf':'#fa8';ctx.fillRect(p.x+i*cs-2,p.y+j*cs-2,4,4);}}}
+function drawMesh(p,thick){const s=S.segs;ctx.strokeStyle=thick?'#fff':'#7fe08a';ctx.lineWidth=2;ctx.beginPath();
+  for(let k=0;k<S.nseg;k++){ctx.moveTo(p.x+s[4*k]*p.s,p.y+s[4*k+1]*p.s);ctx.lineTo(p.x+s[4*k+2]*p.s,p.y+s[4*k+3]*p.s);}ctx.stroke();
+  if(S.R<=32){ctx.fillStyle='#ffd866';for(let k=0;k<S.nseg;k++)ctx.fillRect(p.x+s[4*k]*p.s-2,p.y+s[4*k+1]*p.s-2,4,4);}}
+function draw(){
+  const r=cv.getBoundingClientRect();if(cv.width!==(r.width|0))cv.width=r.width|0;if(cv.height!==(r.height|0))cv.height=r.height|0;
+  ctx.fillStyle='#14161a';ctx.fillRect(0,0,cv.width,cv.height);
+  for(const p of panels()){
+    if(p.field)drawHeat(p);else{ctx.fillStyle='#0d0f12';ctx.fillRect(p.x,p.y,p.s,p.s);}
+    if(p.mesh)drawMesh(p,p.field);
+    ctx.strokeStyle='#444';ctx.lineWidth=1;ctx.strokeRect(p.x,p.y,p.s,p.s);
+    if(S.step){const i=S.cell%S.R,j=(S.cell/S.R)|0,cs=p.s/S.R,c=cellSegs(i,j);
+      ctx.strokeStyle='#ffd866';ctx.lineWidth=3;ctx.strokeRect(p.x+i*cs,p.y+j*cs,cs,cs);
+      ctx.strokeStyle='#ff4fa0';ctx.beginPath();for(const g of c.segs){ctx.moveTo(p.x+g[0]*p.s,p.y+g[1]*p.s);ctx.lineTo(p.x+g[2]*p.s,p.y+g[3]*p.s);}ctx.stroke();
+      if(cs>14){ctx.font='bold 13px monospace';ctx.fillStyle='#fff';ctx.textAlign='center';
+        [[0,0],[1,0],[1,1],[0,1]].forEach(([dx,dy],q)=>ctx.fillText(c.c[q]<0?'-':'+',p.x+(i+dx)*cs+(dx?-8:8),p.y+(j+dy)*cs+(dy?-4:14)));}}
+  }
+  stats();
+}
+const CORNERS=['tl','tr','br','bl'],EN=['T','R','B','L'];
+function stats(){
+  $('resv').textContent=S.R;$('brv').textContent=(S.brush*100|0)+'%';
+  $('s_cells').textContent=S.R*S.R;$('s_fb').textContent=`${(S.R+1)**2*4} B`;
+  $('s_seg').textContent=S.nseg;$('s_mb').textContent=`${S.nseg*8} B`;$('s_ms').textContent=S.ms.toFixed(3)+' ms';
+  $('s_err').textContent=S.err==null?'(press Mesh->field)':S.err.toFixed(3)+' cells';
+  if(!S.step){$('cellinfo').textContent='';return;}
+  const i=S.cell%S.R,j=(S.cell/S.R)|0,c=cellSegs(i,j);
+  const lut=TABLE[c.cs]===null?(c.cs+' (saddle: centre '+(c.c.reduce((a,b)=>a+b)/4<0?'inside':'outside')+')'):c.cs;
+  $('cellinfo').textContent=`cell (${i},${j})\ncorners `+c.c.map((v,q)=>CORNERS[q]+(v<0?'-':'+')).join(' ')+
+    `\ncase ${lut} = tl8+tr4+br2+bl1\nsegments: `+(c.segs.length?cellEdges(c.c,c.cs).map(e=>EN[e[0]]+'-'+EN[e[1]]).join(', '):'none');
+}
+// ---- UI wiring ----
+$('res').oninput=e=>setRes(+e.target.value);
+$('br').oninput=e=>{S.brush=e.target.value/100;stats();};
+$('interp').onchange=e=>setInterp(e.target.checked);
+$('step').onchange=e=>{S.step=e.target.checked;if(S.step)nextCell(0);draw();};
+$('prev').onclick=()=>{S.step=true;$('step').checked=true;nextCell(-1);};
+$('next').onclick=()=>{S.step=true;$('step').checked=true;nextCell(1);};
+$('view').onchange=e=>{S.view=e.target.value;draw();};
+$('heat').onchange=e=>{S.heat=e.target.value;if(S.heat!=='orig'&&!S.rebuilt)runReverse();draw();};
+$('rev').onclick=runReverse;
+$('reset').onclick=()=>{S.ops=[];refresh();};
+cv.onmousedown=e=>{const r=cv.getBoundingClientRect();
+  for(const p of panels()){const x=(e.clientX-r.left-p.x)/p.s,y=(e.clientY-r.top-p.y)/p.s;
+    if(x<0||y<0||x>=1||y>=1)continue;
+    if(S.step){S.cell=((y*S.R)|0)*S.R+((x*S.R)|0);draw();}else edit(x,y,e.shiftKey);return;}};
+window.onresize=draw;
+// ---- selftest ----
+function selftest(){
+  const out=$('selftest');
+  try{
+    setRes(16);const s16=S.nseg;setRes(48);const s48=S.nseg;
+    if(!(s48>s16))throw 'res 48 not more segments than 16: '+s16+' vs '+s48;
+    const before=S.nseg;edit(.42,.45,false);
+    if(S.nseg===before)throw 'carve did not change segment count';
+    const afterCarve=S.nseg;edit(.9,.1,true);
+    if(S.nseg===afterCarve)throw 'add did not change segment count';
+    setInterp(false);const stair=S.segs.slice(0,4).join();setInterp(true);
+    if(S.segs.slice(0,4).join()===stair)throw 'interpolation toggle changed nothing';
+    S.step=true;const c0=S.cell;nextCell(1);if(S.cell===c0)throw 'step did not move';S.step=false;
+    runReverse();const e=S.err;if(!(e<1.5))throw 'round-trip max err '+e.toFixed(3)+' cells >= 1.5';
+    out.textContent=`PASS res16=${s16} res48=${s48} segs, carve ${before}->${afterCarve}, round-trip err ${e.toFixed(3)} cells`;
+  }catch(x){out.textContent='FAIL '+x;}
+}
+window.onerror=m=>{$('selftest').textContent='FAIL '+m;};
+refresh();
+if(location.search.includes('selftest'))selftest();
+</script></body></html>

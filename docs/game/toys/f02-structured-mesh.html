@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>F02 Structured (grid-snapped) mesh</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;display:flex;height:100vh;background:#14161a;color:#d8dce2;font:13px/1.45 system-ui,sans-serif}
+#side{width:320px;flex:none;overflow-y:auto;padding:12px 14px;background:#1b1e24;border-right:1px solid #2c3038}
+#main{flex:1;position:relative;min-width:0}
+canvas{position:absolute;left:0;top:0;width:100%;height:100%;cursor:crosshair}
+a{color:#7ab8ff;text-decoration:none}
+h1{font-size:17px;margin:6px 0 8px}
+h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#8b93a1;margin:14px 0 4px}
+p,ul{margin:0 0 4px}ul{padding-left:18px}
+label{display:block;margin:5px 0}
+input[type=range]{width:100%}
+button{background:#2a2f38;color:#d8dce2;border:1px solid #3b4250;border-radius:4px;padding:4px 10px;cursor:pointer}
+.stats{font-family:ui-monospace,Consolas,monospace;font-size:12px;background:#111317;padding:7px;border-radius:4px;white-space:pre-wrap}
+#selftest{font-size:10px;color:#667;margin:10px 0 0;white-space:pre-wrap}
+</style></head><body>
+<div id="side">
+<a href="index.html">&larr; all toys</a>
+<h1>F02 Structured (grid-snapped) mesh</h1>
+<h2>What it is</h2>
+<p>The rock is a mesh: points that may only sit on a square lattice (a regular grid), joined by edges we store explicitly. Each edge carries a bond strength, so a hit can snap individual bonds. It is not extracted from voxels: the edges are the data.</p>
+<h2>Controls</h2>
+<label>Lattice spacing <b id="spv"></b><input id="sp" type="range" min="10" max="40" value="20"></label>
+<label>Brush radius <b id="brv"></b><input id="br" type="range" min="10" max="120" value="45"></label>
+<label>Hit damage <b id="dmv"></b><input id="dm" type="range" min="10" max="120" value="60"></label>
+<label><input type="radio" name="mode" value="hover" checked> hover (inspect vertex)</label>
+<label><input type="radio" name="mode" value="carve"> carve (click removes vertices)</label>
+<label><input type="radio" name="mode" value="hit"> hit (click damages edges)</label>
+<label><input type="checkbox" id="byp"> colour edges by piece</label>
+<button id="reset">reset rock</button>
+<h2>Live stats</h2>
+<div class="stats" id="stats"></div>
+<h2>Hovered vertex</h2>
+<div class="stats" id="hov">move over a vertex</div>
+<h2>Good at</h2>
+<ul><li>Regular spacing: neighbours by index maths, easy threading.</li><li>Explicit bonds that can break and leave pieces.</li></ul>
+<h2>Bad at</h2>
+<ul><li>Shape detail is limited to lattice spacing.</li><li>Staircase look unless smoothed.</li></ul>
+<h2>In 3D / for our game:</h2>
+<p>Cubic lattice with diagonal edges: per-bond strength gives bedding planes and cracks that split a boulder into chunks.</p>
+<pre id="selftest"></pre>
+</div>
+<div id="main"><canvas id="cv"></canvas></div>
+<script>
+const W = 800, H = 560;           // world size in px
+const $ = id => document.getElementById(id);
+const cv = $('cv'), ctx = cv.getContext('2d');
+let S, cols, rows, alive, edges, comp, ncomp, hoverV = -1, scale = 1, ox = 0, oy = 0;
+
+function rnd(i) { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+
+function build() {
+  S = +$('sp').value; cols = Math.floor(W / S) + 1; rows = Math.floor(H / S) + 1;
+  alive = new Uint8Array(cols * rows);
+  const cx = W / 2, cy = H / 2;
+  for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
+    const a = Math.atan2(j * S - cy, i * S - cx);
+    const rr = 1 + 0.12 * Math.sin(3 * a + 1) + 0.08 * Math.sin(7 * a);
+    const dx = (i * S - cx) / (W * 0.42 * rr), dy = (j * S - cy) / (H * 0.42 * rr);
+    if (dx * dx + dy * dy < 1) alive[j * cols + i] = 1;
+  }
+  edges = [];
+  const add = (a, b, x, y) => {
+    if (!alive[a] || !alive[b]) return;
+    // bedding planes: two slanted bands of weak bonds; elsewhere random 40..100
+    const k = y * S - 0.25 * x * S;
+    const band = Math.abs(k - 150) < S * 0.6 || Math.abs(k - 330) < S * 0.6;
+    edges.push({ a, b, s: band ? 5 + rnd(a * 7 + b) * 15 : 40 + rnd(a * 13 + b * 3) * 60 });
+  };
+  for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
+    const v = j * cols + i;
+    if (i + 1 < cols) add(v, v + 1, i, j);
+    if (j + 1 < rows) add(v, v + cols, i, j);
+    if (i + 1 < cols && j + 1 < rows) add(v, v + cols + 1, i, j);   // one diagonal per cell -> triangles
+  }
+  analyse();
+}
+
+// carve: remove vertices within r of world point, and every edge touching them
+function carve(x, y, r) {
+  for (let v = 0; v < alive.length; v++) {
+    if (!alive[v]) continue;
+    const dx = (v % cols) * S - x, dy = Math.floor(v / cols) * S - y;
+    if (dx * dx + dy * dy <= r * r) alive[v] = 0;
+  }
+  edges = edges.filter(e => alive[e.a] && alive[e.b]);
+  analyse();
+}
+// hit: damage edges whose midpoint is near the point; strength < 0 -> deleted
+function hit(x, y, r, dmg) {
+  for (const e of edges) {
+    const mx = ((e.a % cols + e.b % cols) / 2) * S, my = ((Math.floor(e.a / cols) + Math.floor(e.b / cols)) / 2) * S;
+    const d = Math.hypot(mx - x, my - y);
+    if (d <= r) e.s -= dmg * (1 - d / r) * (100 / (e.s + 20)); // cracks prefer weak bonds: weaker edge, more damage
+  }
+  edges = edges.filter(e => e.s >= 0);
+  analyse();
+}
+
+// flood fill over explicit edges (union-find); isolated vertices are their own pieces
+function analyse() {
+  const p = new Int32Array(alive.length).map((_, i) => i);
+  const f = v => { while (p[v] !== v) v = p[v] = p[p[v]]; return v; };
+  for (const e of edges) p[f(e.a)] = f(e.b);
+  comp = new Int32Array(alive.length).fill(-1); ncomp = 0;
+  const id = new Map();
+  for (let v = 0; v < alive.length; v++) if (alive[v]) {
+    const r = f(v); if (!id.has(r)) id.set(r, ncomp++);
+    comp[v] = id.get(r);
+  }
+}
+const nverts = () => alive.reduce((n, a) => n + a, 0);
+function pieceColor(c) { return `hsl(${(c * 137.5) % 360},70%,60%)`; }
+function strColor(s) { const t = Math.min(1, s / 100); return `hsl(${t * 130},80%,${35 + 20 * t}%)`; }
+const vx = v => (v % cols) * S, vy = v => Math.floor(v / cols) * S;
+
+function stats() {
+  const n = nverts(), m = edges.length;
+  let x0 = 1e9, x1 = -1, y0 = 1e9, y1 = -1;
+  for (let v = 0; v < alive.length; v++) if (alive[v]) {
+    const i = v % cols, j = Math.floor(v / cols);
+    x0 = Math.min(x0, i); x1 = Math.max(x1, i); y0 = Math.min(y0, j); y1 = Math.max(y1, j);
+  }
+  const bw = n ? x1 - x0 + 1 : 0, bh = n ? y1 - y0 + 1 : 0, cells = bw * bh;
+  const mesh = n * 4 + m * (8 + 4);
+  $('stats').textContent =
+    `vertices ${n}   edges ${m}\npieces ${ncomp}\n` +
+    `mesh bytes = ${n}*4 + ${m}*(8+4)\n         = ${mesh} B\n` +
+    `voxel bytes = bbox ${bw}x${bh} cells * 1 B\n         = ${cells} B\n` +
+    (cells ? `mesh / voxel = ${(mesh / cells).toFixed(1)}x` : '');
+  $('spv').textContent = S + ' px'; $('brv').textContent = $('br').value; $('dmv').textContent = $('dm').value;
+}
+
+// neighbours by lattice index vs by stored edge
+function neighbours(v) {
+  const i = v % cols, j = Math.floor(v / cols), byIdx = [];
+  for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+    if (!di && !dj) continue;
+    const a = i + di, b = j + dj;
+    if (a >= 0 && b >= 0 && a < cols && b < rows && alive[b * cols + a]) byIdx.push(b * cols + a);
+  }
+  const byEdge = [];
+  for (const e of edges) { if (e.a === v) byEdge.push(e.b); else if (e.b === v) byEdge.push(e.a); }
+  return { byIdx, byEdge };
+}
+function hoverText() {
+  if (hoverV < 0 || !alive[hoverV]) { $('hov').textContent = 'move over a vertex'; return; }
+  const { byIdx, byEdge } = neighbours(hoverV);
+  const lost = byIdx.filter(n => !byEdge.includes(n)).length;
+  $('hov').textContent = `vertex (${hoverV % cols},${Math.floor(hoverV / cols)}) piece ${comp[hoverV]}\n` +
+    `by index (lattice): ${byIdx.length} neighbours\nby stored edge (mesh): ${byEdge.length} neighbours\n` +
+    `lattice-adjacent, bond absent: ${lost}\n(voxels only know the first line;\nthe mesh also knows which bonds exist)`;
+}
+
+function draw() {
+  const w = cv.clientWidth, h = cv.clientHeight;
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+  scale = Math.min(w / W, h / H) * 0.95; ox = (w - W * scale) / 2; oy = (h - H * scale) / 2;
+  ctx.fillStyle = '#14161a'; ctx.fillRect(0, 0, w, h);
+  ctx.save(); ctx.translate(ox, oy); ctx.scale(scale, scale);
+  ctx.fillStyle = '#23272f'; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#343a45';                       // empty lattice points
+  for (let v = 0; v < alive.length; v++) if (!alive[v]) ctx.fillRect(vx(v) - 1, vy(v) - 1, 2, 2);
+  const byp = $('byp').checked;
+  ctx.lineWidth = 1.5;
+  for (const e of edges) {
+    ctx.strokeStyle = byp ? pieceColor(comp[e.a]) : strColor(e.s);
+    ctx.beginPath(); ctx.moveTo(vx(e.a), vy(e.a)); ctx.lineTo(vx(e.b), vy(e.b)); ctx.stroke();
+  }
+  for (let v = 0; v < alive.length; v++) if (alive[v]) {
+    ctx.fillStyle = pieceColor(comp[v]); ctx.fillRect(vx(v) - 2, vy(v) - 2, 4, 4);
+  }
+  if (hoverV >= 0 && alive[hoverV]) {
+    const { byIdx, byEdge } = neighbours(hoverV);
+    ctx.strokeStyle = '#6cf'; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);   // index neighbours
+    for (const n of byIdx) { ctx.beginPath(); ctx.arc(vx(n), vy(n), 6, 0, 7); ctx.stroke(); }
+    ctx.setLineDash([]); ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;        // stored edges
+    for (const n of byEdge) { ctx.beginPath(); ctx.moveTo(vx(hoverV), vy(hoverV)); ctx.lineTo(vx(n), vy(n)); ctx.stroke(); }
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(vx(hoverV), vy(hoverV), 5, 0, 7); ctx.fill();
+  }
+  ctx.restore();
+}
+
+const mode = () => document.querySelector('input[name=mode]:checked').value;
+function world(ev) { const r = cv.getBoundingClientRect(); return [(ev.clientX - r.left - ox) / scale, (ev.clientY - r.top - oy) / scale]; }
+function render() { stats(); hoverText(); draw(); }
+cv.onmousemove = ev => {
+  const [x, y] = world(ev);
+  const i = Math.round(x / S), j = Math.round(y / S);
+  hoverV = i >= 0 && j >= 0 && i < cols && j < rows && Math.hypot(i * S - x, j * S - y) < S * 0.7 ? j * cols + i : -1;
+  hoverText(); draw();
+};
+cv.onclick = ev => {
+  const [x, y] = world(ev), r = +$('br').value;
+  if (mode() === 'carve') carve(x, y, r); else if (mode() === 'hit') hit(x, y, r, +$('dm').value);
+  render();
+};
+$('sp').oninput = () => { build(); render(); };
+$('br').oninput = $('dm').oninput = $('byp').onchange = render;
+$('reset').onclick = () => { build(); render(); };
+window.onresize = draw;
+
+window.onerror = (m) => { $('selftest').textContent = 'FAIL ' + m; };
+function selftest() {
+  const out = $('selftest');
+  try {
+    build(); render();
+    const v0 = nverts(), e0 = edges.length, p0 = ncomp;
+    const assert = (c, msg) => { if (!c) throw new Error(msg); };
+    assert(v0 > 50 && e0 > v0, 'rock too small');
+    carve(W / 2, H / 2, 60); render();
+    assert(nverts() < v0 && edges.length < e0, 'carve did not drop verts/edges');
+    const e1 = edges.length, s0 = edges.reduce((a, e) => a + e.s, 0);
+    hit(W / 2 - 150, H / 2, 40, 10); render();
+    assert(edges.reduce((a, e) => a + e.s, 0) < s0, 'hit did not weaken edges');
+    build(); render(); const q0 = ncomp;
+    hit(380, 260, 45, 60); render();            // one medium hit (default brush/damage) across a weak bedding line
+    const q1 = ncomp; assert(q1 >= 2, 'medium hit should split off a chunk, pieces ' + q0 + '->' + q1);
+    build(); render(); carve(W / 2, H / 2, 60); hit(W / 2 - 150, H / 2, 40, 10);
+    const p1 = ncomp;
+    hit(W / 2, H / 2, 2000, 1e6); render();       // shatter every bond
+    assert(edges.length === 0 && ncomp > p1 && ncomp === nverts(), 'big hit did not split into pieces');
+    const p2 = ncomp;
+    build(); const nb = neighbours(alive.indexOf(1));
+    assert(nb.byEdge.length > 0 && nb.byIdx.length >= nb.byEdge.length, 'neighbour readout wrong');
+    out.textContent = `PASS medium hit pieces ${q0}->${q1}, verts ${v0}, edges ${e0}->${e1} after carve, pieces ${p0}->${p1}->${p2} after shatter`;
+    build(); render();
+  } catch (e) { out.textContent = 'FAIL ' + e.message; }
+}
+build(); render();
+if (location.search.includes('selftest')) setTimeout(selftest, 0);
+</script></body></html>

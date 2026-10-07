@@ -1,5 +1,5 @@
 // Compile-time-switched profiling zones -- part of tele. Switch the backend with
-// `-define:INSTRUMENT={spall,tracy,both,false}` (default false -> zero overhead).
+// `-define:INSTRUMENT={tracy,false}` (default false -> zero overhead).
 //
 //   import "odin_lib:tele"
 //   foo :: proc() {
@@ -13,8 +13,7 @@ import "base:runtime"
 
 INSTRUMENT :: #config(INSTRUMENT, "false")
 
-_SPALL :: INSTRUMENT == "spall" || INSTRUMENT == "both"
-_TRACY :: INSTRUMENT == "tracy" || INSTRUMENT == "both"
+_TRACY :: INSTRUMENT == "tracy"
 
 Zone :: struct {}
 
@@ -30,13 +29,11 @@ SCOPE_NAMED :: proc(name: string, loc := #caller_location) -> Zone {
 
 @(private)
 _zone_begin :: proc(name: string, loc: runtime.Source_Code_Location) -> Zone {
-	when _SPALL { _spall_begin(name) }
 	when _TRACY { _tracy_begin(name, loc) }
 	return Zone{}
 }
 
 @(private)
 _zone_end :: proc(_: Zone) {
-	when _SPALL { _spall_end() }
 	when _TRACY { _tracy_end() }
 }

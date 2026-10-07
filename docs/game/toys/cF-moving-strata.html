@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>cF - moving layered height fields</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;display:flex;height:100vh;background:#14161a;color:#d6d9de;font:13px/1.4 system-ui,sans-serif}
+#side{width:320px;flex:none;overflow-y:auto;padding:12px 14px;background:#1b1e24;border-right:1px solid #2c3039}
+#main{flex:1;position:relative;min-width:0}
+canvas{position:absolute;left:0;top:0;cursor:crosshair}
+a{color:#7fb2ff}h1{font-size:17px;margin:6px 0}h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#8d95a3;margin:14px 0 4px}
+p,ul{margin:3px 0}ul{padding-left:18px}
+button,select{background:#2a2f39;color:#d6d9de;border:1px solid #3b4250;padding:4px 9px;margin:2px 2px 2px 0;border-radius:3px;cursor:pointer}
+button.on{background:#3a5f9a}label{display:block;margin:3px 0}input[type=range]{width:150px;vertical-align:middle}
+#stats{font:12px ui-monospace,Consolas,monospace;white-space:pre;color:#b7e0b0}
+#selftest{font:10px monospace;color:#6b7280;white-space:pre-wrap;margin:10px 0 0}
+</style></head><body>
+<div id="side">
+<a href="index.html">&larr; all toys</a>
+<h1>Moving layered height fields</h1>
+<h2>What it is</h2>
+<p>Each column of ground is a stack of layers (material + thickness), like rock strata in a road cut. Water erodes the top layer, carries sediment sideways and drops it as a new thin layer, so the strata keep changing. Mass is only ever moved, never created.</p>
+<h2>Controls</h2>
+<div><button id="play">Play</button><button id="stepb">Step</button><button id="reset">Reset</button></div>
+<label>Rain <input type="range" id="rain" min="0" max="1" step="0.05" value="0.5"></label>
+<label>Brush <select id="tool"><option value="dig">dig (haul away)</option><option value="dump">dump material</option></select>
+ <select id="mat"><option value="0">granite</option><option value="1">limestone</option><option value="2">sandstone</option><option value="3" selected>soil</option></select></label>
+<p style="color:#8d95a3">Drag on the canvas to use the brush.</p>
+<label><input type="checkbox" id="age"> colour deposited layers by age</label>
+<label><input type="checkbox" id="budget"> merge thin layers (&lt;0.05) into the layer below</label>
+<h2>Live stats</h2>
+<div id="stats"></div>
+<h2>Good at</h2><ul><li>Cheap, geology-true strata that evolve</li><li>Mass conservation is easy to check</li></ul>
+<h2>Bad at</h2><ul><li>Still 2.5D: no true overhangs or caves</li><li>Layer count grows unless merged</li></ul>
+<h2>In 3D / for our game:</h2><p>A 2D grid of columns, each a short layer list; quarry digs pop top spans and haul them into inventory.</p>
+<h2>Prior art:</h2><p>Benes &amp; Forsbach 2001; Stava et al. 2008; layered heightmaps with overhangs, VMV 2024.</p>
+<pre id="selftest"></pre>
+</div>
+<div id="main"><canvas id="cv"></canvas></div>
+<script>
+// ---- model ----
+const W = 120;
+const HARD = [12, 4, 2, 1], COLOR = ['#6b6f78','#d2cba6','#c4824a','#5a3d26']; // granite, limestone, sandstone, soil
+const KC = 2, KE = 0.02, TALUS = 0.5, THIN = 0.05, BYTES_PER_LAYER = 1 + 4;
+let cols, water, sus, step_n, hauled, dumped, merges, mass0;
+const rainEl = document.getElementById('rain');
+
+function init() {
+  cols = []; water = new Float64Array(W); sus = []; step_n = 0; hauled = 0; dumped = 0; merges = 0;
+  for (let x = 0; x < W; x++) {
+    const u = x / W, S = 38 + 6 * Math.sin(5 * u) + 3 * Math.sin(17 * u);
+    const c = [8 + 10 * u + 2 * Math.sin(9 * u), 18 + 16 * u + 2.5 * Math.sin(9 * u + 1),
+               28 + 12 * u + 2 * Math.sin(9 * u + 2), S];
+    const col = []; let prev = 0;
+    for (let m = 0; m < 4; m++) {
+      const top = Math.min(Math.max(c[m], prev), S);
+      if (top - prev > 1e-9) col.push({m, t: top - prev, age: 0, dep: false});
+      prev = top;
+    }
+    cols.push(col); sus.push([0, 0, 0, 0]);
+  }
+  mass0 = material() + suspended();
+}
+const height = x => cols[x].reduce((s, l) => s + l.t, 0);
+const material = () => cols.reduce((s, c) => s + c.reduce((a, l) => a + l.t, 0), 0);
+const suspended = () => sus.reduce((s, a) => s + a[0] + a[1] + a[2] + a[3], 0);
+const susOf = x => sus[x][0] + sus[x][1] + sus[x][2] + sus[x][3];
+const layerCount = () => cols.reduce((s, c) => s + c.length, 0);
+
+function addTop(x, m, t) {                  // new thin top layer, or merge into same-material top
+  if (t <= 0) return;
+  const c = cols[x], top = c[c.length - 1];
+  if (top && top.m === m) { top.t += t; merges++; if (top.dep) top.age = step_n; }
+  else c.push({m, t, age: step_n, dep: true});
+}
+function removeTop(x, amt) {                // returns [[m,t],...] top first; always keeps the bottom layer
+  const c = cols[x], out = [];
+  while (amt > 1e-12 && c.length > 0) {
+    const l = c[c.length - 1], take = Math.min(l.t, amt);
+    if (c.length === 1 && take >= l.t) break;
+    l.t -= take; amt -= take; out.push([l.m, take]);
+    if (l.t < 1e-12) { out[out.length - 1][1] += l.t; c.pop(); }
+  }
+  return out;
+}
+
+function step() {
+  const rain = +rainEl.value;
+  for (let x = 0; x < W; x++) water[x] += 0.05 * rain;
+  const h = Array.from({length: W}, (_, x) => height(x));
+  const dw = new Float64Array(W), ds = sus.map(() => [0, 0, 0, 0]), flux = new Float64Array(W);
+  for (let x = 0; x < W; x++) {             // flow to the lower neighbour
+    let best = -1, bd = 0;
+    for (const n of [x - 1, x + 1]) {
+      if (n < 0 || n >= W) continue;
+      const d = (h[x] + water[x]) - (h[n] + water[n]);
+      if (d > bd) { bd = d; best = n; }
+    }
+    if (best < 0) continue;
+    const q = Math.min(water[x], bd / 2); flux[x] = q;
+    const f = water[x] > 0 ? q / water[x] : 0;
+    dw[x] -= q; dw[best] += q;
+    for (let m = 0; m < 4; m++) { const s = sus[x][m] * f; ds[x][m] -= s; ds[best][m] += s; }
+  }
+  for (let x = 0; x < W; x++) {
+    water[x] = (water[x] + dw[x]) * 0.95;
+    for (let m = 0; m < 4; m++) sus[x][m] += ds[x][m];
+  }
+  for (let x = 0; x < W; x++) {             // erode where fast, deposit where slow
+    const cap = KC * flux[x], s = susOf(x);
+    if (s < cap) {
+      const top = cols[x][cols[x].length - 1], m = top.m;
+      for (const [, t] of removeTop(x, Math.min(top.t, KE * (cap - s) / HARD[m]))) sus[x][m] += t;
+    } else if (s > 0) {
+      const k = water[x] < 1e-3 ? 1 : 0.3 * (s - cap) / s;
+      for (let m = 0; m < 4; m++) { const d = sus[x][m] * k; sus[x][m] -= d; addTop(x, m, d); }
+    }
+  }
+  for (let x = 0; x < W - 1; x++) {         // thermal: slide steep slopes
+    const d = height(x) - height(x + 1);
+    if (Math.abs(d) <= TALUS) continue;
+    const from = d > 0 ? x : x + 1, to = d > 0 ? x + 1 : x;
+    const moved = removeTop(from, (Math.abs(d) - TALUS) * 0.25);
+    for (let i = moved.length - 1; i >= 0; i--) addTop(to, moved[i][0], moved[i][1]);
+  }
+  if (document.getElementById('budget').checked) mergeThin();
+  step_n++;
+}
+function mergeThin() {
+  for (const c of cols)
+    for (let i = c.length - 1; i > 0; i--)
+      if (c[i].t < THIN) { c[i - 1].t += c[i].t; c.splice(i, 1); merges++; }
+}
+
+// brushes: depth per column falls off with distance
+function dig(cx, r, depth) {
+  let total = 0;
+  for (let x = Math.max(0, cx - r); x <= Math.min(W - 1, cx + r); x++)
+    for (const [, t] of removeTop(x, depth * (1 - Math.abs(x - cx) / (r + 1)))) total += t;
+  hauled += total; return total;
+}
+function dump(cx, r, depth, m) {
+  let total = 0;
+  for (let x = Math.max(0, cx - r); x <= Math.min(W - 1, cx + r); x++) {
+    const t = depth * (1 - Math.abs(x - cx) / (r + 1)); addTop(x, m, t); total += t;
+  }
+  dumped += total; return total;
+}
+const ledger = () => material() + suspended() + hauled - dumped;  // must equal mass0
+
+// ---- render / UI ----
+const cv = document.getElementById('cv'), g = cv.getContext('2d');
+const YMAX = 75;
+let playing = false, down = false, mx = 0;
+function resize() { const m = document.getElementById('main'); cv.width = m.clientWidth; cv.height = m.clientHeight; }
+function draw() {
+  const cw = cv.width / W, ys = cv.height * 0.92 / YMAX, base = cv.height, age = document.getElementById('age').checked;
+  g.fillStyle = '#0d1014'; g.fillRect(0, 0, cv.width, cv.height);
+  for (let x = 0; x < W; x++) {
+    let y = 0;
+    for (const l of cols[x]) {
+      let col = COLOR[l.m];
+      if (age) col = l.dep ? `hsl(${40 - Math.min(40, (step_n - l.age) / 8)} 90% ${75 - Math.min(35, (step_n - l.age) / 10)}%)` : '#3a3f4a';
+      g.fillStyle = col; g.fillRect(x * cw, base - (y + l.t) * ys, cw + 0.5, l.t * ys + 0.5);
+      if (l.dep) { g.fillStyle = 'rgba(255,255,255,.35)'; g.fillRect(x * cw, base - (y + l.t) * ys, cw + 0.5, 1); }
+      y += l.t;
+    }
+    if (water[x] > 1e-3) { g.fillStyle = 'rgba(80,150,255,.7)'; g.fillRect(x * cw, base - (y + water[x] * 6) * ys, cw + 0.5, water[x] * 6 * ys); }
+  }
+  const lc = layerCount();
+  document.getElementById('stats').textContent =
+`columns        ${W}
+layers         ${lc}  (${(lc / W).toFixed(2)}/col)
+memory         ${lc * BYTES_PER_LAYER} B
+ = layers x (1 mat + 4 thickness)
+merges         ${merges}
+step           ${step_n}
+hauled         ${hauled.toFixed(3)}
+suspended      ${suspended().toFixed(3)}
+material       ${material().toFixed(3)}
+mass = mat+sus+hauled-dumped
+               ${ledger().toFixed(6)}
+initial        ${mass0.toFixed(6)}`;
+}
+function brush() {
+  const cx = Math.round(mx / (cv.width / W) - 0.5);
+  if (document.getElementById('tool').value === 'dig') dig(cx, 4, 0.3);
+  else dump(cx, 4, 0.3, +document.getElementById('mat').value);
+}
+cv.onmousedown = e => { down = true; mx = e.offsetX; };
+cv.onmousemove = e => { mx = e.offsetX; };
+window.onmouseup = () => down = false;
+document.getElementById('play').onclick = e => { playing = !playing; e.target.textContent = playing ? 'Pause' : 'Play'; e.target.className = playing ? 'on' : ''; };
+document.getElementById('stepb').onclick = () => { step(); draw(); };
+document.getElementById('reset').onclick = () => { init(); draw(); };
+for (const id of ['age', 'budget', 'rain']) document.getElementById(id).onchange = () => draw();
+window.onresize = () => { resize(); draw(); };
+function frame() {
+  if (down) brush();
+  if (playing) for (let i = 0; i < 3; i++) step();
+  draw(); requestAnimationFrame(frame);
+}
+
+// ---- self test ----
+function selftest() {
+  const out = document.getElementById('selftest');
+  try {
+    const h0 = Array.from({length: W}, (_, x) => height(x));
+    rainEl.value = 1;
+    for (let i = 0; i < 400; i++) step();
+    const changed = h0.filter((v, x) => Math.abs(v - height(x)) > 1e-6).length;
+    const deposited = cols.reduce((s, c) => s + c.filter(l => l.dep).length, 0);
+    if (!changed) throw 'heights unchanged after rain';
+    if (!deposited) throw 'no deposited layer';
+    let rel = Math.abs(ledger() - mass0) / mass0;
+    if (!(rel <= 1e-6)) throw 'mass drift after rain ' + rel;
+    const hb = hauled, removed = dig(60, 4, 1);
+    if (!(removed > 0) || Math.abs(hauled - hb - removed) > 1e-9) throw 'dig/hauled mismatch';
+    dump(30, 3, 1, 2); document.getElementById('budget').checked = true; step();
+    rel = Math.abs(ledger() - mass0) / mass0;
+    if (!(rel <= 1e-6)) throw 'mass drift after dig/dump ' + rel;
+    document.getElementById('budget').checked = false; rainEl.value = 0.5;
+    draw();
+    out.textContent = `PASS ${changed} cols changed, ${deposited} deposited layers, ${layerCount()} layers, dug ${removed.toFixed(2)}, mass drift ${rel.toExponential(1)}`;
+  } catch (e) { out.textContent = 'FAIL ' + e; }
+}
+window.onerror = (m) => { document.getElementById('selftest').textContent = 'FAIL ' + m; };
+init(); resize(); draw();
+if (location.search.includes('selftest')) selftest(); else frame();
+</script></body></html>

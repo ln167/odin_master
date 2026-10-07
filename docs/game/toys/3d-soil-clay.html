@@ -1,0 +1,1148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>3D soil: sand | loam | clay as bonded grains</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #111418; color: #d8dde3; font: 13px/1.45 system-ui, sans-serif; }
+  body { display: flex; }
+  #side { width: 320px; flex: none; overflow-y: auto; padding: 10px 14px; box-sizing: border-box; background: #181c22; border-right: 1px solid #2a3038; }
+  #main { flex: 1; position: relative; min-width: 0; }
+  #cv { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; }
+  h1 { font-size: 17px; margin: 6px 0 8px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: #8fa0b3; margin: 14px 0 4px; }
+  a { color: #7fb8ff; }
+  p { margin: 4px 0; }
+  ul { margin: 2px 0; padding-left: 18px; }
+  label { display: block; margin: 5px 0; }
+  select, button { background: #232a33; color: #d8dde3; border: 1px solid #3a4450; border-radius: 4px; padding: 3px 7px; font: inherit; }
+  button { cursor: pointer; margin: 2px 2px 2px 0; }
+  button:hover { background: #2e3743; }
+  input[type=range] { width: 130px; vertical-align: middle; }
+  #stats, #inspect, #mats { font: 12px/1.5 ui-monospace, monospace; background: #12161b; padding: 6px 8px; border-radius: 4px; white-space: pre; overflow-x: auto; }
+  #mats { font-size: 11px; }
+  #inspect { min-height: 6em; }
+  #phaseText { background: #1f2630; border-left: 3px solid #f0b94a; padding: 5px 8px; margin-top: 6px; }
+  .take { border-left: 3px solid #6fd08c; padding: 4px 8px; background: #17201a; }
+  #selftest { font: 10px ui-monospace, monospace; color: #6c7783; margin: 10px 0 0; white-space: pre-wrap; }
+  #hud { position: absolute; left: 10px; top: 8px; color: #f0b94a; font: bold 14px system-ui; pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="side">
+  <a href="index.html">← all toys</a>
+  <h1>3D soil: sand | loam | clay as bonded grains</h1>
+
+  <h2>What it is</h2>
+  <p>Three plots, same tools, three materials. Soil is a few thousand small grains moved by <b>position-based dynamics</b> (substeps, a spatial hash for contacts, Coulomb friction at every contact; velocity = displacement / h).
+  Neighbouring grains are joined by <b>bonds</b> (distance constraints). The bond law is the material, so the material decides how it breaks and where its weak points are.</p>
+  <p class="take"><b>Sand</b>: no bonds, pours to its repose angle. <b>Loam</b>: brittle bonds, strong inside crumbs and weak between them, so it fails along crumb boundaries and falls as clods; weak bonds under tension creep and snap, so a cut face holds briefly, then crumbles. <b>Clay</b>: plastic bonds stretch and keep their new length up to a limit, and re-form when grains are pressed together, so it holds a vertical cut, keeps tool marks and sticks into lumps.</p>
+
+  <h2>Controls</h2>
+  <label>Tool <select id="tool">
+    <option value="spade">Spade: drag to scoop, carry, release to dump</option>
+    <option value="pick">Pick / hoe: click to strike</option>
+    <option value="tamp">Tamp: click to press down</option>
+  </select></label>
+  <label><input id="always" type="checkbox"> left-drag uses the tool (otherwise hold Ctrl)</label>
+  <label>Substeps per frame (max, 14 ms budget) <input id="sub" type="range" min="1" max="12" value="2"> <span id="subV">2</span></label>
+  <div>
+    <button id="cut">Cut trench walls</button>
+    <button id="play">Pause</button>
+    <button id="stepB">Step</button>
+    <button id="reset">Reset</button>
+  </div>
+  <div id="phaseText">Camera: left-drag rotate, wheel zoom, right-drag or shift-drag pan. <b>Ctrl+left</b> uses the tool. "Cut trench walls" digs the front half of each plot out with spade bites and throws it on a spoil heap; watch the three walls. Hover a grain to inspect it.</div>
+
+  <h2>Material records</h2>
+  <div id="mats"></div>
+
+  <h2>Inspect</h2>
+  <div id="inspect">Hover a grain.</div>
+
+  <h2>Live stats</h2>
+  <div id="stats"></div>
+
+  <h2>Good at</h2>
+  <ul>
+    <li>Material behaviour comes from one small law per bond: break threshold, plastic yield, re-form distance.</li>
+    <li>Fracture follows built-in weak points (loam crumb boundaries), not a grid.</li>
+    <li>Tool marks, clods and sticky lumps fall out of the same rule; nothing is scripted per tool.</li>
+  </ul>
+  <h2>Bad at</h2>
+  <ul>
+    <li>Cost scales with grains: every grain pays for contacts and bonds each substep, even at rest.</li>
+    <li>Grains are 2 cm: real sand is far finer, so each material is drawn as a surface over its grains (sand: one granular mass; loam: creased at crumb boundaries; clay: seams only between separate lumps) with sub-grain detail shaded on.</li>
+    <li>Position-based: stiffness and break strains depend on substep count; tune per step size.</li>
+  </ul>
+  <p><b>In 3D / for our game:</b> grains only where dirt is being worked (a trench face, a basket, a spoil tip). Settled dirt folds back into layered strata (cheap height layers with a material per layer) and is regenerated as grains on demand when a tool touches it (mentioned here, not implemented).</p>
+  <pre id="selftest"></pre>
+</div>
+<div id="main"><canvas id="cv"></canvas><div id="hud"></div></div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+window.onerror = (msg, src, line) => { $("selftest").textContent = "FAIL " + msg + " @" + line; };
+
+// SIM-BEGIN ---------- simulation (metres, y up) ----------
+const SAND = 0, LOAM = 1, CLAY = 2;
+const MATS = [
+  { name: "sand", rMin: 0.0080, rMax: 0.0110, friction: 0.70, bond: "none", col: [0.80, 0.69, 0.47], colVar: 0.12, gloss: 0.04 },
+  { name: "loam", rMin: 0.0090, rMax: 0.0110, friction: 0.90, bond: "brittle, two strengths", clodGrains: 7,
+    intraBreak: 0.20, interBreak: [0.02, 0.08], interCreep: 4, creepFrom: 0.3, exposedBelow: 8, col: [0.40, 0.28, 0.17], colVar: 0.14, gloss: 0.05 },
+  { name: "clay", rMin: 0.0095, rMax: 0.0105, friction: 0.35, bond: "plastic, re-forms when pressed",
+    yieldStrain: 0.05, stretchLimit: 1.8, reformPress: 0.06, col: [0.35, 0.25, 0.20], colVar: 0.06, gloss: 0.30 },
+];
+const H = 1 / 240, GRAV = 9.81, VMAX = 3, DAMP = 0.999, SLEEP = 0.015; // grains slower than SLEEP m/s are put to rest (stops PBD creep)
+const PLOT_X = [0.05, 0.40, 0.75], LEN = 0.4, ZC = 0.16, SHIFT = 0.45, LAYERS = 9, BT = 0.012, BH = 0.21, BIN = 0.02;
+const X0 = -0.15, X1 = 1.15, Y1 = 0.7, Z0 = -0.35, Z1 = 1.25, CS = 0.024;
+const GX = Math.ceil((X1 - X0) / CS), GY = Math.ceil(Y1 / CS), GZ = Math.ceil((Z1 - Z0) / CS);
+const SHOCK = 25; // 1/m: mass-scaling rate with height
+const MAXG = 8000, MD = 20, MAXB = 90000, BOND_REACH = 1.25;
+const STIFF = [1, 0.5, 0.6, 0.6];                       // correction fraction per bond kind
+const KIND_NAMES = ["loam intra-clod", "loam inter-clod", "clay", "clay re-formed"];
+const LIFT = 0.1, TAMP_R = 0.06, TAMP_V = 0.2, TAMP_D = 0.03, TAMP_T = TAMP_D / TAMP_V + 0.2;
+const G_BYTES = 8 * 9 + 4 + 4 + 12 + 4 + 1 + 1 + 4 + MD * 4 + 1 + 48; // pos, prev, vel (f64); r, invm, carry off, fresh, mat, plot, clod, adjacency; cut-face tag, spit, rest pos
+const B_BYTES = 4 + 4 + 4 + 4 + 4 + 4 + 1 + 1;                     // a, b, rest, rest0, strength, damage, state, kind
+
+const x = new Float64Array(MAXG), y = new Float64Array(MAXG), z = new Float64Array(MAXG);
+const ox = new Float64Array(MAXG), oy = new Float64Array(MAXG), oz = new Float64Array(MAXG);
+const vx = new Float64Array(MAXG), vy = new Float64Array(MAXG), vz = new Float64Array(MAXG);
+const nbr = new Uint8Array(MAXG); // neighbours within 1.15 contact distance (confinement)
+const r = new Float32Array(MAXG), im = new Float32Array(MAXG), fresh = new Float32Array(MAXG);
+const offx = new Float32Array(MAXG), offy = new Float32Array(MAXG), offz = new Float32Array(MAXG);
+const mat = new Uint8Array(MAXG), plot = new Uint8Array(MAXG), clod = new Int32Array(MAXG), tk = new Uint8Array(MAXG);
+const ba = new Int32Array(MAXB), bb = new Int32Array(MAXB), br = new Float32Array(MAXB), br0 = new Float32Array(MAXB);
+const bs = new Float32Array(MAXB), bd = new Float32Array(MAXB), bst = new Uint8Array(MAXB), bk = new Uint8Array(MAXB);
+const adj = new Int32Array(MAXG * MD), deg = new Uint8Array(MAXG);
+// clay cut faces: a grain next to a spade cut remembers the blade's surface there (normal tn, and ta = grain centre -> nearest
+// point on the cut), tgD = its distance (-1: none), tgF = which face. A thrown spit is a rigid unit: spit id + rest positions q,
+// so its faces turn with it (shape matching at draw time). Bin grains (spit -1) keep world-frame tags.
+const tgD = new Float32Array(MAXG), tgF = new Int32Array(MAXG), tnx = new Float32Array(MAXG), tny = new Float32Array(MAXG), tnz = new Float32Array(MAXG);
+const tax = new Float32Array(MAXG), tay = new Float32Array(MAXG), taz = new Float32Array(MAXG);
+const spit = new Int32Array(MAXG), qx = new Float32Array(MAXG), qy = new Float32Array(MAXG), qz = new Float32Array(MAXG);
+let cutN = 0, spitN = 0;
+const NC = GX * GY * GZ, cstart = new Int32Array(NC + 1), cpos = new Int32Array(NC), key = new Int32Array(MAXG), order = new Int32Array(MAXG), uf = new Int32Array(MAXG);
+let n = 0, nb = 0, W = 0.2, nIntact = 0, nBroken = 0, nReformed = 0, simTime = 0, steps = 0, presettle = false, msStep = 0;
+let boxes = [];
+const top0 = [0, 0, 0];
+const spade = { load: [], ax: 0, ay: 0, az: 0 };
+const tamp = { on: false, x: 0, z: 0, y0: 0, t: 0 };
+
+let seed = 1;
+const rand = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
+const cl = (v, a, b) => v < a ? a : v > b ? b : v;
+
+// cells are y-major, so the sorted order runs bottom-up: one Gauss-Seidel sweep carries support up a stack
+function cellOf(px, py, pz) {
+  return (cl(Math.floor(py / CS), 0, GY - 1) * GZ + cl(Math.floor((pz - Z0) / CS), 0, GZ - 1)) * GX + cl(Math.floor((px - X0) / CS), 0, GX - 1);
+}
+function buildHash() { // counting sort of grains by cell: order[cstart[c] .. cstart[c+1]) are the grains in cell c
+  cstart.fill(0);
+  for (let i = 0; i < n; i++) { key[i] = cellOf(x[i], y[i], z[i]); cstart[key[i] + 1]++; }
+  for (let c = 0; c < NC; c++) { cstart[c + 1] += cstart[c]; cpos[c] = cstart[c]; }
+  for (let i = 0; i < n; i++) order[cpos[key[i]]++] = i;
+}
+
+function addBond(i, j, d, kind, str) {
+  if (nb >= MAXB || deg[i] >= MD || deg[j] >= MD) return false;
+  ba[nb] = i; bb[nb] = j; br[nb] = br0[nb] = d; bs[nb] = str; bd[nb] = 0; bst[nb] = 0; bk[nb] = kind;
+  adj[i * MD + deg[i]++] = nb; adj[j * MD + deg[j]++] = nb; nb++; nIntact++;
+  return true;
+}
+function breakBond(b) { bst[b] = 1; nIntact--; nBroken++; fresh[ba[b]] = fresh[bb[b]] = 1; }
+// clay law: two clay grains pressed together re-bond (re-activate the old bond, or make a new one)
+function reform(i, j, d) {
+  for (let k = 0; k < deg[i]; k++) {
+    const b = adj[i * MD + k];
+    if (ba[b] === j || bb[b] === j) {
+      if (bst[b]) { bst[b] = 0; br[b] = br0[b] = d; bd[b] = 0; bk[b] = 3; nBroken--; nIntact++; nReformed++; }
+      return;
+    }
+  }
+  if (addBond(i, j, d, 3, 0)) nReformed++;
+}
+
+// ---------- build the three plots ----------
+function build(width) {
+  W = width; n = nb = nIntact = nBroken = nReformed = 0; simTime = steps = 0; seed = 7;
+  deg.fill(0); spade.load = []; tamp.on = false; boxes = []; tgD.fill(-1); spit.fill(-1); cutN = spitN = 0;
+  for (let k = 0; k < 3; k++) {
+    const x0 = PLOT_X[k], x1 = x0 + W, m = MATS[k], s = m.rMin + m.rMax; // a loose lattice; overlaps of the bigger grains resolve in the settle
+    boxes.push([x0 - BT, 0, -BT, x0, BH, LEN + BT], [x1, 0, -BT, x1 + BT, BH, LEN + BT],
+               [x0 - BT, 0, -BT, x1 + BT, BH, 0], [x0 - BT, 0, LEN, x1 + BT, BH, LEN + BT]);
+    const nx = Math.floor(W / s), nz = Math.floor(LEN / s);
+    for (let a = 0; a < nx; a++) for (let c = 0; c < nz; c++) for (let l = 0; l < LAYERS; l++) {
+      const i = n++;
+      x[i] = x0 + (a + 0.5 + (rand() - 0.5) * 0.3) * W / nx; y[i] = (0.5 + l + rand() * 0.1) * s; z[i] = (c + 0.5 + (rand() - 0.5) * 0.3) * LEN / nz;
+      r[i] = m.rMin + rand() * (m.rMax - m.rMin); mat[i] = k; plot[i] = k; im[i] = 1; fresh[i] = 0; clod[i] = -1;
+      vx[i] = vy[i] = vz[i] = 0;
+    }
+  }
+  presettle = true; // frictionless settle: grains find a dense random packing
+  for (let s = 0; s < 150; s++) substep();
+  presettle = false; vx.fill(0); vy.fill(0); vz.fill(0);
+  // loam crumb structure: Voronoi clods around random seeds
+  const seeds = [];
+  for (let i = 0; i < n; i++) if (mat[i] === LOAM && rand() < 1 / MATS[LOAM].clodGrains) seeds.push(i);
+  for (let i = 0; i < n; i++) if (mat[i] === LOAM) {
+    let best = 1e9;
+    for (const s of seeds) { const d = (x[s] - x[i]) ** 2 + 1.6 * (y[s] - y[i]) ** 2 + (z[s] - z[i]) ** 2; if (d < best) { best = d; clod[i] = s; } }
+  }
+  // bonds between near neighbours of the same material
+  buildHash();
+  for (let i = 0; i < n; i++) {
+    if (mat[i] === SAND) continue;
+    const cx = cl(Math.floor((x[i] - X0) / CS), 0, GX - 1), cy = cl(Math.floor(y[i] / CS), 0, GY - 1), cz = cl(Math.floor((z[i] - Z0) / CS), 0, GZ - 1);
+    for (let c1 = Math.max(cy - 1, 0); c1 <= Math.min(cy + 1, GY - 1); c1++)
+      for (let c2 = Math.max(cz - 1, 0); c2 <= Math.min(cz + 1, GZ - 1); c2++)
+        for (let c0 = Math.max(cx - 1, 0); c0 <= Math.min(cx + 1, GX - 1); c0++)
+          for (let m = cstart[(c1 * GZ + c2) * GX + c0], e = cstart[(c1 * GZ + c2) * GX + c0 + 1]; m < e; m++) {
+            const j = order[m];
+            if (j <= i || mat[j] !== mat[i]) continue;
+            const d = Math.hypot(x[j] - x[i], y[j] - y[i], z[j] - z[i]);
+            if (d > BOND_REACH * (r[i] + r[j])) continue;
+            if (mat[i] === CLAY) addBond(i, j, d, 2, 0);
+            else if (clod[i] === clod[j]) addBond(i, j, d, 0, MATS[LOAM].intraBreak);
+            else { const ib = MATS[LOAM].interBreak; addBond(i, j, d, 1, ib[0] + rand() * (ib[1] - ib[0])); }
+          }
+  }
+  for (let k = 0; k < 3; k++) { const h = profile(k); let s = 0; for (const v of h) s += v; top0[k] = s / h.length; }
+}
+
+// ---------- one PBD substep ----------
+function substep() {
+  const t0 = performance.now();
+  for (let i = 0; i < n; i++) {
+    ox[i] = x[i]; oy[i] = y[i]; oz[i] = z[i];
+    if (!im[i]) continue;
+    vy[i] -= GRAV * H;
+    x[i] += vx[i] * H; y[i] += vy[i] * H; z[i] += vz[i] * H;
+  }
+  for (const i of spade.load) { x[i] = spade.ax + offx[i]; y[i] = spade.ay + offy[i]; z[i] = spade.az + offz[i]; }
+  buildHash();
+  solveContacts();
+  if (nb) solveBonds();
+  solveWalls();
+  if (tamp.on) applyTamp();
+  for (let i = 0; i < n; i++) {
+    if (fresh[i] > 0) fresh[i] = Math.max(0, fresh[i] - H / 30);
+    if (!im[i]) continue;
+    let ux = (x[i] - ox[i]) / H * DAMP, uy = (y[i] - oy[i]) / H * DAMP, uz = (z[i] - oz[i]) / H * DAMP;
+    const sp = Math.hypot(ux, uy, uz);
+    if (sp < SLEEP && !presettle) { x[i] = ox[i]; y[i] = oy[i]; z[i] = oz[i]; ux = uy = uz = 0; }
+    if (sp > VMAX) { ux *= VMAX / sp; uy *= VMAX / sp; uz *= VMAX / sp; } // ponytail: speed cap keeps deep PBD overlaps from popping
+    vx[i] = ux; vy[i] = uy; vz[i] = uz;
+  }
+  simTime += H; steps++;
+  msStep = 0.95 * msStep + 0.05 * (performance.now() - t0);
+}
+
+// grain-grain contact: push apart along the normal, then Coulomb friction on the relative tangential displacement
+// mass scaling: the lower grain of a pair counts as heavier (shock propagation), so stacks do not sink into themselves
+function solveContacts() {
+  nbr.fill(0, 0, n);
+  for (let q = 0; q < n; q++) {
+    const i = order[q], cx = cl(Math.floor((x[i] - X0) / CS), 0, GX - 1), cy = cl(Math.floor(y[i] / CS), 0, GY - 1), cz = cl(Math.floor((z[i] - Z0) / CS), 0, GZ - 1);
+    for (let c1 = Math.max(cy - 1, 0); c1 <= Math.min(cy + 1, GY - 1); c1++)
+      for (let c2 = Math.max(cz - 1, 0); c2 <= Math.min(cz + 1, GZ - 1); c2++)
+        for (let c0 = Math.max(cx - 1, 0); c0 <= Math.min(cx + 1, GX - 1); c0++)
+          for (let m = cstart[(c1 * GZ + c2) * GX + c0], e = cstart[(c1 * GZ + c2) * GX + c0 + 1]; m < e; m++) {
+            if (m <= q) continue;
+            const j = order[m];
+            const dx = x[j] - x[i], dy = y[j] - y[i], dz = z[j] - z[i], d2 = dx * dx + dy * dy + dz * dz, rr = r[i] + r[j];
+            if (d2 >= 1.3225 * rr * rr || d2 < 1e-14) continue;
+            nbr[i]++; nbr[j]++;
+            if (d2 >= rr * rr) continue;
+            const wi = im[i], wj = im[j] * Math.exp(SHOCK * dy), ws = wi + wj;
+            if (ws === 0) continue;
+            const d = Math.sqrt(d2), nx = dx / d, ny = dy / d, nz = dz / d, pen = rr - d;
+            if (!presettle && mat[i] === CLAY && mat[j] === CLAY && pen > MATS[CLAY].reformPress * rr) reform(i, j, d);
+            const a = pen * wi / ws, b = pen * wj / ws;
+            x[i] -= nx * a; y[i] -= ny * a; z[i] -= nz * a; x[j] += nx * b; y[j] += ny * b; z[j] += nz * b;
+            if (presettle) continue;
+            const rx = (x[i] - ox[i]) - (x[j] - ox[j]), ry = (y[i] - oy[i]) - (y[j] - oy[j]), rz = (z[i] - oz[i]) - (z[j] - oz[j]);
+            const rn = rx * nx + ry * ny + rz * nz, tx = rx - rn * nx, ty = ry - rn * ny, tz = rz - rn * nz, tl = Math.hypot(tx, ty, tz);
+            if (tl < 1e-12) continue;
+            const mu = 0.5 * (MATS[mat[i]].friction + MATS[mat[j]].friction);
+            const k = tl < mu * pen ? 1 : Math.min(1, 0.8 * mu * pen / tl); // static: cancel slip; kinetic: limit it
+            const fi = k * wi / ws, fj = k * wj / ws;
+            x[i] -= tx * fi; y[i] -= ty * fi; z[i] -= tz * fi; x[j] += tx * fj; y[j] += ty * fj; z[j] += tz * fj;
+          }
+  }
+}
+
+// bond laws: the material lives here
+function solveBonds() {
+  const L = MATS[LOAM], C = MATS[CLAY], Y = C.yieldStrain;
+  for (let b = 0; b < nb; b++) {
+    if (bst[b]) continue;
+    const i = ba[b], j = bb[b], wi = im[i], wj = im[j], ws = wi + wj;
+    if (ws === 0) continue;
+    const dx = x[j] - x[i], dy = y[j] - y[i], dz = z[j] - z[i], d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    let rest = br[b];
+    const s = (d - rest) / rest, k = bk[b];
+    if (k === 0) { if (s > L.intraBreak) { breakBond(b); continue; } }                 // loam crumb: strong, brittle
+    else if (k === 1) {                                                                 // loam crumb boundary: weak, brittle, creeps under tension
+      if (s > bs[b]) { breakBond(b); continue; }
+      // only unconfined (face) bonds creep: the face spalls clod by clod, the confined body holds
+      if (s > L.creepFrom * bs[b] && Math.min(nbr[i], nbr[j]) < L.exposedBelow) { bd[b] += H * L.interCreep * s / bs[b]; if (bd[b] > 1) { breakBond(b); continue; } }
+    } else {                                                                            // clay: perfectly plastic beyond yield, breaks past the stretch limit
+      if (s > Y) { rest = br[b] = d / (1 + Y); if (rest > C.stretchLimit * br0[b]) { breakBond(b); continue; } }
+      else if (s < -Y) rest = br[b] = d / (1 - Y);
+    }
+    const c = (d - rest) / d * STIFF[k], a = c * wi / ws, e = c * wj / ws;
+    x[i] += dx * a; y[i] += dy * a; z[i] += dz * a; x[j] -= dx * e; y[j] -= dy * e; z[j] -= dz * e;
+  }
+}
+
+// plot boards (smooth boxes), floor (Coulomb friction), domain bounds
+function solveWalls() {
+  for (let i = 0; i < n; i++) {
+    if (!im[i]) continue;
+    const ri = r[i];
+    for (const B of boxes) {
+      if (x[i] < B[0] - ri || x[i] > B[3] + ri || y[i] > B[4] + ri || z[i] < B[2] - ri || z[i] > B[5] + ri) continue;
+      const qx = cl(x[i], B[0], B[3]), qy = cl(y[i], B[1], B[4]), qz = cl(z[i], B[2], B[5]);
+      const dx = x[i] - qx, dy = y[i] - qy, dz = z[i] - qz, d2 = dx * dx + dy * dy + dz * dz;
+      if (d2 > 1e-14) { const d = Math.sqrt(d2), p = (ri - d) / d; x[i] += dx * p; y[i] += dy * p; z[i] += dz * p; }
+      else { // centre inside the board: leave through the nearest face
+        const e = [x[i] - B[0], B[3] - x[i], B[4] - y[i], z[i] - B[2], B[5] - z[i]], m = Math.min(...e);
+        if (m === e[0]) x[i] = B[0] - ri; else if (m === e[1]) x[i] = B[3] + ri; else if (m === e[2]) y[i] = B[4] + ri; else if (m === e[3]) z[i] = B[2] - ri; else z[i] = B[5] + ri;
+      }
+    }
+    if (y[i] < ri) {
+      const pen = ri - y[i]; y[i] = ri;
+      const tx = x[i] - ox[i], tz = z[i] - oz[i], tl = Math.hypot(tx, tz), mu = presettle ? 0 : MATS[mat[i]].friction;
+      if (tl > 1e-12) { const k = tl < mu * pen ? 1 : Math.min(1, 0.8 * mu * pen / tl); x[i] -= tx * k; z[i] -= tz * k; }
+    }
+    x[i] = cl(x[i], X0 + ri, X1 - ri); y[i] = Math.min(y[i], Y1 - ri); z[i] = cl(z[i], Z0 + ri, Z1 - ri);
+  }
+}
+
+// ---------- tools ----------
+function surfaceY(px, pz, R) { let m = 0; for (let i = 0; i < n; i++) if (im[i] && (x[i] - px) ** 2 + (z[i] - pz) ** 2 < R * R) m = Math.max(m, y[i] + r[i]); return m; }
+// take grains out of the soil: bonds that cross the cut are broken (the cut face keeps the blade's shape)
+// face(i) -> [s, nx, nz, k]: the blade face nearest grain i (signed distance, + inside the bite) and its outward normal (blades cut vertically).
+// Clay grains within 1.5 radii of it, on either side, are tagged with it. The bite's bottom is torn off, not cut: no tag there.
+// ta is the point on the cut: relative to the grain while carried or in a spit, absolute for a grain left in the soil (the cut stays put).
+function takeGrains(pred, ax, ay, az, face) {
+  const load = [], edge = [];
+  for (let i = 0; i < n; i++) if (im[i] && pred(i)) { tk[i] = 1; load.push(i); }
+  for (let b = 0; b < nb; b++) if (!bst[b] && tk[ba[b]] !== tk[bb[b]]) { breakBond(b); edge.push(tk[ba[b]] ? bb[b] : ba[b]); }
+  for (const i of load) if (spit[i] < 0 && tgD[i] >= 0) { tax[i] -= x[i]; tay[i] -= y[i]; taz[i] -= z[i]; }
+  if (load.some(i => spit[i] >= 0 && tgD[i] >= 0)) { units(); spitFrames(); for (const i of load) if (spit[i] >= 0 && tgD[i] >= 0) bakeTag(i); } // re-dug spit: its tags back to world frame
+  for (const i of load) spit[i] = -1;
+  if (face) {
+    cutN++;
+    for (const i of load.concat(edge)) {
+      if (mat[i] !== CLAY || spit[i] >= 0) continue;
+      const [sd, nx, nz, fk] = face(i), out = tk[i] ? 1 : -1, d = Math.abs(sd);
+      if (sd * out < 0 || d > 1.5 * r[i] || (tgD[i] >= 0 && tgD[i] < d)) continue;
+      tgD[i] = d; tgF[i] = cutN * 8 + fk * 2 + (out > 0 ? 1 : 0); tnx[i] = nx * out; tny[i] = 0; tnz[i] = nz * out;
+      tax[i] = nx * sd + (out > 0 ? 0 : x[i]); tay[i] = out > 0 ? 0 : y[i]; taz[i] = nz * sd + (out > 0 ? 0 : z[i]);
+    }
+  }
+  for (const i of load) { tk[i] = 0; im[i] = 0; offx[i] = x[i] - ax; offy[i] = y[i] - ay; offz[i] = z[i] - az; vx[i] = vy[i] = vz[i] = 0; }
+  spade.load = load; spade.ax = ax; spade.ay = ay; spade.az = az;
+  return load.length;
+}
+// spade: a curved blade 14 cm wide, 6 cm thick, bites 12 cm below the hit point; f = swing direction (horizontal)
+function spadeScoop(P, fx, fz) {
+  const ex = -fz, ez = fx;
+  const cnt = takeGrains(i => {
+    const dx = x[i] - P[0], dz = z[i] - P[2], a = dx * fx + dz * fz, b = dx * ex + dz * ez, u = b / 0.07, bow = 0.012 * u * u;
+    return Math.abs(b) < 0.07 && a > -0.03 + bow && a < 0.03 + bow && y[i] > P[1] - 0.12;
+  }, P[0], P[1], P[2], i => { // faces: curved blade front and back, straight sides
+    const dx = x[i] - P[0], dz = z[i] - P[2], a = dx * fx + dz * fz, b = dx * ex + dz * ez, g = a - 0.012 * (b / 0.07) ** 2, db = 0.024 * b / 0.0049, L = Math.hypot(1, db);
+    const nfx = (fx - ex * db) / L, nfz = (fz - ez * db) / L;
+    return [[(0.03 - g) / L, nfx, nfz, 0], [(g + 0.03) / L, -nfx, -nfz, 1], [0.07 - b, ex, ez, 2], [0.07 + b, -ex, -ez, 3]].reduce((m, f) => Math.abs(f[0]) < Math.abs(m[0]) ? f : m);
+  });
+  spade.ay += LIFT;
+  return cnt;
+}
+function spadeMove(px, py, pz) { spade.ax = px; spade.ay = py; spade.az = pz; }
+function spadeDump() {
+  if (spade.load.length) spitN++;
+  for (const i of spade.load) { spit[i] = spitN - 1; qx[i] = spade.ax + offx[i]; qy[i] = spade.ay + offy[i]; qz[i] = spade.az + offz[i]; }
+  for (const i of spade.load) { x[i] = spade.ax + offx[i]; y[i] = spade.ay + offy[i]; z[i] = spade.az + offz[i]; im[i] = 1; vx[i] = vy[i] = vz[i] = 0; }
+  spade.load = [];
+}
+// cut the front half of plot k out with spade bites (concave blade marks); each bite is thrown, tumbled, onto a spoil heap in front
+function cutTrench(k) {
+  const x0 = PLOT_X[k], nxB = Math.max(1, Math.round(W / 0.07)), bite = W / nxB, NZB = 3, dz = (LEN - ZC) / NZB, YM = 0.085;
+  const inCut = i => {
+    if (x[i] < x0 || x[i] > x0 + W || z[i] > LEN) return false;
+    const u = ((x[i] - x0) % bite) / bite * 2 - 1;
+    return z[i] > ZC - 0.014 * (1 - u * u);
+  };
+  const hs = s => { const h = Math.sin(s * 12.9898 + k * 78.233) * 43758.5453; return h - Math.floor(h); };
+  if (k === SAND) { takeGrains(inCut, 0, 0, 0); pourSand(spade.load); return; }
+  let s = 0;
+  for (let ly = 1; ly >= 0; ly--) for (let c = NZB - 1; c >= 0; c--) for (let a = 0; a < nxB; a++, s++) {
+    const cx = x0 + (a + 0.5) * bite, cz = ZC + (c + 0.5) * dz, cy = (ly + 0.5) * YM;
+    const xa = x0 + a * bite, zf = ZC + (c + 1) * dz, zb = ZC + c * dz;
+    const cnt = takeGrains(i => inCut(i) && cl(Math.floor((x[i] - x0) / bite), 0, nxB - 1) === a &&
+      cl(Math.floor((z[i] - ZC) / dz), 0, NZB - 1) === c && (y[i] > YM) === (ly === 1), cx, cy, cz, i => {
+      let back = [z[i] - zb, 0, -1, 3];
+      if (c === 0) { // against the wall: the blade's bow leaves a scallop per bite
+        const u = ((x[i] - x0) % bite) / bite * 2 - 1, db = 0.056 * u / bite, L = Math.hypot(1, db);
+        back = [(z[i] - ZC + 0.014 * (1 - u * u)) / L, db / L, -1 / L, 3];
+      }
+      return [[x[i] - xa, -1, 0, 0], [xa + bite - x[i], 1, 0, 1], [zf - z[i], 0, 1, 2], back].reduce((m, f) => Math.abs(f[0]) < Math.abs(m[0]) ? f : m);
+    });
+    if (!cnt) continue;
+    const th = 6.2832 * hs(s), ph = 1.4 * (hs(s + 0.5) - 0.5), ct = Math.cos(th), st = Math.sin(th), cp = Math.cos(ph), sp = Math.sin(ph);
+    let lo = 0;
+    for (const i of spade.load) { // tumble: tilt about x, then turn about y
+      const y1 = offy[i] * cp - offz[i] * sp, z1 = offy[i] * sp + offz[i] * cp;
+      offy[i] = y1; offz[i] = offx[i] * -st + z1 * ct; offx[i] = offx[i] * ct + z1 * st;
+      lo = Math.min(lo, offy[i] - r[i]);
+      for (const [X, Y, Z] of [[tnx, tny, tnz], [tax, tay, taz]]) { // the cut faces turn with the spit
+        const v1 = Y[i] * cp - Z[i] * sp, w1 = Y[i] * sp + Z[i] * cp;
+        Y[i] = v1; Z[i] = X[i] * -st + w1 * ct; X[i] = X[i] * ct + w1 * st;
+      }
+    }
+    // heap: a 3 x 3 footprint, bottom bites first, the middle of each tier higher
+    const fx = (a - (nxB - 1) / 2) * 0.075, fz = (c - 1) * 0.085, top = (ly === 0 ? 0 : 0.13) + (a === (nxB - 1) / 2 && c === 1 ? 0.04 : 0);
+    spadeMove(x0 + W / 2 + fx + 0.05 * (hs(s + 0.2) - 0.5), -lo + 0.01 + top, 0.72 + fz + 0.05 * (hs(s + 0.7) - 0.5)); spadeDump();
+  }
+}
+// sand leaves the spade as a thin stream poured onto one point (2 x 2 grains every 8 substeps, released just
+// above the heap top), so the heap grows as a cone at the repose angle. Meanwhile the rest of the world is held
+// still: the cut faces start failing when the pour is done, at the same moment as for a dump.
+const POUR_X = PLOT_X[0] + 0.05, POUR_Z = 0.78;
+function pourSand(load) {
+  spade.load = [];
+  for (const i of load) y[i] += 0.4; // waiting on the spade, out of the way
+  const held = []; for (let i = 0; i < n; i++) if (im[i] && z[i] < LEN + BT) { held.push(i); im[i] = 0; }
+  for (let t = 0; load.length || t % 8; t++) {
+    if (t % 8 === 0) {
+      let top = 0; // heap top under the stream (grains at rest only: the falling stream does not count)
+      for (let i = 0; i < n; i++) if (im[i] && mat[i] === SAND && Math.hypot(vx[i], vy[i], vz[i]) < 0.3 && (x[i] - POUR_X) ** 2 + (z[i] - POUR_Z) ** 2 < 0.0009) top = Math.max(top, y[i] + r[i]);
+      for (let a = -0.5; a <= 0.5; a++) for (let b = -0.5; b <= 0.5 && load.length; b++) {
+        const i = load.pop();
+        x[i] = POUR_X + a * 0.021 + 0.002 * (rand() - 0.5); y[i] = top + 0.025; z[i] = POUR_Z + b * 0.021 + 0.002 * (rand() - 0.5);
+        vx[i] = vz[i] = 0; vy[i] = -0.6; im[i] = 1;
+      }
+    }
+    substep();
+  }
+  run(0.3); // the last of the stream lands
+  for (const i of held) im[i] = 1;
+}
+// pick / hoe: a wedge strikes at P swinging along f; the edge runs along e
+function pickHit(P, fx, fz) {
+  const ex = -fz, ez = fx, zone = tk;
+  for (let i = 0; i < n; i++) {
+    zone[i] = 0;
+    if (!im[i]) continue;
+    const dx = x[i] - P[0], dz = z[i] - P[2], a = dx * fx + dz * fz, b = dx * ex + dz * ez, c = y[i] - P[1];
+    if (Math.abs(b) < 0.07 && Math.abs(a) < 0.05 && c > -0.08) zone[i] = 1;
+    if (Math.abs(b) < 0.045 && Math.abs(a) < 0.01 + 0.25 * (c + 0.06) && c > -0.06) zone[i] = 2; // the blade itself (wedge widens upward)
+  }
+  for (let b = 0; b < nb; b++) {
+    if (bst[b]) continue;
+    const i = ba[b], j = bb[b], zi = zone[i], zj = zone[j];
+    if (zi === 2 || zj === 2 || (bk[b] === 1 && (zi || zj))) breakBond(b); // loam also loses every crumb boundary bond the shock reaches
+  }
+  for (let i = 0; i < n; i++) {
+    if (!zone[i]) continue;
+    const dx = x[i] - P[0], dz = z[i] - P[2], a = dx * fx + dz * fz, b = dx * ex + dz * ez, sa = a < 0 ? -1 : 1;
+    if (mat[i] === SAND) { vx[i] += fx * 0.6 + ex * b * 8; vy[i] += 1.2; vz[i] += fz * 0.6 + ez * b * 8; }
+    else if (mat[i] === LOAM) { // one impulse per clod, so crumbs leave as units
+      const h = Math.sin(clod[i] * 12.9898) * 43758.5453, j = h - Math.floor(h);
+      vx[i] += fx * 0.7 + ex * (j - 0.5) * 0.8; vy[i] += 1.1 + 0.4 * j; vz[i] += fz * 0.7 + ez * (j - 0.5) * 0.8;
+    } else { // clay: the blade shoves material aside and down; plastic bonds keep the gouge
+      const s = zone[i] === 2 ? 0.018 : 0.006 * (1 - Math.abs(a) / 0.05);
+      x[i] += fx * sa * s; z[i] += fz * sa * s; if (zone[i] === 2) y[i] -= 0.01;
+      fresh[i] = 1;
+    }
+    zone[i] = 0;
+  }
+}
+function tampStart(px, pz) { tamp.x = px; tamp.z = pz; tamp.y0 = surfaceY(px, pz, TAMP_R); tamp.t = 0; tamp.on = true; }
+function plateY() { return tamp.y0 - Math.min(tamp.t * TAMP_V, TAMP_D); }
+function applyTamp() { // a flat plate presses down and grips (no sideways slip under it)
+  const py = plateY();
+  for (let i = 0; i < n; i++) {
+    if (!im[i] || (x[i] - tamp.x) ** 2 + (z[i] - tamp.z) ** 2 > TAMP_R * TAMP_R || y[i] + r[i] < py) continue;
+    y[i] = py - r[i]; x[i] = ox[i]; z[i] = oz[i];
+  }
+  tamp.t += H; if (tamp.t > TAMP_T) tamp.on = false;
+}
+
+// ---------- measurements ----------
+function profile(k) { // surface height per 2 cm along z inside plot k: top grain per 2 cm column, averaged across the plot's width
+  const nz = Math.round(LEN / BIN), nx = Math.max(1, Math.floor(W / BIN)), x0 = PLOT_X[k], cols = new Float32Array(nz * nx), h = new Float32Array(nz);
+  for (let i = 0; i < n; i++) {
+    if (!im[i] || x[i] < x0 || x[i] >= x0 + W || z[i] < 0 || z[i] >= LEN) continue;
+    const c = Math.floor(z[i] / BIN) * nx + Math.min(nx - 1, Math.floor((x[i] - x0) / BIN)); cols[c] = Math.max(cols[c], y[i] + r[i]);
+  }
+  for (let c = 0; c < nz; c++) { let s = 0; for (let a = 0; a < nx; a++) s += cols[c * nx + a]; h[c] = s / nx; }
+  return h;
+}
+function faceAngle(k) { // slope of the face between 75% and 30% of the crest height, in degrees
+  const h = profile(k), zc = c => (c + 0.5) * BIN;
+  let top = 0; for (let c = 0; c < ZC / BIN; c++) top = Math.max(top, h[c]);
+  const hi = 0.75 * top, lo = 0.3 * top;
+  let c = 1; while (c < h.length && h[c] >= hi) c++;
+  if (c >= h.length) return 0;
+  const zA = zc(c - 1) + BIN * (h[c - 1] - hi) / (h[c - 1] - h[c]);
+  let e = c; while (e < h.length && h[e] >= lo) e++;
+  if (e >= h.length) return 0;
+  const zB = zc(e - 1) + BIN * (h[e - 1] - lo) / (h[e - 1] - h[e]);
+  return Math.atan2(hi - lo, Math.max(zB - zA, 1e-4)) * 180 / Math.PI;
+}
+function heapAngle() { // sand spoil heap flank: mean over 8 sectors of the top height per 2 cm ring around the pour point, slope between 75% and 30% of the peak
+  const NR = 20, h = new Float32Array(NR);
+  for (let s = 0; s < 8; s++) {
+    const t = new Float32Array(NR);
+    for (let i = 0; i < n; i++) {
+      if (!im[i] || mat[i] !== SAND || z[i] < LEN + BT) continue;
+      const dx = x[i] - POUR_X, dz = z[i] - POUR_Z, b = Math.floor(Math.hypot(dx, dz) / BIN);
+      if (b < NR && ((Math.floor((Math.atan2(dz, dx) + Math.PI) / (Math.PI / 4)) & 7) === s || b === 0)) t[b] = Math.max(t[b], y[i] + r[i]);
+    }
+    for (let b = 0; b < NR; b++) h[b] += t[b] / 8;
+  }
+  const top = h[0], hi = 0.75 * top, lo = 0.3 * top, at = v => { let c = 1; while (c < NR && h[c] >= v) c++; return c >= NR ? NaN : (c - 0.5) * BIN + BIN * (h[c - 1] - v) / (h[c - 1] - h[c]); };
+  return Math.atan2(hi - lo, at(lo) - at(hi)) * 180 / Math.PI;
+}
+function wallRetained(k) { // mean surface height in the 6 cm just behind the cut line, as a fraction of the original
+  const h = profile(k); let s = 0; for (let c = ZC / BIN - 3; c < ZC / BIN; c++) s += h[c];
+  return s / 3 / top0[k];
+}
+function lumps() { // connected components of intact bonds (union-find); uf[i] = root
+  for (let i = 0; i < n; i++) uf[i] = i;
+  const find = a => { while (uf[a] !== a) { uf[a] = uf[uf[a]]; a = uf[a]; } return a; };
+  for (let b = 0; b < nb; b++) if (!bst[b]) { const p = find(ba[b]), q = find(bb[b]); if (p !== q) uf[p] = q; }
+  for (let i = 0; i < n; i++) uf[i] = find(i);
+}
+function noNaN() { for (let i = 0; i < n; i++) if (!Number.isFinite(x[i] + y[i] + z[i] + vx[i] + vy[i] + vz[i])) return false; return true; }
+function run(sec) { for (let s = Math.round(sec / H); s > 0; s--) substep(); }
+// SIM-END
+
+// ---------- WebGL2 ----------
+const cv = $("cv");
+const gl = cv.getContext("webgl2", { preserveDrawingBuffer: true, antialias: true });
+function program(vs, fs) {
+  const p = gl.createProgram();
+  for (const [type, src] of [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]]) {
+    const s = gl.createShader(type); gl.shaderSource(s, "#version 300 es\nprecision highp float;\n" + src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+    gl.attachShader(p, s);
+  }
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  return p;
+}
+const LIGHT = `
+uniform vec3 uEye;
+vec3 shade(vec3 n, vec3 col, vec3 w, float gloss) {
+  vec3 L = normalize(vec3(0.75, 0.6, 0.35)), V = normalize(uEye - w), Hh = normalize(L + V);
+  float dif = max(dot(n, L), 0.0);
+  vec3 amb = mix(vec3(0.17, 0.14, 0.11), vec3(0.36, 0.40, 0.48), 0.5 + 0.5 * n.y);
+  float ao = 0.5 + 0.5 * clamp(w.y / 0.17, 0.0, 1.0);
+  float sp = pow(max(dot(n, Hh), 0.0), 10.0 + 70.0 * gloss) * gloss * 1.4;
+  return col * (amb * ao + dif * vec3(1.05, 0.98, 0.86)) + sp * vec3(1.0, 0.96, 0.9);
+}`;
+// soil: one isosurface per material over its grains, shaded by what a person sees at this scale.
+// sand: one granular mass with sub-mm grain shading; loam: a surface creased along crumb boundaries, crumb texture;
+// clay: a continuous mass with seams only where separate lumps were pressed together, drag striations on fresh cuts.
+const progS = program(`
+layout(location=0) in vec3 aP; layout(location=1) in vec3 aN; layout(location=2) in vec4 aA;
+uniform mat4 uMVP; out vec3 vN; out vec3 vW; out vec4 vA;
+void main() { vN = aN; vW = aP; vA = aA; gl_Position = uMVP * vec4(aP, 1.0); }`, LIGHT + `
+in vec3 vN; in vec3 vW; in vec4 vA; out vec4 o;
+float h1(vec3 p) { p = fract(p * vec3(0.1031, 0.1030, 0.0973)); p += dot(p, p.yxz + 33.33); return fract((p.x + p.y) * p.z); }
+vec3 h3(vec3 p) { p = fract(p * vec3(0.1031, 0.1030, 0.0973)); p += dot(p, p.yxz + 33.33); return fract((p.xxy + p.yxx) * p.zyx); }
+float vn(vec3 p) {
+  vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(mix(h1(i), h1(i + vec3(1, 0, 0)), f.x), mix(h1(i + vec3(0, 1, 0)), h1(i + vec3(1, 1, 0)), f.x), f.y),
+             mix(mix(h1(i + vec3(0, 0, 1)), h1(i + vec3(1, 0, 1)), f.x), mix(h1(i + vec3(0, 1, 1)), h1(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+}
+vec3 wor(vec3 p) { // cellular noise: F1, F2, id of the nearest cell
+  vec3 i = floor(p), f = fract(p); float d1 = 8.0, d2 = 8.0, id = 0.0;
+  for (int z = -1; z <= 1; z++) for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+    vec3 g = vec3(x, y, z), r = g + h3(i + g) - f; float d = dot(r, r);
+    if (d < d1) { d2 = d1; d1 = d; id = h1(i + g + 7.0); } else if (d < d2) d2 = d;
+  }
+  return vec3(sqrt(d1), sqrt(d2), id);
+}
+// height (metres) of sub-grain detail; detail finer than ~2 px fades out (no glitter)
+#define FADE(cell) smoothstep(1.0, 3.0, (cell) / px)
+float hgt(float m, vec3 w, vec3 n, float fr, float cr, float px) {
+  if (m < 0.5) return 0.00015 * (1.0 - wor(w * 1300.0).x) * FADE(1.0 / 1300.0) + 0.0002 * vn(w * 300.0) * FADE(1.0 / 300.0); // sand grains (no low-frequency relief: the heap is a straight cone)
+  if (m < 1.5) { // loam: crumbs and fine crumbs, creased crumb boundaries
+    vec3 c = wor(w * 160.0), f = wor(w * 520.0);
+    return 0.0018 * (1.0 - c.x * c.x) * (0.5 + 0.5 * c.z) * FADE(1.0 / 160.0) + 0.0005 * (1.0 - f.x * f.x) * FADE(1.0 / 520.0)
+      - 0.0025 * smoothstep(0.05, 0.4, cr);
+  }
+  // clay: drag striations run down a spade cut (noise stretched along world y, so no surface frame to swim); a torn face is rough
+  float cut = clamp(m - 2.0, 0.0, 1.0), tear = smoothstep(0.06, 0.3, cr), stri = 0.3 * vn(w * vec3(900.0, 14.0, 900.0)) * FADE(1.0 / 900.0) + 0.7 * vn(w * vec3(170.0, 5.0, 170.0));
+  return 0.00012 * vn(w * 400.0) * FADE(1.0 / 400.0) + 0.0009 * stri * cut + fr * (1.0 - cut) * (0.0016 * vn(w * 110.0) + 0.0007 * vn(w * 290.0) * FADE(1.0 / 290.0))
+    + tear * 0.0008 * wor(w * 380.0).x * FADE(1.0 / 380.0);
+}
+void main() {
+  vec3 n = normalize(vN), w = vW; float m = vA.x, fr = smoothstep(0.03, 0.25, vA.y), uh = vA.z, cr = vA.w, gloss; vec3 col; // a cut face is fresh all over, not grain by grain
+  float px = length(fwidth(w)) + 1e-6; // metres per pixel
+  if (m > 2.99) { vec3 fn = normalize(cross(dFdx(w), dFdy(w))); n = dot(fn, n) < 0.0 ? -fn : fn; } // spade-cut clay: flat facets, sharp edges
+  vec3 t1 = normalize(cross(n, abs(n.y) < 0.9 ? vec3(0, 1, 0) : vec3(1, 0, 0))), t2 = cross(n, t1);
+  float h0 = hgt(m, w, n, fr, cr, px), e = 0.5 * px;
+  vec3 nb = normalize(n - t1 * (hgt(m, w + t1 * e, n, fr, cr, px) - h0) / e - t2 * (hgt(m, w + t2 * e, n, fr, cr, px) - h0) / e);
+  if (m < 0.5) { // sand: one colour from afar, individual grains only when close
+    vec3 g = wor(w * 1300.0); float k = FADE(1.0 / 1300.0);
+    vec3 gc = vec3(0.80, 0.69, 0.47) * (0.86 + 0.28 * g.z);
+    if (g.z > 0.88) gc = vec3(0.58, 0.56, 0.53) * (0.7 + 2.0 * (g.z - 0.88)); else if (g.z < 0.1) gc = vec3(0.95, 0.9, 0.78);
+    gc *= 0.8 + 0.2 * smoothstep(0.0, 0.3, g.y - g.x);
+    col = mix(vec3(0.76, 0.66, 0.46), gc, 0.35 + 0.65 * k) * (0.9 + 0.1 * vn(w * 300.0) + 0.08 * (vn(w * 700.0) - 0.5) * FADE(1.0 / 700.0));
+    gloss = 0.05;
+  } else if (m < 1.5) { // loam: dark, per-crumb tone, crevices, organic specks and grit
+    vec3 c = wor(w * 160.0), f = wor(w * 520.0), s = wor(w * 1400.0);
+    float kc = FADE(1.0 / 160.0), kf = FADE(1.0 / 520.0), ks = FADE(1.0 / 1400.0);
+    col = vec3(0.36, 0.25, 0.15) * (0.75 + 0.4 * c.z) * (0.86 + 0.28 * uh) * mix(0.8, 0.55 + 0.45 * smoothstep(0.0, 0.25, c.y - c.x), kc)
+      * mix(0.9, 0.75 + 0.25 * smoothstep(0.0, 0.3, f.y - f.x), kf);
+    if (s.z > 0.965) col = mix(col, vec3(0.55, 0.49, 0.40), ks); else if (s.z < 0.06) col = mix(col, vec3(0.09, 0.07, 0.05), 0.5 + 0.5 * ks);
+    col *= 1.0 - 0.6 * smoothstep(0.08, 0.45, cr);
+    gloss = 0.02;
+  } else { // clay: dense grey-brown, wet sheen on fresh cuts, dark torn seams
+    float cut = clamp(m - 2.0, 0.0, 1.0), tear = smoothstep(0.06, 0.3, cr), stri = vn(w * vec3(170.0, 5.0, 170.0));
+    col = vec3(0.55, 0.46, 0.36) * (0.88 + 0.2 * vn(w * 22.0)) * (0.92 + 0.16 * uh);
+    col = mix(col, col * vec3(0.8, 0.8, 0.84), cut) * mix(1.0, 0.85, fr * (1.0 - cut)) * (1.0 - 0.5 * tear) * (0.85 + 0.3 * stri * cut);
+    gloss = (0.05 + 0.18 * cut) * (1.0 - tear);
+  }
+  o = vec4(shade(nb, col, w, gloss), 1.0);
+}`);
+// static scene: ground and plot boards (front boards drawn see-through)
+const progM = program(`
+layout(location=0) in vec3 aPos; layout(location=1) in vec3 aNor; layout(location=2) in vec3 aCol;
+uniform mat4 uMVP; out vec3 vN; out vec3 vCol; out vec3 vW;
+void main() { vN = aNor; vCol = aCol; vW = aPos; gl_Position = uMVP * vec4(aPos, 1.0); }`, LIGHT + `
+uniform float uA; in vec3 vN; in vec3 vCol; in vec3 vW; out vec4 o;
+void main() { o = vec4(shade(normalize(vN), vCol, vW, 0.0), uA); }`);
+// overlay lines
+const progL = program(`
+layout(location=0) in vec3 aPos; layout(location=1) in vec4 aCol;
+uniform mat4 uMVP; out vec4 vCol;
+void main() { gl_Position = uMVP * vec4(aPos, 1.0); vCol = aCol; }`, `
+in vec4 vCol; out vec4 o; void main() { o = vCol; }`);
+const uS = s => gl.getUniformLocation(progS, s), uM = s => gl.getUniformLocation(progM, s), uL = s => gl.getUniformLocation(progL, s);
+
+const soilBuf = gl.createBuffer(), soilIdx = gl.createBuffer(), sceneBuf = gl.createBuffer(), lineBuf = gl.createBuffer();
+const vaoS = gl.createVertexArray(), vaoM = gl.createVertexArray(), vaoL = gl.createVertexArray();
+gl.bindVertexArray(vaoS);
+gl.bindBuffer(gl.ARRAY_BUFFER, soilBuf);
+gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 40, 0);
+gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 40, 12);
+gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 4, gl.FLOAT, false, 40, 24);
+gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, soilIdx);
+gl.bindVertexArray(vaoM);
+gl.bindBuffer(gl.ARRAY_BUFFER, sceneBuf);
+gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 36, 0);
+gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 36, 12);
+gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 3, gl.FLOAT, false, 36, 24);
+gl.bindVertexArray(vaoL);
+gl.bindBuffer(gl.ARRAY_BUFFER, lineBuf);
+gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 28, 0);
+gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 28, 12);
+gl.bindVertexArray(null);
+
+// surface nets on a 7 mm grid. Field per grain: (1 - d²/R²)³. Each cell keeps the two units (crumb / lump) that
+// contribute most; the drawn field is own unit minus `groove` x the others, so unit boundaries become creases.
+// sand: one unit, drawn as a height field of repose cones (straight flanks, see surfaceOf); loam: unit = grains joined by intact in-crumb bonds,
+// tight kernel, deep creases, ragged vertices; clay: unit = grains joined by original clay bonds (re-formed bonds keep a seam), snapped flat onto spade cuts (snapCut).
+const LOOK = [{ R: 3.5, groove: 0, iso: 1.1, jit: 0, S: 2 }, { R: 1.9, groove: 1.2, iso: 0.38, jit: 0.0012, S: 1 }, { R: 2.3, groove: 1.6, iso: 0.55, jit: 0.0008, S: 3 }]; // S: normal stencil in cells (wide = grain bumps not shaded)
+const GH = 0.007, GY0 = -0.035, MX = Math.ceil((X1 - X0) / GH) + 1, MY = Math.ceil((0.34 - GY0) / GH) + 1, MZ = Math.ceil((Z1 - Z0) / GH) + 1;
+const MN = MX * MY * MZ, SY = MX * MZ, SZ = MX;
+const fT = new Float32Array(MN), f1 = new Float32Array(MN), f2 = new Float32Array(MN), fF = new Float32Array(MN);
+const u1 = new Int32Array(MN), u2 = new Int32Array(MN), cvI = new Int32Array(MN), unit = new Int32Array(MAXG);
+const MAXV = 400000, sv = new Float32Array(MAXV * 10), si = new Uint32Array(MAXV * 6);
+const OFF = [0, 1, SY, SY + 1, SZ, SZ + 1, SY + SZ, SY + SZ + 1]; // corner k: bit0 x, bit1 y, bit2 z
+const EDGES = []; for (let a = 0; a < 8; a++) for (let b = 0; b < 3; b++) if (!(a & (1 << b))) EDGES.push(a, a | (1 << b));
+const REPOSE = Math.tan(34 * Math.PI / 180), hf = new Float32Array(MX * MZ), hb = new Float32Array(MX * MZ);
+const lpx = new Float32Array(MAXG), lpy = new Float32Array(MAXG), lpz = new Float32Array(MAXG);
+let nSV = 0, nSI = 0, meshBonds = -1, meshN = -1;
+function soilStale() {
+  if (nIntact !== meshBonds || n !== meshN) return true;
+  for (let i = 0; i < n; i++) if (Math.abs(x[i] - lpx[i]) + Math.abs(y[i] - lpy[i]) + Math.abs(z[i] - lpz[i]) > 0.0005) return true;
+  return false;
+}
+function units() {
+  for (let i = 0; i < n; i++) unit[i] = i;
+  const find = a => { while (unit[a] !== a) { unit[a] = unit[unit[a]]; a = unit[a]; } return a; };
+  for (let b = 0; b < nb; b++) if (!bst[b] && (bk[b] === 0 || bk[b] === 2)) { const p = find(ba[b]), q = find(bb[b]); if (p !== q) unit[p] = q; }
+  for (let i = 0; i < n; i++) unit[i] = mat[i] === SAND ? 0 : find(i);
+}
+// per spit: the unit most of it still belongs to (grains torn off a spit lose its faces), and its rotation since it was
+// dumped: shape matching, M = A Q^-1 (A = sum (x - c)(q - cq)^T, Q = sum (q - cq)(q - cq)^T), orthonormalised
+let spR = new Float64Array(0), spU = new Int32Array(0), spA = new Float64Array(0);
+function spitFrames() {
+  const S = spitN, votes = new Map(), top = new Int32Array(S), acc = spA = new Float64Array(S * 25);
+  spR = new Float64Array(S * 9); spU = new Int32Array(S).fill(-1);
+  for (let i = 0; i < n; i++) if (spit[i] >= 0) { const k = spit[i] * MAXG + unit[i]; votes.set(k, (votes.get(k) || 0) + 1); }
+  for (const [k, v] of votes) { const s = Math.floor(k / MAXG); if (v > top[s]) { top[s] = v; spU[s] = k % MAXG; } }
+  const member = i => spit[i] >= 0 && unit[i] === spU[spit[i]];
+  for (let i = 0; i < n; i++) if (member(i)) { const o = spit[i] * 25; acc[o]++; acc[o + 1] += x[i]; acc[o + 2] += y[i]; acc[o + 3] += z[i]; acc[o + 4] += qx[i]; acc[o + 5] += qy[i]; acc[o + 6] += qz[i]; }
+  for (let i = 0; i < n; i++) if (member(i)) {
+    const o = spit[i] * 25, c = acc[o], p = [x[i] - acc[o + 1] / c, y[i] - acc[o + 2] / c, z[i] - acc[o + 3] / c], q = [qx[i] - acc[o + 4] / c, qy[i] - acc[o + 5] / c, qz[i] - acc[o + 6] / c];
+    for (let a = 0; a < 3; a++) for (let b = 0; b < 3; b++) { acc[o + 7 + a * 3 + b] += p[a] * q[b]; acc[o + 16 + a * 3 + b] += q[a] * q[b]; }
+  }
+  for (let s = 0; s < S; s++) {
+    const o = s * 25, A = acc.subarray(o + 7, o + 16), Q = acc.subarray(o + 16, o + 25);
+    const c0 = Q[4] * Q[8] - Q[5] * Q[7], c1 = Q[5] * Q[6] - Q[3] * Q[8], c2 = Q[3] * Q[7] - Q[4] * Q[6], det = Q[0] * c0 + Q[1] * c1 + Q[2] * c2;
+    if (acc[o] < 8 || det < 1e-12) { spU[s] = -1; continue; } // too few grains left to carry a face
+    const Qi = [c0, Q[2] * Q[7] - Q[1] * Q[8], Q[1] * Q[5] - Q[2] * Q[4], c1, Q[0] * Q[8] - Q[2] * Q[6], Q[2] * Q[3] - Q[0] * Q[5], c2, Q[1] * Q[6] - Q[0] * Q[7], Q[0] * Q[4] - Q[1] * Q[3]].map(v => v / det);
+    const M = [0, 1, 2, 3, 4, 5, 6, 7, 8].map(k => A[(k / 3 | 0) * 3] * Qi[k % 3] + A[(k / 3 | 0) * 3 + 1] * Qi[3 + k % 3] + A[(k / 3 | 0) * 3 + 2] * Qi[6 + k % 3]);
+    const e0 = norm([M[0], M[3], M[6]]), m1 = [M[1], M[4], M[7]], d = dot(e0, m1), e1 = norm([m1[0] - d * e0[0], m1[1] - d * e0[1], m1[2] - d * e0[2]]), e2 = cross(e0, e1);
+    spR.set([e0[0], e1[0], e2[0], e0[1], e1[1], e2[1], e0[2], e1[2], e2[2]], s * 9);
+  }
+}
+// a spit grain's cut face in the world: normal R tn, anchor c + R (q + ta - cq), so a face's anchors stay on one plane however the clay squashes
+const anchor = (s, i) => { const o = s * 25, c = spA[o], a = rotBy(s, [qx[i] + tax[i] - spA[o + 4] / c, qy[i] + tay[i] - spA[o + 5] / c, qz[i] + taz[i] - spA[o + 6] / c]); return [spA[o + 1] / c + a[0], spA[o + 2] / c + a[1], spA[o + 3] / c + a[2]]; };
+const rotBy = (s, v) => { const o = s * 9; return [spR[o] * v[0] + spR[o + 1] * v[1] + spR[o + 2] * v[2], spR[o + 3] * v[0] + spR[o + 4] * v[1] + spR[o + 5] * v[2], spR[o + 6] * v[0] + spR[o + 7] * v[1] + spR[o + 8] * v[2]]; };
+function bakeTag(i) { // a spit grain's tag into the world frame (needs spitFrames)
+  const s = spit[i];
+  if (spU[s] !== unit[i]) { tgD[i] = -1; return; }
+  const A = anchor(s, i); [tnx[i], tny[i], tnz[i]] = rotBy(s, [tnx[i], tny[i], tnz[i]]); tax[i] = A[0] - x[i]; tay[i] = A[1] - y[i]; taz[i] = A[2] - z[i];
+}
+// world-frame cut faces of all tagged clay grains, hashed by cell (CS) for the surface snap
+const wnx = new Float32Array(MAXG), wny = new Float32Array(MAXG), wnz = new Float32Array(MAXG), wax = new Float32Array(MAXG), way = new Float32Array(MAXG), waz = new Float32Array(MAXG);
+const tcs = new Int32Array(NC + 1), tcp = new Int32Array(NC), tord = new Int32Array(MAXG), tkey = new Int32Array(MAXG);
+function worldTags() {
+  spitFrames(); tcs.fill(0);
+  let na = 0;
+  for (let i = 0; i < n; i++) {
+    if (mat[i] !== CLAY || tgD[i] < 0) continue;
+    let N = [tnx[i], tny[i], tnz[i]], A = [tax[i], tay[i], taz[i]];
+    if (spit[i] < 0 && Math.hypot(x[i] - A[0], y[i] - A[1], z[i] - A[2]) > tgD[i] + r[i]) continue; // slumped off its cut
+    if (spit[i] >= 0) { if (spU[spit[i]] !== unit[i]) continue; N = rotBy(spit[i], N); A = anchor(spit[i], i); }
+    wnx[i] = N[0]; wny[i] = N[1]; wnz[i] = N[2]; wax[i] = A[0]; way[i] = A[1]; waz[i] = A[2];
+    tord[na++] = i; tkey[i] = cellOf(x[i], y[i], z[i]); tcs[tkey[i] + 1]++;
+  }
+  for (let c = 0; c < NC; c++) { tcs[c + 1] += tcs[c]; tcp[c] = tcs[c]; }
+  const list = tord.slice(0, na); for (const i of list) tord[tcp[tkey[i]]++] = i;
+}
+// clay: the surface over a cut is the cut. Near tagged grains of the vertex's own unit, each face is a plane fitted from them
+// (kernel-weighted); a vertex outside a face, or in a shallow dent behind one, is projected onto it (onto the edge line when
+// two faces apply). Returns the face normal, or null where nothing was cut (torn and original surfaces keep their shape).
+const SN_R = 0.025, fid = new Int32Array(4), fw = new Float64Array(4), fs = new Float64Array(4), fn = new Float64Array(12);
+function snapCut(P, N, vu) {
+  let nf = 0;
+  const cx = cl(Math.floor((P[0] - X0) / CS), 0, GX - 1), cy = cl(Math.floor(P[1] / CS), 0, GY - 1), cz = cl(Math.floor((P[2] - Z0) / CS), 0, GZ - 1);
+  for (let c1 = Math.max(cy - 1, 0); c1 <= Math.min(cy + 1, GY - 1); c1++)
+    for (let c2 = Math.max(cz - 1, 0); c2 <= Math.min(cz + 1, GZ - 1); c2++)
+      for (let c0 = Math.max(cx - 1, 0); c0 <= Math.min(cx + 1, GX - 1); c0++)
+        for (let m = tcs[(c1 * GZ + c2) * GX + c0], e = tcs[(c1 * GZ + c2) * GX + c0 + 1]; m < e; m++) {
+          const i = tord[m];
+          if (unit[i] !== vu) continue;
+          const d2 = (P[0] - x[i]) ** 2 + (P[1] - y[i]) ** 2 + (P[2] - z[i]) ** 2;
+          if (d2 >= SN_R * SN_R) continue;
+          const t = 1 - d2 / (SN_R * SN_R), w = t * t * t;
+          let k = 0; while (k < nf && fid[k] !== tgF[i]) k++;
+          if (k === nf) { if (nf === 4) continue; fid[k] = tgF[i]; fw[k] = fs[k] = fn[3 * k] = fn[3 * k + 1] = fn[3 * k + 2] = 0; nf++; }
+          fw[k] += w; fs[k] += w * ((P[0] - wax[i]) * wnx[i] + (P[1] - way[i]) * wny[i] + (P[2] - waz[i]) * wnz[i]);
+          fn[3 * k] += w * wnx[i]; fn[3 * k + 1] += w * wny[i]; fn[3 * k + 2] += w * wnz[i];
+        }
+  const pl = [];
+  for (let k = 0; k < nf; k++) {
+    if (fw[k] < 0.02) continue;
+    const nn = norm([fn[3 * k], fn[3 * k + 1], fn[3 * k + 2]]), sd = fs[k] / fw[k];
+    if (sd > 0 || (sd > -0.012 && dot(nn, N) > 0.5)) pl.push([nn, P[0] - nn[0] * sd, P[1] - nn[1] * sd, P[2] - nn[2] * sd]);
+  }
+  if (!pl.length) return null;
+  for (let it = 0; it < 6; it++) for (const [nn, ox, oy, oz] of pl) {
+    const sd = (P[0] - ox) * nn[0] + (P[1] - oy) * nn[1] + (P[2] - oz) * nn[2];
+    P[0] -= nn[0] * sd; P[1] -= nn[1] * sd; P[2] -= nn[2] * sd;
+  }
+  return pl.reduce((b, p) => dot(p[0], N) > dot(b[0], N) ? p : b)[0];
+}
+function buildSoil() {
+  units(); worldTags();
+  nSV = nSI = 0;
+  for (let m = 0; m < 3; m++) surfaceOf(m);
+  gl.bindBuffer(gl.ARRAY_BUFFER, soilBuf); gl.bufferData(gl.ARRAY_BUFFER, sv.subarray(0, nSV * 10), gl.DYNAMIC_DRAW);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, soilIdx); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, si.subarray(0, nSI), gl.DYNAMIC_DRAW);
+  for (let i = 0; i < n; i++) { lpx[i] = x[i]; lpy[i] = y[i]; lpz[i] = z[i]; }
+  meshBonds = nIntact; meshN = n;
+}
+function surfaceOf(m) {
+  const P = LOOK[m];
+  let lx = 1e9, ly = 1e9, lz = 1e9, hx = -1e9, hy = -1e9, hz = -1e9;
+  for (let i = 0; i < n; i++) if (mat[i] === m) { lx = Math.min(lx, x[i]); hx = Math.max(hx, x[i]); ly = Math.min(ly, y[i]); hy = Math.max(hy, y[i]); lz = Math.min(lz, z[i]); hz = Math.max(hz, z[i]); }
+  if (lx > hx) return;
+  const pad = P.R * 0.012 + (P.S + 2) * GH;
+  const ax = cl(Math.floor((lx - pad - X0) / GH), 0, MX - 2), bx = cl(Math.ceil((hx + pad - X0) / GH), 1, MX - 1);
+  const ay = cl(Math.floor((ly - pad - GY0) / GH), 0, MY - 2), by = cl(Math.ceil((hy + pad - GY0) / GH), 1, MY - 1);
+  const az = cl(Math.floor((lz - pad - Z0) / GH), 0, MZ - 2), bz = cl(Math.ceil((hz + pad - Z0) / GH), 1, MZ - 1);
+  for (let iy = ay; iy <= by; iy++) for (let iz = az; iz <= bz; iz++) {
+    const s = iy * SY + iz * SZ + ax, e = iy * SY + iz * SZ + bx + 1;
+    fT.fill(0, s, e); f1.fill(0, s, e); f2.fill(0, s, e); fF.fill(0, s, e); u1.fill(-1, s, e); u2.fill(-1, s, e); cvI.fill(-1, s, e);
+  }
+  for (let i = 0; i < n; i++) {
+    if (mat[i] !== m) continue;
+    const R = P.R * r[i], R2 = R * R, u = unit[i], fr = fresh[i];
+    const x0 = Math.max(ax, Math.ceil((x[i] - R - X0) / GH)), x1 = Math.min(bx, Math.floor((x[i] + R - X0) / GH));
+    const y0 = Math.max(ay, Math.ceil((y[i] - R - GY0) / GH)), y1 = Math.min(by, Math.floor((y[i] + R - GY0) / GH));
+    const z0 = Math.max(az, Math.ceil((z[i] - R - Z0) / GH)), z1 = Math.min(bz, Math.floor((z[i] + R - Z0) / GH));
+    for (let iy = y0; iy <= y1; iy++) {
+      const dy = GY0 + iy * GH - y[i], dy2 = dy * dy;
+      for (let iz = z0; iz <= z1; iz++) {
+        const dz = Z0 + iz * GH - z[i], dyz = dy2 + dz * dz;
+        if (dyz >= R2) continue;
+        for (let ix = x0, c = iy * SY + iz * SZ + x0; ix <= x1; ix++, c++) {
+          const dx = X0 + ix * GH - x[i], d2 = dyz + dx * dx;
+          if (d2 >= R2) continue;
+          const t = 1 - d2 / R2, v = t * t * t;
+          fT[c] += v; fF[c] += v * fr;
+          if (u1[c] === u) f1[c] += v;
+          else if (u2[c] === u) f2[c] += v;
+          else if (u1[c] < 0) { u1[c] = u; f1[c] = v; }
+          else if (v > f2[c]) { u2[c] = u; f2[c] = v; } // ponytail: two slots per cell, a third unit evicts the weaker one
+          if (f2[c] > f1[c]) { const tf = f1[c]; f1[c] = f2[c]; f2[c] = tf; const tu = u1[c]; u1[c] = u2[c]; u2[c] = tu; }
+        }
+      }
+    }
+  }
+  const g = P.groove, iso = P.iso;
+  for (let iy = ay; iy <= by; iy++) for (let iz = az; iz <= bz; iz++)
+    for (let c = iy * SY + iz * SZ + ax, e = c + bx - ax; c <= e; c++) f2[c] = f1[c] - g * (fT[c] - f1[c]); // f2 now holds the drawn field
+  if (m === SAND) { // cohesionless, so the surface is a height field: the envelope of repose cones over the grain tops (straight flanks, sharp crest)
+    for (let iz = az; iz <= bz; iz++) for (let ix = ax; ix <= bx; ix++) { // bare ground is height 0; plot boards are no-data (the blur does not drag sand down at a board)
+      const cx = X0 + ix * GH, cz = Z0 + iz * GH; hf[iz * SZ + ix] = boxes.some(B => cx >= B[0] && cx <= B[3] && cz >= B[2] && cz <= B[5]) ? -1 : 0;
+    }
+    for (let i = 0; i < n; i++) {
+      if (mat[i] !== SAND) continue;
+      const t = y[i] + 0.3 * r[i], rho = Math.min(5 * r[i], t / REPOSE), k = PLOT_X.findIndex(p => x[i] > p && x[i] < p + W && z[i] > 0 && z[i] < LEN);
+      for (let iz = Math.max(az, Math.ceil((z[i] - rho - Z0) / GH)), e = Math.min(bz, Math.floor((z[i] + rho - Z0) / GH)); iz <= e; iz++)
+        for (let ix = Math.max(ax, Math.ceil((x[i] - rho - X0) / GH)), f = Math.min(bx, Math.floor((x[i] + rho - X0) / GH)); ix <= f; ix++) {
+          const cx = X0 + ix * GH, cz = Z0 + iz * GH, d = Math.hypot(cx - x[i], cz - z[i]);
+          if (d >= rho || (k >= 0 && (cx < PLOT_X[k] || cx > PLOT_X[k] + W || cz > LEN))) continue; // not through the plot boards
+          const q = iz * SZ + ix; hf[q] = Math.max(hf[q], t - REPOSE * d);
+        }
+    }
+    for (const [st, a0, a1, b0, b1] of [[1, ax, bx, az, bz], [SZ, az, bz, ax, bx], [1, ax, bx, az, bz], [SZ, az, bz, ax, bx]]) { // blur away grain-size relief (a cone's straight flanks pass through unchanged)
+      const o = st === 1 ? SZ : 1;
+      for (let b = b0; b <= b1; b++) for (let a = a0; a <= a1; a++) {
+        const q = b * o + a * st; hb[q] = -1;
+        if (hf[q] < 0) continue;
+        let sum = 0, cnt = 0;
+        for (let d = Math.max(a0, a - 3); d <= Math.min(a1, a + 3); d++) { const v = hf[b * o + d * st]; if (v >= 0) { sum += v; cnt++; } }
+        hb[q] = sum / cnt;
+      }
+      for (let b = b0; b <= b1; b++) for (let a = a0; a <= a1; a++) hf[b * o + a * st] = hb[b * o + a * st];
+    }
+    for (let iy = ay; iy <= by; iy++) for (let iz = az; iz <= bz; iz++)
+      for (let ix = ax, c = iy * SY + iz * SZ + ax; ix <= bx; ix++, c++) { const h = hf[iz * SZ + ix]; f2[c] = h < 0 ? 0 : Math.max(0, iso + (h - 0.004 - GY0 - iy * GH) * iso / (2 * GH)); } // 4 mm down: bare ground runs on just under the floor (hidden), so a heap's toe meets the floor cleanly
+  }
+  const F = new Float32Array(8);
+  for (let iy = ay; iy < by; iy++) for (let iz = az; iz < bz; iz++) for (let ix = ax; ix < bx; ix++) {
+    const c = iy * SY + iz * SZ + ix;
+    let mask = 0, best = 0;
+    for (let k = 0; k < 8; k++) { F[k] = f2[c + OFF[k]]; if (F[k] > iso) mask |= 1 << k; if (F[k] > F[best]) best = k; }
+    if (mask === 0 || mask === 255 || nSV >= MAXV) continue;
+    let px = 0, py = 0, pz = 0, cnt = 0;
+    for (let e = 0; e < 24; e += 2) {
+      const a = EDGES[e], b = EDGES[e + 1];
+      if (((mask >> a) & 1) === ((mask >> b) & 1)) continue;
+      const t = (iso - F[a]) / (F[b] - F[a]);
+      px += (a & 1) + t * ((b & 1) - (a & 1)); py += ((a >> 1) & 1) + t * (((b >> 1) & 1) - ((a >> 1) & 1)); pz += (a >> 2) + t * ((b >> 2) - (a >> 2)); cnt++;
+    }
+    const S = P.S, at = q => f2[q] ?? 0; // out of the grid reads as empty
+    let nx = at(c + S) - at(c - S), ny = at(c + S * SY) - at(c - S * SY), nz = at(c + S * SZ) - at(c - S * SZ);
+    const nl = -Math.hypot(nx, ny, nz) || -1; nx /= nl; ny /= nl; nz /= nl;
+    const hh = Math.sin(c * 12.9898) * 43758.5453, jt = P.jit * 2 * (hh - Math.floor(hh) - 0.5); // ragged loam: a stable random push per cell
+    const uh = Math.sin(u1[c + OFF[best]] * 7.31) * 43758.5453;
+    let fs = 0, cs = 0, ws = 0; // fresh and crease: field-weighted over the cell's corners (one corner alone spikes)
+    for (let k = 0; k < 8; k++) { const q = c + OFF[k]; fs += fF[q]; cs += fT[q] - f1[q]; ws += fT[q]; }
+    const V = [X0 + (ix + px / cnt) * GH + nx * jt, GY0 + (iy + py / cnt) * GH + ny * jt, Z0 + (iz + pz / cnt) * GH + nz * jt];
+    let mv = m;
+    if (m === CLAY) { const cn = snapCut(V, [nx, ny, nz], u1[c + OFF[best]]); if (cn) { [nx, ny, nz] = cn; mv = 3; } } // 3: clay, spade-cut face
+    sv.set([V[0], V[1], V[2], nx, ny, nz, mv, ws > 0 ? fs / ws : 0, uh - Math.floor(uh), ws > 0 ? cs / ws : 0], nSV * 10);
+    cvI[c] = nSV++;
+  }
+  for (let iy = ay + 1; iy < by; iy++) for (let iz = az + 1; iz < bz; iz++) for (let ix = ax + 1; ix < bx; ix++) {
+    const c = iy * SY + iz * SZ + ix;
+    if (cvI[c] < 0) continue;
+    const in0 = f2[c] > iso;
+    for (const [s, sb, sc] of [[1, SY, SZ], [SY, SZ, 1], [SZ, 1, SY]]) { // edge from this cell's first corner along s; the 4 cells around it
+      if ((f2[c + s] > iso) === in0) continue;
+      const q1 = cvI[c - sb], q2 = cvI[c - sb - sc], q3 = cvI[c - sc];
+      if (q1 < 0 || q2 < 0 || q3 < 0) continue;
+      si[nSI++] = cvI[c]; si[nSI++] = q1; si[nSI++] = q2; si[nSI++] = cvI[c]; si[nSI++] = q2; si[nSI++] = q3;
+    }
+  }
+}
+let sceneCount = 0, frontStart = 0;
+function buildScene() {
+  const v = [];
+  const quad = (a, b, c, d, nn, col) => { for (const p of [a, b, c, a, c, d]) v.push(...p, ...nn, ...col); };
+  const box = (B, col) => {
+    const [x0, y0, z0, x1, y1, z1] = B;
+    quad([x0, y1, z0], [x0, y1, z1], [x1, y1, z1], [x1, y1, z0], [0, 1, 0], col);
+    quad([x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1], [0, 0, 1], col);
+    quad([x0, y0, z0], [x0, y1, z0], [x1, y1, z0], [x1, y0, z0], [0, 0, -1], col);
+    quad([x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [x1, y0, z1], [1, 0, 0], col);
+    quad([x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0], [-1, 0, 0], col);
+  };
+  quad([X0 - 1, -0.001, Z0 - 1], [X0 - 1, -0.001, Z1 + 1], [X1 + 1, -0.001, Z1 + 1], [X1 + 1, -0.001, Z0 - 1], [0, 1, 0], [0.27, 0.28, 0.27]);
+  boxes.forEach((B, i) => { if (i % 4 !== 3) box(B, [0.42 + 0.05 * (i % 3), 0.31, 0.19]); });
+  frontStart = v.length / 9;
+  boxes.forEach((B, i) => { if (i % 4 === 3) box(B, [0.55, 0.45, 0.32]); }); // camera-side boards: see-through, so the cut faces show
+  sceneCount = v.length / 9;
+  gl.bindBuffer(gl.ARRAY_BUFFER, sceneBuf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(v), gl.STATIC_DRAW);
+}
+
+// ---------- camera (RTS orbit) ----------
+const cam = { yaw: 0.08, pitch: 0.66, dist: 1.4, tx: 0.49, ty: 0.02, tz: 0.4, fov: 0.8 }; // from the open (front) side: the three cut faces and spoil heaps
+let mvp = new Float32Array(16), eye = [0, 0, 0], camX = [1, 0, 0], camY = [0, 1, 0], camZ = [0, 0, 1];
+function updateCamera() {
+  const cp = Math.cos(cam.pitch);
+  eye = [cam.tx + cam.dist * cp * Math.sin(cam.yaw), cam.ty + cam.dist * Math.sin(cam.pitch), cam.tz + cam.dist * cp * Math.cos(cam.yaw)];
+  camZ = norm([eye[0] - cam.tx, eye[1] - cam.ty, eye[2] - cam.tz]); camX = norm(cross([0, 1, 0], camZ)); camY = cross(camZ, camX);
+  const view = [camX[0], camY[0], camZ[0], 0, camX[1], camY[1], camZ[1], 0, camX[2], camY[2], camZ[2], 0,
+    -dot(camX, eye), -dot(camY, eye), -dot(camZ, eye), 1];
+  const f = 1 / Math.tan(cam.fov / 2), asp = cv.width / cv.height, zn = 0.01, zf = 10;
+  const proj = [f / asp, 0, 0, 0, 0, f, 0, 0, 0, 0, (zf + zn) / (zn - zf), -1, 0, 0, 2 * zf * zn / (zn - zf), 0];
+  for (let c = 0; c < 4; c++) for (let rw = 0; rw < 4; rw++) {
+    let s = 0; for (let k = 0; k < 4; k++) s += proj[k * 4 + rw] * view[c * 4 + k]; mvp[c * 4 + rw] = s;
+  }
+}
+function norm(v) { const l = Math.hypot(v[0], v[1], v[2]); return [v[0] / l, v[1] / l, v[2] / l]; }
+function cross(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
+function dot(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+function mouseRay(e) {
+  const rc = cv.getBoundingClientRect(), t = Math.tan(cam.fov / 2);
+  const sx = ((e.clientX - rc.left) / rc.width * 2 - 1) * t * rc.width / rc.height, sy = (1 - (e.clientY - rc.top) / rc.height * 2) * t;
+  return norm([sx * camX[0] + sy * camY[0] - camZ[0], sx * camX[1] + sy * camY[1] - camZ[1], sx * camX[2] + sy * camY[2] - camZ[2]]);
+}
+function rayHit(d) { // nearest free grain the ray passes through, else the floor
+  let bt = 1e9, bi = -1;
+  for (let i = 0; i < n; i++) {
+    if (!im[i]) continue;
+    const ex = x[i] - eye[0], ey = y[i] - eye[1], ez = z[i] - eye[2], t = ex * d[0] + ey * d[1] + ez * d[2];
+    if (t < 0 || t >= bt || ex * ex + ey * ey + ez * ez - t * t > 1.2 * r[i] * r[i]) continue;
+    bt = t; bi = i;
+  }
+  if (bi >= 0) return [x[bi], y[bi], z[bi], bi];
+  const t = -eye[1] / d[1];
+  return t > 0 ? [eye[0] + t * d[0], 0, eye[2] + t * d[2], -1] : null;
+}
+const swing = () => { const f = norm([-camZ[0], 0, -camZ[2]]); return [f[0], f[2]]; };
+
+// ---------- UI ----------
+let playing = true, hover = -1, hoverHit = null, drag = 0, lmx = 0, lmy = 0, subDone = 0, msFrame = 0, lumpFrame = -99, frameNo = 0;
+const SELF = location.search.includes("selftest"), Q = new URLSearchParams(location.search);
+function reset() { build(0.18); buildScene(); }
+function toolDown(e) {
+  const h = rayHit(mouseRay(e)); if (!h) return;
+  const [fx, fz] = swing(), tool = $("tool").value;
+  if (tool === "spade") spadeScoop(h, fx, fz);
+  if (tool === "pick") pickHit(h, fx, fz);
+  if (tool === "tamp") tampStart(h[0], h[2]);
+}
+function toolMove(e) {
+  if (!spade.load.length) return;
+  const d = mouseRay(e), t = (spade.ay - eye[1]) / d[1];
+  if (t > 0) spadeMove(cl(eye[0] + t * d[0], X0 + 0.1, X1 - 0.1), spade.ay, cl(eye[2] + t * d[2], Z0 + 0.1, Z1 - 0.1));
+}
+cv.addEventListener("contextmenu", e => e.preventDefault());
+cv.addEventListener("mousedown", e => {
+  lmx = e.clientX; lmy = e.clientY;
+  if (e.button === 2 || e.shiftKey) drag = 2;
+  else if (e.button === 0 && (e.ctrlKey || $("always").checked)) { drag = 3; toolDown(e); }
+  else if (e.button === 0) drag = 1;
+});
+window.addEventListener("mouseup", () => { if (drag === 3) spadeDump(); drag = 0; });
+cv.addEventListener("mousemove", e => {
+  const ddx = e.clientX - lmx, ddy = e.clientY - lmy; lmx = e.clientX; lmy = e.clientY;
+  if (drag === 1) { cam.yaw -= ddx * 0.008; cam.pitch = Math.min(1.5, Math.max(0.05, cam.pitch + ddy * 0.008)); }
+  if (drag === 2) {
+    const s = cam.dist * 0.0015;
+    cam.tx += (-ddx * camX[0] + ddy * camY[0]) * s; cam.ty += (-ddx * camX[1] + ddy * camY[1]) * s; cam.tz += (-ddx * camX[2] + ddy * camY[2]) * s;
+  }
+  if (drag === 3) toolMove(e);
+  if (!drag) { hoverHit = rayHit(mouseRay(e)); hover = hoverHit ? hoverHit[3] : -1; lumpFrame = -99; }
+});
+cv.addEventListener("wheel", e => { e.preventDefault(); cam.dist = Math.min(5, Math.max(0.25, cam.dist * Math.exp(e.deltaY * 0.001))); }, { passive: false });
+$("sub").oninput = () => { $("subV").textContent = $("sub").value; };
+$("play").onclick = () => { playing = !playing; $("play").textContent = playing ? "Pause" : "Play"; };
+$("stepB").onclick = () => { for (let i = 0; i < 4; i++) substep(); };
+$("reset").onclick = reset;
+$("cut").onclick = () => { for (let k = 0; k < 3; k++) cutTrench(k); };
+
+function buildLines() {
+  const v = [], L = (a, b, c) => v.push(...a, ...c, ...b, ...c);
+  if (hover >= 0) {
+    const s = r[hover] * 1.8, c = [1, 0.9, 0.3, 1], p = [x[hover], y[hover], z[hover]];
+    L([p[0] - s, p[1], p[2]], [p[0] + s, p[1], p[2]], c); L([p[0], p[1] - s, p[2]], [p[0], p[1] + s, p[2]], c); L([p[0], p[1], p[2] - s], [p[0], p[1], p[2] + s], c);
+  }
+  const P = hoverHit, tool = $("tool").value, c = [0.55, 0.85, 1, 0.9];
+  if (P && !spade.load.length && tool === "spade") {
+    const [fx, fz] = swing(), ex = -fz, ez = fx, q = [];
+    for (let k = 0; k <= 8; k++) { const u = k / 4 - 1, b = 0.07 * u, a = 0.03 + 0.012 * u * u; q.push([P[0] + ex * b + fx * a, P[1] + 0.01, P[2] + ez * b + fz * a]); }
+    for (let k = 0; k < 8; k++) L(q[k], q[k + 1], c);
+    L(q[0], [q[0][0], q[0][1] - 0.12, q[0][2]], c); L(q[8], [q[8][0], q[8][1] - 0.12, q[8][2]], c);
+  }
+  if (P && tool === "pick") {
+    const [fx, fz] = swing(), ex = -fz, ez = fx;
+    L([P[0] - ex * 0.045, P[1] - 0.06, P[2] - ez * 0.045], [P[0] + ex * 0.045, P[1] - 0.06, P[2] + ez * 0.045], c);
+    L([P[0], P[1] - 0.06, P[2]], [P[0] - fx * 0.03, P[1] + 0.06, P[2] - fz * 0.03], c); L([P[0], P[1] - 0.06, P[2]], [P[0] + fx * 0.03, P[1] + 0.06, P[2] + fz * 0.03], c);
+  }
+  if (tamp.on || (P && tool === "tamp")) {
+    const cx = tamp.on ? tamp.x : P[0], cz = tamp.on ? tamp.z : P[2], cy = tamp.on ? plateY() : P[1] + 0.01;
+    for (let k = 0; k < 24; k++) { const a = k / 24 * 6.2832, b = (k + 1) / 24 * 6.2832; L([cx + TAMP_R * Math.cos(a), cy, cz + TAMP_R * Math.sin(a)], [cx + TAMP_R * Math.cos(b), cy, cz + TAMP_R * Math.sin(b)], c); }
+  }
+  return new Float32Array(v);
+}
+
+function render() {
+  const dpr = window.devicePixelRatio || 1, w = Math.max(1, Math.round(cv.clientWidth * dpr)), h = Math.max(1, Math.round(cv.clientHeight * dpr));
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+  updateCamera();
+  gl.viewport(0, 0, w, h); gl.clearColor(0.043, 0.051, 0.063, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST); gl.disable(gl.BLEND);
+  gl.useProgram(progM); gl.uniformMatrix4fv(uM("uMVP"), false, mvp); gl.uniform3fv(uM("uEye"), eye); gl.uniform1f(uM("uA"), 1);
+  gl.bindVertexArray(vaoM); gl.drawArrays(gl.TRIANGLES, 0, frontStart);
+  if (soilStale()) buildSoil();
+  gl.useProgram(progS); gl.uniformMatrix4fv(uS("uMVP"), false, mvp); gl.uniform3fv(uS("uEye"), eye);
+  gl.bindVertexArray(vaoS); gl.drawElements(gl.TRIANGLES, nSI, gl.UNSIGNED_INT, 0);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
+  gl.useProgram(progM); gl.uniform1f(uM("uA"), 0.16); gl.bindVertexArray(vaoM); gl.drawArrays(gl.TRIANGLES, frontStart, sceneCount - frontStart);
+  gl.depthMask(true); gl.disable(gl.BLEND);
+  const lv = buildLines();
+  if (lv.length) {
+    gl.disable(gl.DEPTH_TEST); gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.useProgram(progL); gl.uniformMatrix4fv(uL("uMVP"), false, mvp); gl.bindVertexArray(vaoL);
+    gl.bindBuffer(gl.ARRAY_BUFFER, lineBuf); gl.bufferData(gl.ARRAY_BUFFER, lv, gl.STREAM_DRAW);
+    gl.drawArrays(gl.LINES, 0, lv.length / 7);
+  }
+  gl.bindVertexArray(null);
+  $("hud").textContent = spade.load.length ? `spade carries ${spade.load.length} grains: release to dump` : "";
+  if (frameNo++ % 10 === 0) drawStats();
+  drawInspect();
+}
+
+function drawStats() {
+  const gB = n * G_BYTES, bB = nb * B_BYTES, hB = (2 * NC + 1) * 4 + n * 8;
+  const row = k => `${MATS[k].name.padEnd(5)} face ${faceAngle(k).toFixed(0).padStart(3)}°  wall kept ${(100 * wallRetained(k)).toFixed(0).padStart(3)}%`;
+  $("stats").textContent =
+    `grains      ${n}  (surface tris ${nSI / 3})\n` +
+    `bonds       intact ${nIntact}  broken ${nBroken}\n` +
+    `            re-formed ${nReformed}  (clay, pressed)\n` +
+    `grain B     ${n} × ${G_BYTES} = ${gB.toLocaleString()}\n` +
+    `bond B      ${nb} × ${B_BYTES} = ${bB.toLocaleString()}\n` +
+    `hash B      ${hB.toLocaleString()}  (rebuilt every substep)\n` +
+    `total       ${(gB + bB + hB).toLocaleString()} bytes\n` +
+    `ms/substep  ${msStep.toFixed(2)}  ×${subDone}/frame (${msFrame.toFixed(0)} ms)\n` +
+    `sim time    ${simTime.toFixed(2)} s  (h = 1/240 s)\n` +
+    `${row(0)}\n${row(1)}\n${row(2)}`;
+}
+function drawInspect() {
+  if (hover < 0) { $("inspect").textContent = "Hover a grain."; return; }
+  if (frameNo - lumpFrame > 15) { lumps(); lumpFrame = frameNo; }
+  const g = hover, root = uf[g];
+  let size = 0; for (let i = 0; i < n; i++) if (uf[i] === root) size++;
+  let ok = 0, bad = 0, kinds = [0, 0, 0, 0];
+  for (let k = 0; k < deg[g]; k++) { const b = adj[g * MD + k]; if (bst[b]) bad++; else { ok++; kinds[bk[b]]++; } }
+  $("inspect").textContent =
+    `grain     #${g}\nmaterial  ${MATS[mat[g]].name}\n` +
+    `pos       (${x[g].toFixed(3)}, ${y[g].toFixed(3)}, ${z[g].toFixed(3)}) m\n` +
+    `radius    ${(r[g] * 1000).toFixed(1)} mm\n` +
+    `bonds     ${ok} intact, ${bad} broken` + (ok ? `\n          ${kinds.map((c, k) => c ? c + " " + KIND_NAMES[k] : "").filter(Boolean).join(", ")}` : "") + "\n" +
+    (mat[g] === LOAM ? `crumb     clod #${clod[g]}\n` : "") +
+    `lump      #${root} (${size} grain${size > 1 ? "s" : ""} joined by intact bonds)\n` +
+    `fresh cut ${fresh[g].toFixed(2)}`;
+}
+function showMaterials() {
+  const mm = v => (v * 1000).toFixed(1), hex = c => "#" + c.map(a => Math.round(a * 255).toString(16).padStart(2, "0")).join("");
+  const S = MATS[SAND], L = MATS[LOAM], C = MATS[CLAY];
+  $("mats").textContent =
+    `SoilMaterial sand {\n  grain radius   ${mm(S.rMin)}–${mm(S.rMax)} mm\n  friction μ     ${S.friction}\n  bond           none (cohesionless)\n  colour         ${hex(S.col)} ±${S.colVar * 100}%\n}\n` +
+    `SoilMaterial loam {\n  grain radius   ${mm(L.rMin)}–${mm(L.rMax)} mm\n  friction μ     ${L.friction}\n  bond           brittle, two strengths\n  crumb size     ~${L.clodGrains} grains\n` +
+    `  in-crumb break ${L.intraBreak * 100}% strain\n  crumb-to-crumb ${L.interBreak[0] * 100}–${L.interBreak[1] * 100}% strain\n  creep          under tension, ${L.interCreep}/s\n  colour         ${hex(L.col)} ±${L.colVar * 100}%\n}\n` +
+    `SoilMaterial clay {\n  grain radius   ${mm(C.rMin)}–${mm(C.rMax)} mm\n  friction μ     ${C.friction}\n  bond           plastic, re-forms\n  plastic yield  ${C.yieldStrain * 100}% strain\n` +
+    `  stretch limit  ${C.stretchLimit}× original length\n  re-bond        overlap > ${C.reformPress * 100}% of contact\n  colour         ${hex(C.col)} ±${C.colVar * 100}%, gloss ${C.gloss} (+ fresh cut)\n}`;
+}
+
+function frame() {
+  if (playing && !SELF) {
+    const k = +$("sub").value, t0 = performance.now();
+    let i = 0; for (; i < k && (i === 0 || performance.now() - t0 < 14); i++) substep(); // ponytail: 14 ms frame budget caps substeps on slow machines
+    subDone = i; msFrame = performance.now() - t0;
+  }
+  render();
+  requestAnimationFrame(frame);
+}
+
+// ---------- self-test ----------
+function selftest() {
+  const T0 = performance.now();
+  build(0.18); buildScene();
+  const n0 = n, mid = k => PLOT_X[k] + W / 2, top = (k, zz) => [mid(k), surfaceY(mid(k), zz, 0.012), zz];
+  for (let k = 0; k < 3; k++) cutTrench(k);
+  // sand reaches repose in ~1.5 s (then creeps a few degrees); loam keeps a steep face that spalls over the next seconds
+  run(1.5);
+  const angSand = faceAngle(0);
+  run(2.5);
+  if (!noNaN()) return "FAIL NaN after cutting walls";
+  const ang = [angSand, faceAngle(1), faceAngle(2)], kept = [0, 1, 2].map(wallRetained);
+  const angS = ang.map(a => a.toFixed(0)).join("/");
+  if (!(ang[2] > ang[1] && ang[1] > ang[0])) return "FAIL face angles sand/loam/clay " + angS + " not increasing";
+  if (!(ang[0] >= 25 && ang[0] <= 40)) return "FAIL sand face " + ang[0].toFixed(1) + "° outside 25–40";
+  for (let b = 0; b < nb; b++) if (mat[ba[b]] === SAND || mat[bb[b]] === SAND) return "FAIL sand has a bond";
+  const heap = heapAngle();
+  if (!(heap >= 25 && heap <= 40)) return "FAIL sand spoil heap flank " + heap.toFixed(1) + "° outside 25–40";
+  // pick on loam: clods of >= 3 grains fly as units
+  const pl = top(1, 0.08); pickHit(pl, 0, 1);
+  const sx = x.slice(0, n), sy = y.slice(0, n), sz = z.slice(0, n);
+  run(0.25);
+  lumps();
+  const moved = i => Math.hypot(x[i] - sx[i], y[i] - sy[i], z[i] - sz[i]) > 0.01;
+  const sizes = new Map(), bad = new Set();
+  for (let i = 0; i < n; i++) if (mat[i] === LOAM) { if (moved(i)) sizes.set(uf[i], (sizes.get(uf[i]) || 0) + 1); else bad.add(uf[i]); }
+  for (let b = 0; b < nb; b++) if (!bst[b] && mat[ba[b]] === LOAM) { // rigid: bond lengths in the clump barely changed
+    const i = ba[b], j = bb[b], d0 = Math.hypot(sx[j] - sx[i], sy[j] - sy[i], sz[j] - sz[i]), d1 = Math.hypot(x[j] - x[i], y[j] - y[i], z[j] - z[i]);
+    if (Math.abs(d1 - d0) > 0.15 * d0) bad.add(uf[i]);
+  }
+  let clumps = 0, maxClump = 0;
+  for (const [root, s] of sizes) if (s >= 3 && !bad.has(root)) { clumps++; maxClump = Math.max(maxClump, s); }
+  if (clumps < 1) return "FAIL loam pick made no clumps of >= 3 grains moving as units";
+  // clay: strike, then tamp the broken spot; pressed grains re-bond
+  const pc = top(2, 0.08); pickHit(pc, 0, 1); run(0.2);
+  const ref0 = nReformed; tampStart(pc[0], pc[2]); run(TAMP_T + 0.05);
+  const reformed = nReformed - ref0;
+  if (!(reformed > 0)) return "FAIL clay tamp re-formed no bonds";
+  // spade: scoop sand, carry behind the plot, dump
+  const ps = top(0, 0.1), taken = spadeScoop(ps, 0, 1), tx = ps[0], tz = -0.18;
+  const inTarget = () => { let c = 0; for (let i = 0; i < n; i++) if (im[i] && Math.abs(x[i] - tx) < 0.15 && Math.abs(z[i] - tz) < 0.15) c++; return c; };
+  const before = inTarget();
+  spadeMove(tx, spade.ay, tz); run(0.05); spadeDump(); run(1.0);
+  const dumped = inTarget() - before;
+  if (!(taken >= 20 && dumped >= 0.9 * taken)) return `FAIL spade moved ${dumped} of ${taken} grains`;
+  if (n !== n0) return "FAIL grain count changed";
+  if (!noNaN()) return "FAIL NaN at end";
+  render();
+  const w = cv.width, h = cv.height, px8 = new Uint8Array(w * h * 4);
+  gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px8);
+  let lit = 0; for (let i = 0; i < px8.length; i += 4) if (px8[i] > 20 || px8[i + 1] > 20 || px8[i + 2] > 24) lit++;
+  const err = gl.getError();
+  if (err !== 0) return "FAIL gl error " + err;
+  if (lit < 1000) return "FAIL only " + lit + " non-background pixels";
+  return `PASS faces sand/loam/clay ${angS}°, sand heap ${heap.toFixed(1)}°, kept ${kept.map(k => (100 * k).toFixed(0)).join("/")}%, ` +
+    `loam clumps ${clumps} (max ${maxClump}), clay re-formed ${reformed}, spade ${dumped}/${taken}, n ${n}, ${lit} px, ${msStep.toFixed(2)} ms/substep, ${(performance.now() - T0).toFixed(0)} ms`;
+}
+
+showMaterials();
+if (SELF) { playing = false; $("play").textContent = "Play"; $("selftest").textContent = selftest(); }
+else reset();
+// screenshot mode: ?shot&state=start|cut[&close=0|1|2] (cut = all three walls cut, then 4 s of sim; close = near view of one plot's wall)
+if (!SELF && Q.has("shot")) {
+  playing = false; $("play").textContent = "Play";
+  if (Q.get("state") === "cut") { for (let k = 0; k < 3; k++) cutTrench(k); run(4); }
+  if (Q.has("close")) Object.assign(cam, { tx: PLOT_X[+Q.get("close")] + W / 2, ty: 0.06, tz: 0.3, yaw: 0.12, pitch: 0.4, dist: 0.6 });
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

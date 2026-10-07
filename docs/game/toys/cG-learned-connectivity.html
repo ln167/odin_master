@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>G - Learned connectivity (GNN collapse)</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #111418; color: #d6dae0; font: 13px/1.4 system-ui, sans-serif; }
+  body { display: flex; }
+  #side { width: 320px; flex: none; padding: 10px 14px; box-sizing: border-box; overflow-y: auto; background: #181c22; border-right: 1px solid #2a3038; }
+  #main { flex: 1; position: relative; }
+  #cv { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; }
+  h1 { font-size: 16px; margin: 6px 0 8px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: #8a94a3; margin: 14px 0 4px; }
+  a { color: #7fb6ff; }
+  label { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 4px 0; }
+  input[type=range] { width: 140px; }
+  select, button { background: #232933; color: #d6dae0; border: 1px solid #3a4250; border-radius: 3px; padding: 2px 6px; }
+  .row { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
+  #stats { font: 12px/1.5 ui-monospace, monospace; white-space: pre; background: #12161b; padding: 6px; border-radius: 3px; }
+  #loss { width: 290px; height: 70px; background: #12161b; border-radius: 3px; display: block; }
+  ul { margin: 2px 0; padding-left: 18px; }
+  p { margin: 4px 0; }
+  #selftest { position: absolute; right: 6px; bottom: 4px; margin: 0; font-size: 10px; color: #6a7380; }
+</style>
+</head>
+<body>
+<div id="side">
+  <a href="index.html">&larr; all toys</a>
+  <h1>G - Learned connectivity</h1>
+  <h2>What it is</h2>
+  <p>Blocks form a load graph (each block is a node, touching blocks are edges); an exact solver decides which blocks fall after you knock some out (cut off from the ground, or crushed by too much load).
+  A tiny graph neural network (GNN: each node repeatedly mixes its state with its neighbours' through one shared small neural net) is trained to guess the same answer.
+  After K rounds of mixing a node only "knows" about blocks K hops away, so far-away causes are invisible to it.</p>
+  <h2>Controls</h2>
+  <label>Message rounds K <input id="K" type="range" min="1" max="6" step="1" value="3"><span id="Kv"></span></label>
+  <label>Block strength <input id="S" type="range" min="4" max="20" step="1" value="11"><span id="Sv"></span></label>
+  <label>Structure <select id="kind">
+    <option value="mix">random mix</option><option value="arch" selected>arches</option>
+    <option value="wall">walls</option><option value="tower">towers</option>
+  </select></label>
+  <div class="row">
+    <button id="train">Train</button><button id="reset">Reset model</button>
+    <button id="newg">New structure</button><button id="clear">Clear removals</button>
+  </div>
+  <p style="color:#8a94a3">Click blocks to remove/restore. Hover a block to see its K-hop view. Left = exact, right = GNN; magenta outline = GNN wrong.</p>
+  <h2>Training loss (held-out)</h2>
+  <canvas id="loss" width="290" height="70"></canvas>
+  <h2>Live stats</h2>
+  <div id="stats"></div>
+  <h2>Good at</h2>
+  <ul>
+    <li>Fixed cost per node per round; every node in parallel (GPU-friendly).</li>
+    <li>Can learn shortcuts (e.g. "block over a hole falls") without solving anything.</li>
+    <li>Model is tiny: a few hundred numbers, independent of world size.</li>
+  </ul>
+  <h2>Bad at</h2>
+  <ul>
+    <li>Wrong answers with no guarantee, including missed falls.</li>
+    <li>Blind beyond K hops: a removed arch foot far away is invisible.</li>
+    <li>Needs the exact solver anyway, to make its training labels.</li>
+  </ul>
+  <p><b>In 3D / for our game:</b> same graph in 3D; usable only as a cheap first guess that the exact pass confirms, never as the authority.</p>
+  <p><b>Prior art:</b> GNN crack propagation (Perera et al. 2022), DeepFracture (2025), GNN block-stack stability (2024); none in shipped games.</p>
+</div>
+<div id="main"><canvas id="cv"></canvas><pre id="selftest"></pre></div>
+<script>
+'use strict';
+window.onerror = (m, s, l) => { document.getElementById('selftest').textContent = 'FAIL ' + m + ' @' + l; };
+
+// ---------- seeded RNG ----------
+let seed = 12345;
+function rnd() { seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }
+const ri = (a, b) => a + Math.floor(rnd() * (b - a + 1));
+
+// ---------- load graph ----------
+const GW = 16, GH = 10;
+let STRENGTH = 11;
+const BEND = 1.5; // horizontal carry (lintel/cantilever) costs extra stress per block
+
+// occ: Uint8Array(GW*GH), cell (x,y) at y*GW+x, y=0 is the ground row
+function graphFromOcc(occ, masses) {
+  const idx = new Int32Array(GW * GH).fill(-1), cx = [], cy = [], mass = [];
+  for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) if (occ[y * GW + x]) {
+    idx[y * GW + x] = cx.length; cx.push(x); cy.push(y); mass.push(masses ? masses[y * GW + x] : 0.6 + 0.8 * rnd());
+  }
+  const n = cx.length, nb = new Int32Array(n * 4); // below, above, left, right
+  const at = (x, y) => (x < 0 || x >= GW || y < 0 || y >= GH) ? -1 : idx[y * GW + x];
+  for (let i = 0; i < n; i++) {
+    nb[i * 4] = at(cx[i], cy[i] - 1); nb[i * 4 + 1] = at(cx[i], cy[i] + 1);
+    nb[i * 4 + 2] = at(cx[i] - 1, cy[i]); nb[i * 4 + 3] = at(cx[i] + 1, cy[i]);
+  }
+  return { n, idx, cx, cy, mass, nb };
+}
+
+function genOcc(kind) {
+  const occ = new Uint8Array(GW * GH);
+  const set = (x, y) => { if (x >= 0 && x < GW && y >= 0 && y < GH) occ[y * GW + x] = 1; };
+  const count = ri(2, 3);
+  for (let e = 0; e < count; e++) {
+    const k = kind === 'mix' ? ['arch', 'wall', 'tower'][ri(0, 2)] : kind;
+    const x0 = ri(0, GW - 3);
+    if (k === 'tower') { const w = ri(1, 2), h = ri(3, GH - 1); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) set(x0 + x, y); }
+    else if (k === 'wall') {
+      const w = ri(3, 6), h = ri(2, 5);
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) set(x0 + x, y);
+      for (let j = ri(0, 2); j > 0; j--) occ[ri(1, h - 1) * GW + Math.min(GW - 1, x0 + ri(0, w - 1))] = 0;
+    } else {
+      const gap = ri(2, 5), ph = ri(2, 6), lr = ri(1, 2);
+      for (let y = 0; y < ph; y++) { set(x0, y); set(x0 + gap + 1, y); }
+      for (let y = ph; y < ph + lr; y++) for (let x = 0; x <= gap + 1; x++) set(x0 + x, y);
+      if (rnd() < 0.4) for (let y = ph + lr; y < ph + lr + ri(1, 3); y++) set(x0 + ri(0, gap + 1), y);
+    }
+  }
+  return occ;
+}
+
+// Build a structure that stands on its own (drop whatever the exact solver says falls with nothing removed).
+function genGraph(kind) {
+  let g = graphFromOcc(genOcc(kind));
+  const f = solveExact(g, new Uint8Array(g.n));
+  const occ = new Uint8Array(GW * GH), m = new Float64Array(GW * GH);
+  for (let i = 0; i < g.n; i++) if (!f[i]) { occ[g.cy[i] * GW + g.cx[i]] = 1; m[g.cy[i] * GW + g.cx[i]] = g.mass[i]; }
+  return graphFromOcc(occ, m);
+}
+
+// ---------- exact solver: flood fill to ground + cascading load push-down ----------
+function solveExact(g, rem) {
+  const n = g.n, nb = g.nb, fallen = new Uint8Array(n);
+  const alive = i => i >= 0 && !rem[i] && !fallen[i];
+  for (let pass = 0; pass < 8; pass++) {
+    let changed = false;
+    // 1) connectivity: flood fill from alive ground blocks
+    const seen = new Uint8Array(n), stack = [];
+    for (let i = 0; i < n; i++) if (g.cy[i] === 0 && alive(i)) { seen[i] = 1; stack.push(i); }
+    while (stack.length) { const i = stack.pop(); for (let s = 0; s < 4; s++) { const j = nb[i * 4 + s]; if (alive(j) && !seen[j]) { seen[j] = 1; stack.push(j); } } }
+    for (let i = 0; i < n; i++) if (alive(i) && !seen[i]) { fallen[i] = 1; changed = true; }
+    // 2) load: top row down; unsupported blocks pass load sideways to the nearest supported block in their row segment
+    const load = new Float64Array(n), stress = new Float64Array(n);
+    for (let i = 0; i < n; i++) if (alive(i)) load[i] = g.mass[i];
+    for (let y = GH - 1; y >= 0; y--) {
+      let x = 0;
+      while (x < GW) {
+        if (!alive(g.idx[y * GW + x])) { x++; continue; }
+        const seg = []; while (x < GW && alive(g.idx[y * GW + x])) seg.push(g.idx[y * GW + x++]);
+        const sup = seg.map(i => y === 0 || alive(nb[i * 4]));
+        if (!sup.includes(true)) { for (const i of seg) fallen[i] = 1; changed = true; continue; }
+        for (let a = 0; a < seg.length; a++) {
+          if (sup[a]) continue;
+          let l = a, r = a; while (l >= 0 && !sup[l]) l--; while (r < seg.length && !sup[r]) r++;
+          const dl = l >= 0 ? a - l : 1e9, dr = r < seg.length ? r - a : 1e9;
+          const targets = dl === dr ? [[l, -1, 0.5], [r, 1, 0.5]] : dl < dr ? [[l, -1, 1]] : [[r, 1, 1]];
+          for (const [t, dir, w] of targets) {
+            for (let j = a + dir; j !== t + dir; j += dir) stress[seg[j]] += w * load[seg[a]] * BEND;
+            load[seg[t]] += w * load[seg[a]];
+          }
+        }
+        for (let a = 0; a < seg.length; a++) if (sup[a]) {
+          const i = seg[a]; stress[i] += load[i];
+          if (y > 0) load[nb[i * 4]] += load[i];
+        }
+      }
+    }
+    for (let i = 0; i < n; i++) if (alive(i) && stress[i] > STRENGTH) { fallen[i] = 1; changed = true; }
+    if (!changed) break;
+  }
+  for (let i = 0; i < n; i++) if (rem[i]) fallen[i] = 0;
+  return fallen;
+}
+
+// ---------- GNN: typed message passing (below/above/sides), one shared layer applied K times ----------
+const F = 5, D = 12;
+const oWin = 0, oBin = oWin + D * F, oWs = oBin + D, oWb = oWs + D * D, oWa = oWb + D * D, oWl = oWa + D * D,
+      oB = oWl + D * D, oWo = oB + D, oBo = oWo + D, NP = oBo + 1;
+const SLOT_M = [oWb, oWa, oWl, oWl], SLOT_S = [1, 1, 0.5, 0.5];
+let P, G = new Float64Array(NP), Am, Av, adamT, steps, lossHist;
+let K = 3;
+
+function resetModel() {
+  P = new Float64Array(NP); Am = new Float64Array(NP); Av = new Float64Array(NP); adamT = 0; steps = 0; lossHist = [];
+  const init = (o, rows, cols) => { for (let k = 0; k < rows * cols; k++) P[o + k] = (rnd() * 2 - 1) * Math.sqrt(3 / cols); };
+  init(oWin, D, F); init(oWs, D, D); init(oWb, D, D); init(oWa, D, D); init(oWl, D, D); init(oWo, 1, D);
+}
+
+function features(g, rem) {
+  const x = new Float64Array(g.n * F);
+  for (let i = 0; i < g.n; i++) {
+    let rn = 0, deg = 0;
+    for (let s = 0; s < 4; s++) { const j = g.nb[i * 4 + s]; if (j >= 0) { if (rem[j]) rn++; else deg++; } }
+    x.set([g.cy[i] / GH, g.mass[i], g.cy[i] === 0 ? 1 : 0, rn / 2, deg / 4], i * F);
+  }
+  return x;
+}
+
+function forward(g, rem) {
+  const n = g.n, x = features(g, rem), as = [], hs = [];
+  let a = new Float64Array(n * D), h = new Float64Array(n * D);
+  for (let i = 0; i < n; i++) if (!rem[i]) for (let d = 0; d < D; d++) {
+    let v = P[oBin + d]; for (let f = 0; f < F; f++) v += P[oWin + d * F + f] * x[i * F + f];
+    a[i * D + d] = v; h[i * D + d] = v > 0 ? v : 0;
+  }
+  as.push(a); hs.push(h);
+  for (let k = 0; k < K; k++) {
+    const na = new Float64Array(n * D), nh = new Float64Array(n * D);
+    for (let i = 0; i < n; i++) if (!rem[i]) for (let d = 0; d < D; d++) {
+      let v = P[oB + d];
+      for (let e = 0; e < D; e++) v += P[oWs + d * D + e] * h[i * D + e];
+      for (let s = 0; s < 4; s++) { const j = g.nb[i * 4 + s]; if (j < 0) continue;
+        let t = 0; for (let e = 0; e < D; e++) t += P[SLOT_M[s] + d * D + e] * h[j * D + e]; v += SLOT_S[s] * t; }
+      na[i * D + d] = v; nh[i * D + d] = v > 0 ? v : 0;
+    }
+    a = na; h = nh; as.push(a); hs.push(h);
+  }
+  const p = new Float64Array(n);
+  for (let i = 0; i < n; i++) if (!rem[i]) {
+    let z = P[oBo]; for (let d = 0; d < D; d++) z += P[oWo + d] * h[i * D + d];
+    p[i] = 1 / (1 + Math.exp(-z));
+  }
+  return { x, as, hs, p };
+}
+
+// accumulates gradient of mean BCE (times `scale`) into G; returns that sample's mean BCE
+function backward(g, rem, y, fw, scale) {
+  const n = g.n, { x, as, hs, p } = fw;
+  let cnt = 0, loss = 0; for (let i = 0; i < n; i++) if (!rem[i]) cnt++;
+  let gh = new Float64Array(n * D); const hK = hs[K];
+  for (let i = 0; i < n; i++) if (!rem[i]) {
+    const pi = Math.min(Math.max(p[i], 1e-7), 1 - 1e-7);
+    loss -= y[i] ? Math.log(pi) : Math.log(1 - pi);
+    const dz = (p[i] - y[i]) / cnt * scale;
+    G[oBo] += dz;
+    for (let d = 0; d < D; d++) { G[oWo + d] += dz * hK[i * D + d]; gh[i * D + d] = dz * P[oWo + d]; }
+  }
+  for (let k = K - 1; k >= 0; k--) {
+    const a = as[k + 1], h = hs[k], gp = new Float64Array(n * D);
+    for (let i = 0; i < n; i++) if (!rem[i]) for (let d = 0; d < D; d++) {
+      if (a[i * D + d] <= 0) continue;
+      const ga = gh[i * D + d]; if (ga === 0) continue;
+      G[oB + d] += ga;
+      for (let e = 0; e < D; e++) { G[oWs + d * D + e] += ga * h[i * D + e]; gp[i * D + e] += ga * P[oWs + d * D + e]; }
+      for (let s = 0; s < 4; s++) { const j = g.nb[i * 4 + s]; if (j < 0) continue;
+        const m = SLOT_M[s], sg = SLOT_S[s] * ga;
+        for (let e = 0; e < D; e++) { G[m + d * D + e] += sg * h[j * D + e]; gp[j * D + e] += sg * P[m + d * D + e]; } }
+    }
+    gh = gp;
+  }
+  const a0 = as[0];
+  for (let i = 0; i < n; i++) if (!rem[i]) for (let d = 0; d < D; d++) {
+    if (a0[i * D + d] <= 0) continue; const ga = gh[i * D + d];
+    G[oBin + d] += ga; for (let f = 0; f < F; f++) G[oWin + d * F + f] += ga * x[i * F + f];
+  }
+  return loss / cnt;
+}
+
+function adam(lr) {
+  adamT++; const b1 = 0.9, b2 = 0.999;
+  for (let k = 0; k < NP; k++) {
+    Am[k] = b1 * Am[k] + (1 - b1) * G[k]; Av[k] = b2 * Av[k] + (1 - b2) * G[k] * G[k];
+    P[k] -= lr * (Am[k] / (1 - b1 ** adamT)) / (Math.sqrt(Av[k] / (1 - b2 ** adamT)) + 1e-8);
+  }
+}
+
+// a sample: random structure + 1-3 random removals, labelled by the exact solver
+function makeSample(kind) {
+  const g = genGraph(kind), rem = new Uint8Array(g.n);
+  for (let r = ri(1, 3); r > 0 && g.n > 2; r--) rem[ri(0, g.n - 1)] = 1;
+  return { g, rem, y: solveExact(g, rem) };
+}
+
+const BATCH = 8;
+function trainSteps(N) {
+  for (let s = 0; s < N; s++) {
+    G.fill(0);
+    for (let b = 0; b < BATCH; b++) { const sm = makeSample('mix'); backward(sm.g, sm.rem, sm.y, forward(sm.g, sm.rem), 1 / BATCH); }
+    adam(0.01); steps++;
+    if (steps % 10 === 0) lossHist.push(evaluate().loss);
+  }
+}
+
+let heldOut = [];
+function makeHeldOut() { const sv = seed; seed = 999; heldOut = []; for (let i = 0; i < 120; i++) heldOut.push(makeSample('mix')); seed = sv; }
+function relabelHeldOut() { for (const s of heldOut) s.y = solveExact(s.g, s.rem); }
+
+function evaluate() {
+  let loss = 0, ok = 0, tot = 0, falls = 0, missed = 0;
+  for (const s of heldOut) {
+    const fw = forward(s.g, s.rem);
+    for (let i = 0; i < s.g.n; i++) if (!s.rem[i]) {
+      const pi = Math.min(Math.max(fw.p[i], 1e-7), 1 - 1e-7), pr = pi >= 0.5 ? 1 : 0;
+      loss -= s.y[i] ? Math.log(pi) : Math.log(1 - pi); tot++;
+      if (pr === s.y[i]) ok++;
+      if (s.y[i]) { falls++; if (!pr) missed++; }
+    }
+  }
+  return { loss: loss / tot, acc: ok / tot, fnr: falls ? missed / falls : 0, base: Math.max(falls, tot - falls) / tot };
+}
+
+// ---------- UI state ----------
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+const lc = document.getElementById('loss'), lctx = lc.getContext('2d');
+const $ = id => document.getElementById(id);
+let cur, curRem, exact, pred, hover = -1, timer = 0, lastEval = null, tExact = 0, tGnn = 0;
+
+function newStructure() { cur = genGraph($('kind').value); curRem = new Uint8Array(cur.n); recompute(); }
+function toggleRemove(i) { curRem[i] ^= 1; recompute(); }
+function recompute() {
+  let t0 = performance.now(); for (let r = 0; r < 200; r++) exact = solveExact(cur, curRem); tExact = (performance.now() - t0) / 200;
+  t0 = performance.now(); for (let r = 0; r < 200; r++) pred = forward(cur, curRem).p; tGnn = (performance.now() - t0) / 200;
+  draw();
+}
+
+// BFS: messages only flow through standing blocks; a removed block is "seen" via its neighbours' feature (one extra hop)
+function hopDist(src) {
+  const dist = new Int32Array(cur.n).fill(-1), q = [src]; dist[src] = 0;
+  for (let h = 0; h < q.length; h++) { const i = q[h]; if (curRem[i] && i !== src) continue;
+    for (let s = 0; s < 4; s++) { const j = cur.nb[i * 4 + s]; if (j >= 0 && dist[j] < 0) { dist[j] = dist[i] + 1; q.push(j); } } }
+  return dist;
+}
+const inView = (i, d) => d >= 0 && d <= (curRem[i] ? K + 1 : K);
+
+let lay = null;
+function layout() {
+  const w = cv.width, h = cv.height, pw = (w - 60) / 2;
+  const cs = Math.floor(Math.min(pw / GW, (h - 110) / GH));
+  const ox = [20 + (pw - cs * GW) / 2, 40 + pw + (pw - cs * GW) / 2], oy = 50 + cs * GH;
+  lay = { cs, ox, oy };
+}
+function cellAt(mx, my) {
+  const { cs, ox, oy } = lay;
+  for (const o of ox) { const x = Math.floor((mx - o) / cs), y = Math.floor((oy - my) / cs);
+    if (x >= 0 && x < GW && y >= 0 && y < GH) return cur.idx[y * GW + x]; }
+  return -1;
+}
+
+function draw() {
+  const r = cv.getBoundingClientRect();
+  cv.width = Math.max(200, r.width | 0); cv.height = Math.max(200, r.height | 0); layout();
+  const { cs, ox, oy } = lay;
+  ctx.fillStyle = '#111418'; ctx.fillRect(0, 0, cv.width, cv.height);
+  ctx.font = '13px system-ui'; ctx.fillStyle = '#d6dae0';
+  ctx.fillText('Exact solver (flood fill + load push-down)', ox[0], 30);
+  ctx.fillText('GNN prediction, K = ' + K + ' rounds (red = will fall)', ox[1], 30);
+  const dist = hover >= 0 ? hopDist(hover) : null;
+  for (let p = 0; p < 2; p++) {
+    ctx.fillStyle = '#4a3b2a'; ctx.fillRect(ox[p] - 6, oy, cs * GW + 12, 6);
+    for (let i = 0; i < cur.n; i++) {
+      const x = ox[p] + cur.cx[i] * cs, y = oy - (cur.cy[i] + 1) * cs;
+      if (curRem[i]) {
+        ctx.strokeStyle = '#555'; ctx.lineWidth = 1; ctx.strokeRect(x + 2, y + 2, cs - 4, cs - 4);
+        ctx.beginPath(); ctx.moveTo(x + 4, y + 4); ctx.lineTo(x + cs - 4, y + cs - 4); ctx.moveTo(x + cs - 4, y + 4); ctx.lineTo(x + 4, y + cs - 4); ctx.stroke();
+      } else {
+        const v = p === 0 ? exact[i] : pred[i], sh = 0.75 + 0.25 * (cur.mass[i] - 0.6) / 0.8;
+        ctx.fillStyle = `rgb(${(90 + 150 * v) * sh | 0},${(125 - 60 * v) * sh | 0},${(170 - 110 * v) * sh | 0})`;
+        ctx.fillRect(x + 1, y + 1, cs - 2, cs - 2);
+        if (p === 1 && (pred[i] >= 0.5 ? 1 : 0) !== exact[i]) { ctx.strokeStyle = '#ff2bd6'; ctx.lineWidth = 3; ctx.strokeRect(x + 2.5, y + 2.5, cs - 5, cs - 5); }
+      }
+      if (dist && inView(i, dist[i])) {
+        ctx.fillStyle = 'rgba(255,230,80,0.18)'; ctx.fillRect(x, y, cs, cs);
+        if (i === hover) { ctx.strokeStyle = '#ffe650'; ctx.lineWidth = 2; ctx.strokeRect(x + 1, y + 1, cs - 2, cs - 2); }
+      }
+    }
+  }
+  if (hover >= 0) {
+    let nearest = -1; for (let i = 0; i < cur.n; i++) if (curRem[i] && dist[i] >= 0 && (nearest < 0 || dist[i] < nearest)) nearest = dist[i];
+    const msg = curRem[hover] ? 'hovered block is removed' :
+      `hovered: exact ${exact[hover] ? 'FALLS' : 'stays'}, GNN p(fall) = ${pred[hover].toFixed(2)}; nearest removed block ` +
+      (nearest < 0 ? 'none' : nearest + ' hops away' + (nearest > K + 1 ? ` > K+1: the GNN cannot see it` : ' (inside view)'));
+    ctx.fillStyle = '#ffe650'; ctx.fillText(msg, ox[0], oy + 30);
+  }
+  ctx.fillStyle = '#8a94a3'; ctx.fillText('yellow tint = blocks within K hops of the hovered block (all the GNN can see)', ox[0], oy + 50);
+  drawLoss(); stats();
+}
+
+function drawLoss() {
+  lctx.fillStyle = '#12161b'; lctx.fillRect(0, 0, lc.width, lc.height);
+  if (lossHist.length < 2) return;
+  const mx = Math.max(...lossHist), n = lossHist.length;
+  lctx.strokeStyle = '#7fb6ff'; lctx.beginPath();
+  lossHist.forEach((v, k) => { const x = k / (n - 1) * (lc.width - 4) + 2, y = lc.height - 4 - v / mx * (lc.height - 8); k ? lctx.lineTo(x, y) : lctx.moveTo(x, y); });
+  lctx.stroke(); lctx.fillStyle = '#8a94a3'; lctx.fillText(lossHist[n - 1].toFixed(3), lc.width - 40, 12);
+}
+
+function stats() {
+  if (!lastEval) lastEval = evaluate();
+  let ok = 0, tot = 0, falls = 0, missed = 0;
+  for (let i = 0; i < cur.n; i++) if (!curRem[i]) { tot++; const pr = pred[i] >= 0.5 ? 1 : 0; if (pr === exact[i]) ok++; if (exact[i]) { falls++; if (!pr) missed++; } }
+  const act = cur.n * D * (K + 1) * 8;
+  $('stats').textContent =
+    `model params      ${NP}\n` +
+    `model bytes       ${NP * 4} = params x 4 B\n` +
+    `activations       ${act} B\n                  = n x ${D} x (K+1) x 8 B\n` +
+    `graph             ${cur.n} blocks, ${curRem.reduce((a, b) => a + b, 0)} removed\n` +
+    `exact ms/query    ${tExact.toFixed(4)}\n` +
+    `GNN ms/query      ${tGnn.toFixed(4)}  (K=${K})\n` +
+    `this graph acc    ${(100 * ok / tot).toFixed(1)}%  missed ${missed}/${falls} falls\n` +
+    `train steps       ${steps} x ${BATCH} graphs\n` +
+    `held-out loss     ${lastEval.loss.toFixed(3)}\n` +
+    `held-out acc      ${(100 * lastEval.acc).toFixed(1)}%  (baseline ${(100 * lastEval.base).toFixed(1)}%)\n` +
+    `false-neg rate    ${(100 * lastEval.fnr).toFixed(1)}%  (missed falls)`;
+}
+
+// ---------- wiring ----------
+function syncLabels() { $('Kv').textContent = K; $('Sv').textContent = STRENGTH; }
+$('K').oninput = e => { K = +e.target.value; syncLabels(); lastEval = evaluate(); recompute(); };
+$('S').oninput = e => { STRENGTH = +e.target.value; syncLabels(); relabelHeldOut(); lastEval = evaluate(); recompute(); };
+$('kind').onchange = newStructure;
+$('newg').onclick = newStructure;
+$('clear').onclick = () => { curRem.fill(0); recompute(); };
+$('reset').onclick = () => { resetModel(); lastEval = evaluate(); lossHist.push(lastEval.loss); recompute(); };
+$('train').onclick = () => {
+  if (timer) { clearInterval(timer); timer = 0; $('train').textContent = 'Train'; return; }
+  $('train').textContent = 'Stop';
+  timer = setInterval(() => { trainSteps(10); lastEval = evaluate(); recompute(); }, 0);
+};
+cv.onmousemove = e => { const r = cv.getBoundingClientRect(), i = cellAt(e.clientX - r.left, e.clientY - r.top); if (i !== hover) { hover = i; draw(); } };
+cv.onmouseleave = () => { hover = -1; draw(); };
+cv.onclick = e => { const r = cv.getBoundingClientRect(), i = cellAt(e.clientX - r.left, e.clientY - r.top); if (i >= 0) toggleRemove(i); };
+window.onresize = draw;
+
+resetModel(); makeHeldOut(); lossHist.push(evaluate().loss); syncLabels(); newStructure();
+
+// ---------- self-test ----------
+if (location.search.includes('selftest')) {
+  const out = $('selftest'), t0 = performance.now();
+  try {
+    // exact: a single column; remove its ground block -> the block above falls
+    const occ = new Uint8Array(GW * GH); for (let y = 0; y < 4; y++) occ[y * GW + 3] = 1;
+    const col = graphFromOcc(occ), rem = new Uint8Array(col.n); rem[col.idx[3]] = 1;
+    const f = solveExact(col, rem);
+    if (!f[col.idx[GW + 3]]) throw 'exact solver kept block above removed sole support';
+    if (solveExact(col, new Uint8Array(col.n)).some(v => v)) throw 'intact column falls';
+    const e0 = evaluate();
+    trainSteps(300);
+    const e1 = evaluate();
+    if (!(e1.loss < e0.loss * 0.7)) throw `loss ${e0.loss.toFixed(3)} -> ${e1.loss.toFixed(3)} not < x0.7`;
+    if (!(e1.acc > e1.base)) throw `acc ${e1.acc.toFixed(3)} <= baseline ${e1.base.toFixed(3)}`;
+    lastEval = e1; recompute();
+    out.textContent = `PASS loss ${e0.loss.toFixed(3)}->${e1.loss.toFixed(3)}, acc ${(100 * e1.acc).toFixed(1)}% > base ${(100 * e1.base).toFixed(1)}%, fnr ${(100 * e1.fnr).toFixed(1)}%, ${((performance.now() - t0) / 1000).toFixed(1)}s`;
+  } catch (err) { out.textContent = 'FAIL ' + err; }
+}
+</script>
+</body>
+</html>

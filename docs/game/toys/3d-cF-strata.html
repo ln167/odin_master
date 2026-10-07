@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>3d-cF - layered strata terrain</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;display:flex;height:100vh;background:#14161a;color:#d6d9de;font:13px/1.4 system-ui,sans-serif}
+#side{width:320px;flex:none;overflow-y:auto;padding:12px 14px;background:#1b1e24;border-right:1px solid #2c3039}
+#main{flex:1;position:relative;min-width:0}
+canvas{position:absolute;left:0;top:0;cursor:crosshair}
+a{color:#7fb2ff}h1{font-size:17px;margin:6px 0}h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#8d95a3;margin:14px 0 4px}
+p,ul{margin:3px 0}ul{padding-left:18px}
+button,select{background:#2a2f39;color:#d6d9de;border:1px solid #3b4250;padding:4px 9px;margin:2px 2px 2px 0;border-radius:3px;cursor:pointer}
+button.on{background:#3a5f9a}label{display:block;margin:3px 0}input[type=range]{width:150px;vertical-align:middle}
+#stats,#inspect{font:12px ui-monospace,Consolas,monospace;white-space:pre;color:#b7e0b0}
+#inspect{color:#e0d3a0;background:#14161a;padding:5px;min-height:5.5em}
+#selftest{font:10px monospace;color:#6b7280;white-space:pre-wrap;margin:10px 0 0}
+</style></head><body>
+<div id="side">
+<a href="index.html">&larr; all toys</a>
+<h1>3D layered strata terrain</h1>
+<h2>What it is</h2>
+<p>A 96x96 grid of columns; each column is a stack of layers (material + thickness): bedrock, limestone, clay, sand, topsoil. Digging pops top layers into a basket, dumping pushes new layers on top, rain slides material downhill as layers. Mass is only moved, never created. 3D port of cF.</p>
+<h2>Controls</h2>
+<div><button id="tdig" class="on">Dig</button><button id="tdump">Dump</button><button id="ramp">Build ramp</button><button id="rain">Rain: off</button><button id="reset">Reset</button></div>
+<label>Radius <input type="range" id="rad" min="1" max="8" step="1" value="4"></label>
+<p style="color:#8d95a3">Click terrain to use the tool; ctrl-drag to paint. Left-drag rotate, wheel zoom, right/shift-drag pan.</p>
+<h2>Inspect (hover)</h2>
+<div id="inspect"></div>
+<h2>Live stats</h2>
+<div id="stats"></div>
+<h2>Good at</h2><ul><li>Geology-true strata, cut faces show stripes</li><li>Tiny memory vs dense voxels; mass easy to audit</li></ul>
+<h2>Bad at</h2><ul><li>Still 2.5D: no overhangs or tunnels</li><li>Erosion here is a thermal slump, not real water flow</li></ul>
+<h2>In 3D / for our game:</h2><p>Settled dirt is cheap height layers instead of millions of particles; it falls back to MPM particles while it is moving, and to the SDF where overhangs or tunnels are needed (not implemented here).</p>
+<pre id="selftest"></pre>
+</div>
+<div id="main"><canvas id="cv"></canvas></div>
+<script>
+const N = 96, NM = 5, NAMES = ['bedrock','limestone','clay','sand','topsoil'];
+const COL = [[.36,.37,.41],[.84,.81,.68],[.72,.39,.25],[.88,.76,.48],[.42,.33,.2]];
+const TALUS = [3, 1.6, .8, .35, .45];
+const BLOCK = [62, 78, 40, 56];
+let cols, basket, mass0, hauled, dumped, dirty = true, raining = false, tool = 'dig', rampI = -1, hover = null, frameN = 0;
+const $ = id => document.getElementById(id);
+const cell = (i, j) => cols[j * N + i];
+const height = (i, j) => cell(i, j).reduce((s, l) => s + l.t, 0);
+const rad = () => +$('rad').value;
+
+function init() {
+  cols = []; basket = new Float64Array(NM); hauled = dumped = 0; rampI = -1;
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const s = Math.sin(i * .11) * .8 + Math.sin(j * .13 + 1) * .8 + Math.sin((i + j) * .05) * 1.2;
+    const S = 8 + .04 * i + s;
+    const c = [2 + .02 * i + .4 * Math.sin(j * .1), 3.5 + .05 * i + .5 * Math.sin(j * .09 + 1), 5 + .05 * i + .4 * Math.sin(j * .12 + 2), 6.2 + .04 * i + .4 * Math.sin(j * .1 + 3), S];
+    const col = []; let prev = 0;
+    for (let m = 0; m < NM; m++) {
+      const top = Math.min(Math.max(c[m], prev), S);
+      if (top - prev > 1e-9) col.push({m, t: top - prev});
+      prev = top;
+    }
+    if (i >= BLOCK[0] && i < BLOCK[1] && j >= BLOCK[2] && j < BLOCK[3]) col.push({m: 1, t: 5});
+    cols.push(col);
+  }
+  mass0 = totals(); dirty = true;
+}
+function totals() {
+  const t = new Float64Array(NM);
+  for (const c of cols) for (const l of c) t[l.m] += l.t;
+  for (let m = 0; m < NM; m++) t[m] += basket[m];
+  return t;
+}
+function drift() {
+  const t = totals(); let r = 0;
+  for (let m = 0; m < NM; m++) { const x = Math.abs(t[m] - mass0[m]) / mass0[m]; if (!(x <= r)) r = x; }
+  return r;
+}
+function addTop(c, m, t) {
+  if (t <= 0) return;
+  const top = c[c.length - 1];
+  if (top && top.m === m) top.t += t; else c.push({m, t});
+}
+function removeTop(c, amt) {   // returns [[m,t]] top first; keeps the bottom layer
+  const out = [];
+  while (amt > 1e-12 && c.length > 1) {
+    const l = c[c.length - 1], take = Math.min(l.t, amt);
+    l.t -= take; amt -= take; out.push([l.m, take]);
+    if (l.t < 1e-12) { out[out.length - 1][1] += l.t; c.pop(); }
+  }
+  return out;
+}
+function brushCells(ci, cj, r) {
+  const out = [];
+  for (let j = Math.max(0, cj - r); j <= Math.min(N - 1, cj + r); j++)
+    for (let i = Math.max(0, ci - r); i <= Math.min(N - 1, ci + r); i++) {
+      const w = 1 - Math.hypot(i - ci, j - cj) / (r + 1);
+      if (w > 0) out.push([i, j, w]);
+    }
+  return out;
+}
+function dig(ci, cj, r, depth) {
+  let total = 0;
+  for (const [i, j, w] of brushCells(ci, cj, r))
+    for (const [m, t] of removeTop(cell(i, j), depth * w)) { basket[m] += t; total += t; }
+  hauled += total; dirty = true; return total;
+}
+function dump(ci, cj, r, frac) {
+  const cs = brushCells(ci, cj, r), W = cs.reduce((s, c) => s + c[2], 0); let total = 0;
+  for (let m = 0; m < NM; m++) {
+    const amt = basket[m] * frac;
+    for (const [i, j, w] of cs) addTop(cell(i, j), m, amt * w / W);
+    basket[m] -= amt; total += amt;
+  }
+  if (frac >= 1) basket.fill(0);
+  dumped += total; dirty = true; return total;
+}
+function erode(wet) {
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const c = cell(i, j), h = height(i, j); let bi = -1, bj = 0, bd = 0;
+    for (const [di, dj] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+      const a = i + di, b = j + dj; if (a < 0 || b < 0 || a >= N || b >= N) continue;
+      const d = h - height(a, b); if (d > bd) { bd = d; bi = a; bj = b; }
+    }
+    if (bi < 0) continue;
+    const tal = TALUS[c[c.length - 1].m] * (wet ? .4 : 1);
+    if (bd <= tal) continue;
+    const moved = removeTop(c, (bd - tal) * .3), to = cell(bi, bj);
+    for (let k = moved.length - 1; k >= 0; k--) addTop(to, moved[k][0], moved[k][1]);
+  }
+  dirty = true;
+}
+const RP = Array.from({length: 16}, (_, i) => [36 + i * 1.5 | 0, 48]);
+function rampTrip(i) {
+  dig(14 + (i % 4) * 8, 14 + (i >> 2) * 8, 4, 1.5);
+  dump(RP[i][0], RP[i][1], 3, 1);
+}
+function buildRamp() { for (let i = 0; i < RP.length; i++) rampTrip(i); }
+const rampSum = () => RP.reduce((s, [i, j]) => s + height(i, j), 0);
+
+// ---- camera / GL ----
+const cv = $('cv'), gl = cv.getContext('webgl2', {preserveDrawingBuffer: true});
+let yaw = .7, pitch = .6, dist = 120, tgt = [48, 6, 48], fov = .8;
+const vs = `#version 300 es
+in vec3 a_p,a_n,a_c;uniform mat4 u_vp;out vec3 v_n,v_c,v_p;
+void main(){v_n=a_n;v_c=a_c;v_p=a_p;gl_Position=u_vp*vec4(a_p,1);}`;
+const fs = `#version 300 es
+precision mediump float;in vec3 v_n,v_c,v_p;uniform vec3 u_b;out vec4 o;
+void main(){float d=max(dot(normalize(v_n),normalize(vec3(.5,.8,.3))),0.)*.7+.35;
+float r=length(v_p.xz-u_b.xy);float ring=u_b.z>0.?(1.-smoothstep(0.,.8,abs(r-u_b.z)))*.5:0.;
+o=vec4(v_c*d+ring,1);}`;
+function sh(t, s) { const o = gl.createShader(t); gl.shaderSource(o, s); gl.compileShader(o); if (!gl.getShaderParameter(o, gl.COMPILE_STATUS)) throw gl.getShaderInfoLog(o); return o; }
+const pr = gl.createProgram(); gl.attachShader(pr, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(pr, sh(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(pr);
+if (!gl.getProgramParameter(pr, gl.LINK_STATUS)) throw gl.getProgramInfoLog(pr);
+gl.useProgram(pr);
+const uVP = gl.getUniformLocation(pr, 'u_vp'), uB = gl.getUniformLocation(pr, 'u_b');
+const vao = gl.createVertexArray(), vbo = gl.createBuffer();
+gl.bindVertexArray(vao); gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+['a_p', 'a_n', 'a_c'].forEach((n, k) => { const l = gl.getAttribLocation(pr, n); gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 36, k * 12); });
+gl.enable(gl.DEPTH_TEST);
+
+let buf = new Float32Array(1 << 20), nv = 0;
+function vert(x, y, z, n, c, k) {
+  if ((nv + 1) * 9 > buf.length) { const b = new Float32Array(buf.length * 2); b.set(buf); buf = b; }
+  const o = nv++ * 9; buf[o] = x; buf[o+1] = y; buf[o+2] = z; buf[o+3] = n[0]; buf[o+4] = n[1]; buf[o+5] = n[2];
+  buf[o+6] = c[0] * k; buf[o+7] = c[1] * k; buf[o+8] = c[2] * k;
+}
+function quad(a, b, c, d, n, col, k) { vert(...a, n, col, k); vert(...b, n, col, k); vert(...c, n, col, k); vert(...a, n, col, k); vert(...c, n, col, k); vert(...d, n, col, k); }
+const DIRS = [[1,0,[1,0,0]],[-1,0,[-1,0,0]],[0,1,[0,0,1]],[0,-1,[0,0,-1]]];
+function rebuild() {
+  nv = 0;
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const c = cell(i, j), h = height(i, j), top = c[c.length - 1].m;
+    quad([i, h, j], [i + 1, h, j], [i + 1, h, j + 1], [i, h, j + 1], [0, 1, 0], COL[top], 1.1);
+    for (const [di, dj, n] of DIRS) {
+      const a = i + di, b = j + dj, hn = a < 0 || b < 0 || a >= N || b >= N ? 0 : height(a, b);
+      if (h <= hn) continue;
+      const ex = di ? [di > 0 ? 1 : 0, 0, di > 0 ? 1 : 0, 1] : [0, dj > 0 ? 1 : 0, 1, dj > 0 ? 1 : 0];
+      let y = 0;
+      for (const l of c) {
+        const y0 = Math.max(y, hn), y1 = y + l.t; y = y1;
+        if (y1 <= hn) continue;
+        quad([i + ex[0], y0, j + ex[1]], [i + ex[2], y0, j + ex[3]], [i + ex[2], y1, j + ex[3]], [i + ex[0], y1, j + ex[1]], n, COL[l.m], 1);
+      }
+    }
+  }
+  gl.bufferData(gl.ARRAY_BUFFER, buf.subarray(0, nv * 9), gl.DYNAMIC_DRAW);
+  updateStats(); dirty = false;
+}
+function eye() { return [tgt[0] + dist * Math.cos(pitch) * Math.sin(yaw), tgt[1] + dist * Math.sin(pitch), tgt[2] + dist * Math.cos(pitch) * Math.cos(yaw)]; }
+const sub = (a, b) => a.map((v, i) => v - b[i]), nrm = a => { const l = Math.hypot(...a); return a.map(v => v / l); };
+const crs = (a, b) => [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+const dot = (a, b) => a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+function basis() { const e = eye(), f = nrm(sub(tgt, e)), r = nrm(crs(f, [0, 1, 0])); return {e, f, r, u: crs(r, f)}; }
+function vpMat(asp) {
+  const {e, f, r, u} = basis(), t = 1 / Math.tan(fov / 2), n = 1, fa = 600;
+  const V = [r[0], u[0], -f[0], 0, r[1], u[1], -f[1], 0, r[2], u[2], -f[2], 0, -dot(r, e), -dot(u, e), dot(f, e), 1];
+  const P = [t / asp, 0, 0, 0, 0, t, 0, 0, 0, 0, (fa + n) / (n - fa), -1, 0, 0, 2 * fa * n / (n - fa), 0];
+  const M = new Float32Array(16);
+  for (let c = 0; c < 4; c++) for (let rr = 0; rr < 4; rr++) { let s = 0; for (let k = 0; k < 4; k++) s += P[k * 4 + rr] * V[c * 4 + k]; M[c * 4 + rr] = s; }
+  return M;
+}
+function render() {
+  if (dirty) rebuild();
+  gl.viewport(0, 0, cv.width, cv.height); gl.clearColor(.05, .06, .08, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.uniformMatrix4fv(uVP, false, vpMat(cv.width / cv.height));
+  gl.uniform3f(uB, hover ? hover[0] + .5 : 0, hover ? hover[1] + .5 : 0, hover ? rad() + .5 : 0);
+  gl.drawArrays(gl.TRIANGLES, 0, nv);
+}
+function pick(px, py) {
+  const {e, f, r, u} = basis(), t = Math.tan(fov / 2), asp = cv.width / cv.height;
+  const nx = px / cv.width * 2 - 1, ny = 1 - py / cv.height * 2;
+  const d = nrm(f.map((v, k) => v + r[k] * nx * t * asp + u[k] * ny * t));
+  for (let s = 1; s < 500; s += .4) {
+    const x = e[0] + d[0] * s, y = e[1] + d[1] * s, z = e[2] + d[2] * s, i = Math.floor(x), j = Math.floor(z);
+    if (i >= 0 && j >= 0 && i < N && j < N && y <= height(i, j)) return [i, j];
+  }
+  return null;
+}
+function resize() { const m = $('main'); cv.width = m.clientWidth; cv.height = m.clientHeight; }
+
+// ---- stats / inspect ----
+function updateStats() {
+  let L = 0, mx = 0;
+  for (const c of cols) { L += c.length; if (c.length > mx) mx = c.length; }
+  let vol = 0; for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) vol += height(i, j);
+  const t = totals(), bs = Array.from(basket);
+  $('stats').textContent =
+`columns   ${N * N}
+layers    ${L}  avg ${(L / (N * N)).toFixed(2)}  max ${mx}
+memory    ${L * 5} B (layers x 5)
+dense 0.25m voxels: ${(vol * 64 / 1e6).toFixed(2)} MB
+mass (grid+basket) per material:
+${NAMES.map((n, m) => ` ${n.padEnd(10)}${t[m].toFixed(1).padStart(8)}  d=${(t[m] - mass0[m]).toExponential(0)}`).join('\n')}
+mass drift ${drift().toExponential(1)}
+basket    ${NAMES.map((n, m) => n.slice(0, 3) + ' ' + bs[m].toFixed(1)).join(' ')}`;
+}
+function inspect() {
+  $('inspect').textContent = hover ? `col (${hover[0]},${hover[1]})  h=${height(...hover).toFixed(2)}\n` + cell(...hover).map(l => `${NAMES[l.m].padEnd(10)}${l.t.toFixed(2)}`).join('\n') : 'hover terrain';
+}
+
+// ---- input ----
+let drag = null, moved = 0;
+const use = () => { if (!hover) return; tool === 'dig' ? dig(hover[0], hover[1], rad(), .6) : dump(hover[0], hover[1], rad(), .2); };
+cv.onmousedown = e => { drag = {x: e.clientX, y: e.clientY, pan: e.button === 2 || e.shiftKey, paint: e.ctrlKey}; moved = 0; };
+window.onmouseup = () => { if (drag && !drag.paint && moved < 4 && !drag.pan) use(); drag = null; };
+cv.onmousemove = e => {
+  const rc = cv.getBoundingClientRect();
+  if (drag) {
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY; moved += Math.abs(dx) + Math.abs(dy);
+    if (drag.paint) { hover = pick(e.clientX - rc.left, e.clientY - rc.top); use(); }
+    else if (drag.pan) { const {r} = basis(), k = dist * .0015; tgt[0] -= r[0] * dx * k; tgt[2] -= r[2] * dx * k; tgt[0] += Math.sin(yaw) * dy * k; tgt[2] += Math.cos(yaw) * dy * k; }
+    else { yaw -= dx * .006; pitch = Math.min(1.5, Math.max(.1, pitch + dy * .006)); }
+  } else { hover = pick(e.clientX - rc.left, e.clientY - rc.top); inspect(); }
+};
+cv.onwheel = e => { e.preventDefault(); dist = Math.min(300, Math.max(15, dist * Math.exp(e.deltaY * .001))); };
+cv.oncontextmenu = e => e.preventDefault();
+const setTool = t => { tool = t; $('tdig').className = t === 'dig' ? 'on' : ''; $('tdump').className = t === 'dump' ? 'on' : ''; };
+$('tdig').onclick = () => setTool('dig'); $('tdump').onclick = () => setTool('dump');
+$('rain').onclick = e => { raining = !raining; e.target.textContent = 'Rain: ' + (raining ? 'on' : 'off'); e.target.className = raining ? 'on' : ''; };
+$('ramp').onclick = () => { rampI = 0; };
+$('reset').onclick = init;
+window.onresize = resize;
+function frame() {
+  frameN++;
+  if (rampI >= 0 && frameN % 6 === 0) { rampTrip(rampI); if (++rampI >= RP.length) rampI = -1; }
+  if (raining) erode(true);
+  render(); inspect(); requestAnimationFrame(frame);
+}
+
+// ---- self test ----
+function selftest() {
+  const out = $('selftest');
+  try {
+    const rel = () => { const r = drift(); if (!(r <= 1e-6)) throw 'mass drift ' + r; return r; };
+    const h0 = height(20, 20), got = dig(20, 20, 3, 1.5), h1 = height(20, 20), bt = basket.reduce((a, b) => a + b);
+    if (!(h1 < h0) || !(got > 0) || Math.abs(bt - got) > 1e-9) throw `dig h ${h0}->${h1} got ${got} basket ${bt}`;
+    rel();
+    const g0 = height(40, 30), put = dump(40, 30, 3, 1);
+    if (!(height(40, 30) > g0) || basket.reduce((a, b) => a + b) !== 0 || Math.abs(put - got) > 1e-9) throw 'dump failed';
+    rel();
+    const r0 = rampSum(); buildRamp();
+    if (!(rampSum() > r0 + 1)) throw 'ramp not higher ' + r0 + '->' + rampSum();
+    rel();
+    const snap = cols.map((c, k) => height(k % N, k / N | 0));
+    for (let k = 0; k < 30; k++) erode(true);
+    const changed = snap.filter((v, k) => Math.abs(v - height(k % N, k / N | 0)) > 1e-6).length;
+    if (!changed) throw 'erosion changed nothing';
+    const d = rel();
+    resize(); render();
+    const px = new Uint8Array(cv.width * cv.height * 4); gl.readPixels(0, 0, cv.width, cv.height, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    let lit = 0; for (let k = 0; k < px.length; k += 4) if (Math.abs(px[k] - 13) + Math.abs(px[k + 1] - 15) + Math.abs(px[k + 2] - 20) > 12) lit++;
+    if (!lit) throw 'no non-background pixels';
+    const err = gl.getError(); if (err) throw 'gl error ' + err;
+    out.textContent = `PASS dug ${got.toFixed(1)}, ramp +${(rampSum() - r0).toFixed(1)}, ${changed} cols eroded, ${lit} px, drift ${d.toExponential(1)}`;
+  } catch (e) { out.textContent = 'FAIL ' + e; }
+}
+window.onerror = m => { $('selftest').textContent = 'FAIL ' + m; };
+init(); resize(); inspect();
+if (location.search.includes('selftest')) selftest(); else frame();
+</script></body></html>

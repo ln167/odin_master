@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Adaptive grid (quadtree)</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;display:flex;height:100vh;background:#14161a;color:#d8dce2;font:13px/1.45 system-ui,sans-serif}
+#side{width:320px;flex:none;overflow-y:auto;padding:12px 14px;background:#1b1e24;border-right:1px solid #2c3038}
+#main{flex:1;min-width:0;position:relative}
+canvas{position:absolute;inset:0;width:100%;height:100%;cursor:crosshair}
+a{color:#7ab4ff}h1{font-size:18px;margin:6px 0}h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#8a93a3;margin:14px 0 4px}
+p,ul{margin:4px 0}ul{padding-left:18px}label{display:block;margin:6px 0}input[type=range]{width:100%}
+button{background:#2b313b;color:#d8dce2;border:1px solid #3b4250;padding:4px 10px;border-radius:4px;cursor:pointer}
+table{width:100%;border-collapse:collapse}td{padding:1px 0}td:last-child{text-align:right;font-variant-numeric:tabular-nums}
+#big{font-size:14px;color:#ffd479;margin:6px 0}#path{color:#9fe0a8;min-height:3em}
+#selftest{font-size:10px;color:#667;margin:10px 0 0;white-space:pre-wrap}
+</style></head><body>
+<div id="side">
+<a href="index.html">← all toys</a>
+<h1>Adaptive grid (quadtree)</h1>
+<h2>What it is</h2>
+<p>A grid whose cells split into 4 smaller cells only where the rock's surface passes through them. Big cells stay big in solid or empty areas, so memory follows the surface, not the area.</p>
+<h2>Controls</h2>
+<label>Max depth: <b id="dv"></b><input id="depth" type="range" min="2" max="10" value="8"></label>
+<label>Brush radius: <b id="rv"></b><input id="rad" type="range" min="10" max="150" value="50"></label>
+<label><input id="grid" type="checkbox" checked> draw cell boundaries</label>
+<label><input id="dag" type="checkbox"> DAG dedupe (share identical subtrees)</label>
+<button id="reset">Reset rock</button> <span style="color:#8a93a3">drag on canvas to carve; hover to trace a lookup</span>
+<h2>Live stats</h2>
+<div id="big"></div>
+<table id="stats"></table>
+<h2>Lookup path (hover)</h2>
+<div id="path">move the mouse over the rock</div>
+<h2>Good at</h2>
+<ul><li>Memory grows with surface, not volume.</li><li>Multi-resolution: coarse far away, fine up close.</li><li>Skips empty/solid space in one step.</li></ul>
+<h2>Bad at</h2>
+<ul><li>Neighbour lookup means walking the tree.</li><li>Edits re-subdivide or merge cells.</li><li>More complex code than a flat array.</li></ul>
+<h2>In 3D / for our game:</h2>
+<p>Octree / sparse voxel octree / VDB / voxel DAG: store a quarry-sized mountain at fine detail only at its surface, and dedupe repeated rock chunks.</p>
+<pre id="selftest"></pre>
+</div>
+<div id="main"><canvas id="cv"></canvas></div>
+<script>
+const W = 1024, NODE_BYTES = 4 * 4 + 1;           // 4 child pointers x 4 bytes + 1 value byte
+const $ = id => document.getElementById(id);
+const cv = $('cv'), ctx = cv.getContext('2d');
+window.onerror = (m) => { $('selftest').textContent = 'FAIL ' + m; };
+
+// ---- the rock: union of circles + a box, minus cut circles. Each is an exact distance, so
+// sdf is 1-Lipschitz and "|d| > half-diagonal" safely proves a cell is uniform.
+const rockCircles = [[500, 520, 330], [760, 340, 150], [260, 300, 120]];
+const rockBox = [380, 700, 330, 880];               // x0,y0,x1,y1 (a flat slab at the bottom)
+let cuts = [];                                       // [x, y, r] circles subtracted from the rock
+function sdf(x, y) {
+  let d = 1e9;
+  for (const [cx, cy, r] of rockCircles) d = Math.min(d, Math.hypot(x - cx, y - cy) - r);
+  const [x0, y0, x1, y1] = rockBox, bx = Math.max(x0 - x, x - x1), by = Math.max(y0 - y, y - y1);
+  d = Math.min(d, Math.hypot(Math.max(bx, 0), Math.max(by, 0)) + Math.min(Math.max(bx, by), 0));
+  for (const [cx, cy, r] of cuts) d = Math.max(d, r - Math.hypot(x - cx, y - cy));
+  return d;
+}
+
+// ---- quadtree. node = {x,y,s,d, kids:null|[4], v:0|1}
+let maxDepth = 8, rebuilt = 0;
+function build(x, y, s, d) {
+  rebuilt++;
+  const n = { x, y, s, d, kids: null, v: 0 };
+  const sd = sdf(x + s / 2, y + s / 2), h = s * Math.SQRT1_2;
+  if (sd > h) return n;                              // all empty
+  if (sd < -h) { n.v = 1; return n; }                // all solid
+  if (d >= maxDepth) { n.v = sd < 0 ? 1 : 0; return n; }
+  const k = s / 2;
+  n.kids = [build(x, y, k, d + 1), build(x + k, y, k, d + 1), build(x, y + k, k, d + 1), build(x + k, y + k, k, d + 1)];
+  return merge(n);
+}
+function merge(n) {                                  // cells merge back when all 4 kids are the same leaf value
+  const k = n.kids;
+  if (k.every(c => !c.kids && c.v === k[0].v)) { n.v = k[0].v; n.kids = null; }
+  return n;
+}
+function refine(n, cx, cy, r) {                      // rebuild only cells the brush touches
+  const nx = Math.max(n.x, Math.min(cx, n.x + n.s)), ny = Math.max(n.y, Math.min(cy, n.y + n.s));
+  if (Math.hypot(nx - cx, ny - cy) > r) return n;    // untouched: keep as-is
+  if (!n.kids) return build(n.x, n.y, n.s, n.d);
+  n.kids = n.kids.map(c => refine(c, cx, cy, r));
+  return merge(n);
+}
+let root;
+function rebuildAll() { rebuilt = 0; root = build(0, 0, W, 0); }
+function carve(x, y, r) { cuts.push([x, y, r]); rebuilt = 0; root = refine(root, x, y, r); }
+function lookup(x, y) {                              // returns the root-to-leaf path
+  const path = [root]; let n = root;
+  while (n.kids) { n = n.kids[(x >= n.x + n.s / 2 ? 1 : 0) + (y >= n.y + n.s / 2 ? 2 : 0)]; path.push(n); }
+  return path;
+}
+
+// ---- stats; DAG dedupe = hash each node by (child ids) so identical subtrees share one id
+function stats() {
+  let nodes = 0, leaves = 0, depth = 0;
+  const ids = new Map(), uses = new Map();           // key -> id ; id -> occurrence count
+  (function walk(n) {
+    nodes++; depth = Math.max(depth, n.d);
+    let key;
+    if (n.kids) key = 'N' + n.kids.map(c => walk(c)).join(',');
+    else { leaves++; key = 'L' + n.v; }
+    if (!ids.has(key)) ids.set(key, ids.size);
+    const id = ids.get(key); uses.set(id, (uses.get(id) || 0) + 1); n.id = id;
+    return id;
+  })(root);
+  const cells = 4 ** maxDepth;
+  return { nodes, leaves, depth, cells, bytes: nodes * NODE_BYTES, uniBytes: cells, dagNodes: ids.size,
+           dagBytes: ids.size * NODE_BYTES, uses };
+}
+const fmt = n => n.toLocaleString('en-US');
+
+// ---- drawing
+let S, ox, oy, hoverPath = null, st;
+function resize() { cv.width = cv.clientWidth; cv.height = cv.clientHeight; S = Math.min(cv.width, cv.height) / W; ox = (cv.width - W * S) / 2; oy = (cv.height - W * S) / 2; draw(); }
+function draw() {
+  ctx.fillStyle = '#0c0d10'; ctx.fillRect(0, 0, cv.width, cv.height);
+  const lines = $('grid').checked, dag = $('dag').checked;
+  ctx.strokeStyle = 'rgba(120,160,220,.35)'; ctx.lineWidth = 1;
+  (function paint(n) {
+    if (n.kids) { n.kids.forEach(paint); return; }
+    const x = ox + n.x * S, y = oy + n.y * S, s = n.s * S;
+    ctx.fillStyle = n.v ? '#8a8d93' : '#1a1c21'; ctx.fillRect(x, y, s, s);
+    if (dag && st.uses.get(n.id) > 1) { ctx.fillStyle = 'rgba(60,200,220,.28)'; ctx.fillRect(x, y, s, s); }
+    if (lines) ctx.strokeRect(x + .5, y + .5, s, s);
+  })(root);
+  if (hoverPath) hoverPath.forEach((n, i) => {
+    ctx.strokeStyle = `hsl(${40 + i * 25},95%,60%)`; ctx.lineWidth = 2;
+    ctx.strokeRect(ox + n.x * S, oy + n.y * S, n.s * S, n.s * S);
+  });
+  ctx.strokeStyle = '#555'; ctx.lineWidth = 1; ctx.strokeRect(ox, oy, W * S, W * S);
+}
+function refresh() {
+  st = stats();
+  $('dv').textContent = maxDepth; $('rv').textContent = $('rad').value;
+  const side = 2 ** maxDepth;
+  $('big').innerHTML = `uniform: ${fmt(st.cells)} cells, quadtree: ${fmt(st.leaves)} leaves → ${fmt(Math.round(st.cells / st.leaves))}× smaller`;
+  const row = (a, b) => `<tr><td>${a}</td><td>${b}</td></tr>`;
+  $('stats').innerHTML =
+    row(`finest grid`, `${side}×${side}`) + row('nodes (all)', fmt(st.nodes)) + row('leaves', fmt(st.leaves)) +
+    row('max depth reached', st.depth) + row('cells rebuilt by last edit', fmt(rebuilt)) +
+    row('quadtree bytes = nodes × 17', fmt(st.bytes)) + row('uniform bytes = cells × 1', fmt(st.uniBytes)) +
+    row('DAG nodes (unique subtrees)', fmt(st.dagNodes)) +
+    row('DAG bytes = unique × 17', fmt(st.dagBytes)) + row('DAG saves vs tree', (100 * (1 - st.dagNodes / st.nodes)).toFixed(1) + '%');
+  draw();
+}
+
+// ---- UI handlers
+function setDepth(d) { maxDepth = d; rebuildAll(); refresh(); }
+function reset() { cuts = []; rebuildAll(); refresh(); }
+function toWorld(e) { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left - ox) / S, (e.clientY - r.top - oy) / S]; }
+function hover(x, y) {
+  if (x < 0 || y < 0 || x >= W || y >= W) { hoverPath = null; $('path').textContent = 'move the mouse over the rock'; return draw(); }
+  hoverPath = lookup(x, y); const leaf = hoverPath.at(-1);
+  $('path').innerHTML = `lookup = ${hoverPath.length - 1} tree steps (not O(1)). Leaf at depth ${leaf.d}, ${leaf.v ? 'solid' : 'empty'}, ` +
+    `size ${(leaf.s).toFixed(1)} units.<br>path: root` + hoverPath.slice(1).map((n, i) => ' → ' + ['NW', 'NE', 'SW', 'SE'][hoverPath[i].kids.indexOf(n)]).join('');
+  draw();
+}
+let down = false;
+cv.onmousedown = e => { down = true; cv.onmousemove(e); };
+addEventListener('mouseup', () => down = false);
+cv.onmousemove = e => {
+  const [x, y] = toWorld(e); hover(x, y);
+  if (down && x >= 0 && y >= 0 && x < W && y < W) { carve(x, y, +$('rad').value); refresh(); hover(x, y); }
+};
+cv.onmouseleave = () => hover(-1, -1);
+$('depth').oninput = e => setDepth(+e.target.value);
+$('rad').oninput = refresh; $('grid').onchange = draw; $('dag').onchange = draw;
+$('reset').onclick = reset;
+addEventListener('resize', resize);
+
+// ---- init + selftest
+rebuildAll(); refresh(); resize();
+if (location.search.includes('selftest')) {
+  try {
+    const need = (c, m) => { if (!c) throw new Error(m); };
+    setDepth(5); const l5 = st.leaves; setDepth(8); const l8 = st.leaves;
+    need(l8 > l5, `depth 8 leaves ${l8} not > depth 5 ${l5}`);
+    need(l8 < st.cells / 20, `leaves ${l8} not << uniform ${st.cells}`);
+    const before = st.nodes; carve(500, 520, 80); refresh();
+    need(st.nodes !== before, 'carve did not change node count');
+    need(rebuilt > 0 && rebuilt < st.nodes, 'carve rebuilt count wrong');
+    need(sdf(500, 520) > 0, 'carved point still solid');
+    need(st.dagNodes < st.nodes, `dag ${st.dagNodes} vs nodes ${st.nodes}`);
+    hover(500, 300); need(hoverPath.length - 1 === hoverPath.at(-1).d, 'path length != depth');
+    $('dag').checked = true; draw();
+    const nc = st.nodes; reset(); need(st.nodes !== nc, 'reset did not change nodes');
+    $('selftest').textContent = `PASS depth5=${fmt(l5)} depth8=${fmt(l8)} leaves of ${fmt(4 ** 8)} cells, carve ${before}->${nc} nodes, dag ${st.dagNodes}<=${st.nodes}`;
+  } catch (e) { $('selftest').textContent = 'FAIL ' + e.message; }
+}
+</script></body></html>

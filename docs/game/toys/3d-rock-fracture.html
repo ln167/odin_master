@@ -1,0 +1,902 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>3D - Rock fracture (bonded cell complex)</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #111418; color: #d6dae0; font: 13px/1.4 system-ui, sans-serif; }
+  body { display: flex; }
+  #side { width: 320px; flex: none; padding: 10px 14px; box-sizing: border-box; overflow-y: auto; background: #181c22; border-right: 1px solid #2a3038; }
+  #main { flex: 1; position: relative; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; }
+  h1 { font-size: 16px; margin: 6px 0 8px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: #8a94a3; margin: 14px 0 4px; }
+  a { color: #7fb6ff; }
+  label { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 4px 0; }
+  input[type=range] { width: 140px; }
+  select, button { background: #232933; color: #d6dae0; border: 1px solid #3a4250; border-radius: 3px; padding: 2px 6px; }
+  #stats, #inspect, #matrec { font: 12px/1.5 ui-monospace, monospace; white-space: pre; background: #12161b; padding: 6px; border-radius: 3px; overflow-x: auto; }
+  #verdict { font-weight: bold; margin: 6px 0; }
+  ul { margin: 2px 0; padding-left: 18px; }
+  p { margin: 4px 0; }
+  #selftest { position: absolute; right: 6px; bottom: 4px; margin: 0; font-size: 10px; color: #6a7380; }
+</style>
+</head>
+<body>
+<div id="side">
+  <a href="index.html">&larr; all toys</a>
+  <h1>3D - Rock fracture (bonded cell complex)</h1>
+  <h2>What it is</h2>
+  <p>The rock is a complex of irregular <b>convex cells</b> (anisotropic Voronoi, squashed along bedding, cut by joint/bed planes) glued by <b>bonds</b> on their shared faces.
+  The material sets cell shape and the bond law. A break is a <b>min-cut</b> over the bond graph, so cracks run along cell faces and every piece has sharp planar facets.
+  The hammer refines cells on demand by splitting them with a few extra planes (flakes); plug-and-feather splits cells along the drilled plane so the plane exists in the complex.</p>
+  <h2>Controls</h2>
+  <p style="color:#8a94a3">Left-drag rotate, wheel zoom, right/shift-drag pan, click = use tool. Plug-and-feather: drag a line across the rock top, then Drive wedges.</p>
+  <label>Material <select id="mat">
+    <option value="granite" selected>granite</option>
+    <option value="sandstone">sandstone</option>
+    <option value="slate">slate</option>
+  </select></label>
+  <label>Seed <input id="seed" type="range" min="1" max="40" step="1" value="3"><span id="seedV"></span></label>
+  <label>Tool <select id="tool">
+    <option value="hammer" selected>hammer / pick (chip)</option>
+    <option value="sledge">sledge (break)</option>
+    <option value="feather">plug-and-feather (drag line)</option>
+  </select></label>
+  <label>Energy &times; <input id="emul" type="range" min="0.25" max="4" step="0.25" value="1"><span id="emulV"></span></label>
+  <label>Show cells <input id="cellsOn" type="checkbox"></label>
+  <label><button id="reset">Reset rock</button> <button id="wedge">Drive wedges</button></label>
+  <div id="verdict">Click the rock.</div>
+  <h2>Active material record</h2>
+  <div id="matrec"></div>
+  <h2>Inspect (hover)</h2>
+  <div id="inspect">-</div>
+  <h2>Live stats</h2>
+  <div id="stats"></div>
+  <h2>Good at</h2>
+  <ul>
+    <li>Every piece is a union of convex cells: flat facets, sharp edges, never round or voxel-stepped.</li>
+    <li>Material is data: cell anisotropy + bond law give granite chunks, sandstone beds, slate plates from the same code.</li>
+    <li>Detail only where it happens: the hammer splits 1-3 cells with flake planes; the drill splits only cells on its plane.</li>
+    <li>Fracture faces are known exactly (bond faces), so they get their own fresh-rock shading.</li>
+  </ul>
+  <h2>Bad at</h2>
+  <ul>
+    <li>Global max-flow per hit; the game needs a local window around the impact.</li>
+    <li>Rigid fragments only collide with the ground and the rock cells (vertex vs cell), not with each other.</li>
+    <li>Cell scale caps crack detail: a crack can't be finer than the cells unless they are refined first.</li>
+    <li>No stress field: the sledge uses damage falloff + min-cut, not real elastic waves.</li>
+  </ul>
+  <h2>In 3D / for our game:</h2>
+  <p>Untouched cells are regenerated from a position hash on demand (seeds per grid cell, same clip code), so intact rock costs 0 bytes; only broken bonds, removed cells and refined pieces are stored (see "game delta" in stats). Fragments carry their cells + a transform.</p>
+</div>
+<div id="main"><canvas id="cv"></canvas><pre id="selftest"></pre></div>
+<script>
+"use strict";
+const selfEl = document.getElementById('selftest');
+window.onerror = (msg, src, line) => { selfEl.textContent = 'FAIL ' + msg + ' @' + line; };
+const $ = id => document.getElementById(id);
+
+// ---- vectors ----
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const mul = (a, s) => [a[0] * s, a[1] * s, a[2] * s];
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const len = a => Math.hypot(a[0], a[1], a[2]);
+const nrm = a => mul(a, 1 / len(a));
+function frame(n) { const t1 = nrm(Math.abs(n[1]) < 0.9 ? cross(n, [0, 1, 0]) : cross(n, [1, 0, 0])); return [t1, cross(n, t1)]; }
+function rng(seed) {
+  let a = seed >>> 0;
+  return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+
+// ---- materials: the record that defines shape statistics + bond law ----
+const MATS = {
+  granite:   { id: 1, stretch: 1.15, bedN: [0.05, 1, 0.03], across: 0.8,  seeds: 600, joints: 2, jointW: 0.3,  bedSpacing: 2.6, bedW: 1,   sigma: 1.0,  chip: 0.16, edge: 1.4,
+               outer: [.50, .49, .47], outer2: [.34, .35, .34], fresh: [.80, .77, .74], fresh2: [.70, .58, .55], speck: 1, band: 0 },
+  sandstone: { id: 2, stretch: 2.0,  bedN: [0.1, 1, 0.05],  across: 0.6,  seeds: 400, joints: 2, jointW: 0.35, bedSpacing: 1.3, bedW: 0.2, sigma: 0.55, chip: 0.22, edge: 0.5,
+               outer: [.60, .44, .30], outer2: [.44, .31, .21], fresh: [.86, .70, .52], fresh2: [.76, .57, .40], speck: 0.15, band: 0.7 },
+  slate:     { id: 3, stretch: 4.0,  bedN: [0.1, 1, 0.85],   across: 0.04, seeds: 470, joints: 1, jointW: 0.5,  bedSpacing: 1.1, bedW: 1,   sigma: 1.2,  chip: 0.10, edge: 0.6,
+               outer: [.25, .27, .30], outer2: [.31, .31, .29], fresh: [.38, .41, .46], fresh2: [.31, .34, .39], speck: 0, band: 0.3 },
+};
+const KIND = ['voronoi', 'joint', 'bed', 'drill', 'fresh'];   // face/bond kinds; 8 = outer surface, 9 = outer bottom (anchored)
+const DRILL_W = 0.06, SHATTER = 0.2, RING = 4;   // RING: seed-grid search radius; a cell is exact when 2 x its radius <= RING x spacing (asserted)
+const TOOLS = { hammer: { e: 1 }, sledge: { e: 6 }, wedge: { e: 10 } };
+
+// ---- convex polyhedra: array of faces {n, d, k, v:[pts CCW about n]}, solid = all n.x <= d ----
+const EPS = 1e-9;
+function sortRing(pts, n) {
+  const c = mul(pts.reduce(add, [0, 0, 0]), 1 / pts.length), u = nrm(sub(pts[0], c)), w = cross(n, u);
+  return pts.map(p => [Math.atan2(dot(sub(p, c), w), dot(sub(p, c), u)), p]).sort((x, y) => x[0] - y[0]).map(x => x[1]);
+}
+function uniq(pts) { const o = []; for (const p of pts) if (!o.some(q => len(sub(p, q)) < EPS)) o.push(p); return o; }
+function dedupe(r) { const o = []; for (const p of r) if (!o.length || len(sub(p, o[o.length - 1])) > EPS) o.push(p); while (o.length > 1 && len(sub(o[0], o[o.length - 1])) <= EPS) o.pop(); return o; }
+const lexLess = (a, b) => a[0] !== b[0] ? a[0] < b[0] : a[1] !== b[1] ? a[1] < b[1] : a[2] < b[2];
+function cutPt(a, b, sa, sb) { if (lexLess(b, a)) { [a, b] = [b, a]; [sa, sb] = [sb, sa]; } return add(a, mul(sub(b, a), sa / (sa - sb))); }
+function clip(P, n, d, k) {           // keep n.x <= d; returns P itself if untouched, null if empty
+  let mx = -Infinity, mn = Infinity;
+  for (const f of P) for (const p of f.v) { const s = dot(n, p) - d; if (s > mx) mx = s; if (s < mn) mn = s; }
+  if (mx <= EPS) return P;
+  if (mn >= -EPS) return null;
+  const out = [], cap = [];
+  for (const f of P) {
+    const v = f.v, m = v.length, s = v.map(p => dot(n, p) - d), nv = [];
+    for (let i = 0; i < m; i++) {
+      const j = (i + 1) % m;
+      if (s[i] <= EPS) { nv.push(v[i]); if (s[i] >= -EPS) cap.push(v[i]); }
+      if ((s[i] < -EPS && s[j] > EPS) || (s[i] > EPS && s[j] < -EPS)) { const p = cutPt(v[i], v[j], s[i], s[j]); nv.push(p); cap.push(p); }
+    }
+    const q = dedupe(nv); if (q.length >= 3) out.push({ n: f.n, d: f.d, k: f.k, o: f.o, v: q });
+  }
+  const c = uniq(cap); if (c.length >= 3) out.push({ n, d, k, v: sortRing(c, n) });
+  return out;
+}
+function volCen(P) {
+  const r = P[0].v[0]; let V = 0, c = [0, 0, 0];
+  for (const f of P) for (let i = 1; i + 1 < f.v.length; i++) {
+    const a = sub(f.v[0], r), b = sub(f.v[i], r), e = sub(f.v[i + 1], r), t = dot(a, cross(b, e)) / 6;
+    V += t; c = add(c, mul(add(add(a, b), e), t / 4));
+  }
+  return { V, c: add(r, mul(c, 1 / V)) };
+}
+function split(P, n, d, k, minV) {   // -> [inside (n.x<=d), outside]; refuses slivers so volume is conserved exactly
+  const A = clip(P, n, d, k); if (A === P) return [P, null]; if (!A) return [null, P];
+  const B = clip(P, mul(n, -1), -d, k), va = volCen(A).V, vb = volCen(B).V;
+  if (va < minV || vb < minV) return va >= vb ? [P, null] : [null, P];
+  return [A, B];
+}
+function polyArea(v, n) { let s = [0, 0, 0]; for (let i = 0; i < v.length; i++) s = add(s, cross(v[i], v[(i + 1) % v.length])); return Math.abs(dot(s, n)) / 2; }
+function overlap(fa, fb) {             // clip polygon fb.v by the edges of fa (both in the same plane)
+  let poly = fb.v;
+  for (let i = 0; i < fa.v.length && poly.length >= 3; i++) {
+    const p = fa.v[i], m = cross(fa.n, sub(fa.v[(i + 1) % fa.v.length], p)), o = [];
+    for (let j = 0; j < poly.length; j++) {
+      const a = poly[j], b = poly[(j + 1) % poly.length], sa = dot(m, sub(a, p)), sb = dot(m, sub(b, p));
+      if (sa >= -EPS) o.push(a);
+      if ((sa < -EPS && sb > EPS) || (sa > EPS && sb < -EPS)) o.push(add(a, mul(sub(b, a), sa / (sa - sb))));
+    }
+    poly = dedupe(o);
+  }
+  return poly.length >= 3 ? poly : null;
+}
+function boxPoly(lo, hi) {
+  const F = [];
+  for (let a = 0; a < 3; a++) for (const s of [-1, 1]) {
+    const n = [0, 0, 0]; n[a] = s; const b = (a + 1) % 3, c = (a + 2) % 3, pts = [];
+    for (const [u, w] of [[0, 0], [1, 0], [1, 1], [0, 1]]) { const p = [0, 0, 0]; p[a] = s > 0 ? hi[a] : lo[a]; p[b] = u ? hi[b] : lo[b]; p[c] = w ? hi[c] : lo[c]; pts.push(p); }
+    F.push({ n, d: s > 0 ? hi[a] : -lo[a], k: 8, v: sortRing(pts, n) });
+  }
+  return F;
+}
+// natural outcrop = union of convex blocks bounded by joint / bedding planes. Blocks that abut share the same plane object, so they
+// fit exactly. Cells straddling a block plane are cut by it; the cut face is the exposed surface (large planar faces, sharp edges).
+// Irregularity = plane jitter, missing / set-back blocks, and exposed edges broken off by oblique planes. Never culls whole cells.
+function outcrop(R, m) {
+  const J = (n0, a) => nrm(add(n0, [(R() - .5) * a, (R() - .5) * a, (R() - .5) * a]));
+  const P = (n0, c, a, k) => { const n = J(n0, a); return { n, d: dot(n, c), k }; };   // plane ~n0 through point c (kind k)
+  const neg = p => ({ n: mul(p.n, -1), d: -p.d, k: p.k });
+  const th = (R() - .5) * .16, X = [Math.cos(th), 0, Math.sin(th)], Z = [-Math.sin(th), 0, Math.cos(th)], mX = mul(X, -1), mZ = mul(Z, -1);
+  const S = m.bedSpacing, B = [];
+  if (m.id === 1) {          // granite: two near-orthogonal joint sets x sheeting; columns of 1-3 sheets, one corner column gone
+    const F1 = [-6.5, -2.8, 0.9, 3.9, 7.6].map(o => P(X, mul(X, o + (R() - .5) * .4), .3, 1));
+    const F2 = [-6, -2.2, 1.8, 6].map(o => P(Z, mul(Z, o + (R() - .5) * .4), .3, 1));
+    const F3 = [-3, S + .2, 2 * S, 3 * S].map(o => P(BED, [0, o + (R() - .5) * .4, 0], .12, 2));
+    const H = [[1, 2, 1], [2, 3, 2], [2, 3, 2]].map(r => r.map(h => Math.max(1, Math.min(3, h - (R() < .3) + (R() < .2)))));
+    H[2][1] = 3; H[R() < .5 ? 0 : 2][R() < .5 ? 0 : 2] = 0;
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) if (H[i][j]) B.push([neg(F1[i]), F1[i + 1], neg(F2[j]), F2[j + 1], neg(F3[0]), P(BED, [0, F3[H[i][j]].d + (R() - .5) * .8, 0], .35, 2)]);   // own sheet top per column
+    B.push([neg(F1[3]), F1[4], neg(F2[1]), F2[2], neg(F3[2]), F3[3]]);   // sheet block cantilevered past the face below (wedge demo)
+  } else if (m.id === 2) {   // sandstone: horizontal beds, each a ledge set back from the one below; one bed overhangs an alcove on +x
+    const ys = [-2]; for (let y = 1 + R() * .4; ; y += S * (.8 + R() * .4)) { ys.push(y); if (y > 7) break; }
+    const L = ys.map(y => P(BED, [0, y, 0], .02, 2)), ko = ys.findIndex(y => y > 4.2), sb = [.05, .4, .9, 1.5].sort(() => R() - .5);   // one side a cliff, one broad ledges
+    let e = [4.6, 7, 6, 6];   // +x, -x, +z, -z extents
+    for (let k = 0; k + 1 < ys.length; k++) {
+      if (k) e = e.map((v, s) => v - sb[s] * (.5 + R()));
+      const cuts = (k === ko ? [-3.2, 3.2] : [-1.5 - R() * 3, 1.5 + R() * 3]).map(z => P(Z, mul(Z, z), .25, 1));
+      for (let s = 0; s <= cuts.length; s++) {
+        const xp = k === ko && s === 1 ? 8 : e[0] - R() * 1.2 - (k === ko - 1) * 1.2;
+        B.push([neg(L[k]), L[k + 1], P(X, mul(X, xp), .3, 1), P(mX, mul(X, -e[1] - (R() - .5) * 1.2), .3, 1),
+                s ? neg(cuts[s - 1]) : P(mZ, mul(Z, -e[3] - (R() - .5) * .8), .3, 1), s < cuts.length ? cuts[s] : P(Z, mul(Z, e[2] + (R() - .5) * .8), .3, 1)]);
+      }
+    }
+  } else {                   // slate: slabs along the steep cleavage (dipping to +z): sawtooth crest of up-dip slab ends, stepped dip slope
+    const ms = []; for (let y = -4; y < 6; y += S * (.7 + R() * .6)) ms.push(y);
+    const L = ms.map(y => P(BED, [0, y, 0], .03, 2)), t = BED[2] / BED[1], ko = ms.findIndex(y => y > 3.8);
+    let zd = 1 + R() * 1.5;
+    for (let k = ms.length - 2; k >= 0; k--) {
+      const mid = (ms[k] + ms[k + 1]) / 2, ov = k === ko || k === ko + 1, zu = Math.max(-6.5, -(6.5 - mid) / t + (R() - .5) * 2.4);
+      const ends = [P(nrm([0, .4, -1]), [0, mid - t * zu, zu], .3, 1), P(nrm([0, -.3, 1]), [0, mid - t * zd, zd], .3, 1)];
+      const cuts = (ov ? [-3.2, 3.2] : [zu + .5 + R() * 2, zu + 3 + R() * 2]).map(z => P(Z, mul(Z, z), .3, 1));
+      for (let s = 0; s <= cuts.length; s++) {
+        const xp = ov && s === 1 ? 7.6 + R() * .6 : 2 + R() * 2.6;   // overhang slabs reach past the scarp (wedge demo)
+        B.push([neg(L[k]), L[k + 1], P(X, mul(X, xp), .3, 1), P(mX, mul(X, -4 - R() * 3), .3, 1), ...ends]
+          .concat(s ? [neg(cuts[s - 1])] : [], s < cuts.length ? [cuts[s]] : []));
+      }
+      zd = Math.min(7, zd + .8 + R() * 1.2);
+    }
+  }
+  // hulls (above ground); then break off exposed edges: an oblique plane through the corner where two exposed faces meet
+  const big = boxPoly([-40, -40, -40], [40, 40, 40]), out = [];
+  const hull = pl => { let Q = big; for (const q of pl) if (!(Q = clip(Q, q.n, q.d, 0))) return null; return clip(Q, [0, -1, 0], 0, 0); };
+  const inB = (pl, p) => pl.every(q => dot(q.n, p) < q.d);
+  for (const pl of B) {
+    const Q = hull(pl); if (!Q) continue;
+    const ex = Q.filter(f => { if (f.n[1] < -.5) return false; const p = add(mul(f.v.reduce(add, [0, 0, 0]), 1 / f.v.length), mul(f.n, .05)); return p[1] > .05 && !B.some(o => o !== pl && inB(o, p)); });
+    for (let t = 0; t < 4 && ex.length >= 2; t++) {
+      if (R() > .75) continue;
+      const f1 = ex[Math.floor(R() * ex.length)], c2 = ex.filter(f => f !== f1 && dot(f.n, f1.n) > -.3), f2 = c2[Math.floor(R() * c2.length)]; if (!f2) continue;
+      const mm = nrm(add(add(mul(f1.n, .5 + R()), mul(f2.n, .5 + R())), mul([R() - .5, R() - .5, R() - .5], .6)));
+      let mx = -1e9; for (const f of Q) for (const v of f.v) mx = Math.max(mx, dot(mm, v));
+      pl.push({ n: mm, d: mx - m.edge * (.5 + R()), k: 0 });
+    }
+    const lo = [1e9, 1e9, 1e9], hi = [-1e9, -1e9, -1e9];
+    for (const f of Q) for (const v of f.v) for (let i = 0; i < 3; i++) { lo[i] = Math.min(lo[i], v[i]); hi[i] = Math.max(hi[i], v[i]); }
+    out.push({ pl, lo, hi });
+  }
+  return out;
+}
+const OUT_V = 520;   // nominal outcrop volume (sets cell size from MAT.seeds)
+
+// ---- state ----
+let MAT, BED, cells, bonds, regionVol, tileErr, cs, simR, nGen, frags, drills, drillPl, last, hover = null, preview = null, colGrid;
+function weak(k, n) { const a = Math.pow(Math.abs(dot(n, BED)), 4); return [1, MAT.jointW, MAT.bedW, DRILL_W, 1][k] * (1 + (MAT.across - 1) * a); }
+function mkCell(P, par) {
+  const { V, c } = volCen(P), lo = [1e9, 1e9, 1e9], hi = [-1e9, -1e9, -1e9];
+  for (const f of P) { f.a = polyArea(f.v, f.n); for (const v of f.v) for (let i = 0; i < 3; i++) { lo[i] = Math.min(lo[i], v[i]); hi[i] = Math.max(hi[i], v[i]); } }
+  const cell = { id: cells.length, f: P, vol: V, cen: c, lo, hi, grp: 0, anch: P.some(f => f.k === 9), bonds: [], par };
+  cells.push(cell); return cell;
+}
+const aabbOv = (a, b) => a.lo[0] <= b.hi[0] + 1e-7 && b.lo[0] <= a.hi[0] + 1e-7 && a.lo[1] <= b.hi[1] + 1e-7 && b.lo[1] <= a.hi[1] + 1e-7 && a.lo[2] <= b.hi[2] + 1e-7 && b.lo[2] <= a.hi[2] + 1e-7;
+function link(a, b, inh) {        // bond = every pair of coincident opposite faces with overlap area > 0
+  for (let i = 0; i < a.f.length; i++) for (let j = 0; j < b.f.length; j++) {
+    const fa = a.f[i], fb = b.f[j];
+    if (fa.k >= 8 || dot(fa.n, fb.n) > -1 + 1e-9 || Math.abs(fa.d + fb.d) > 1e-9) continue;
+    const poly = overlap(fa, fb); if (!poly) continue;
+    const area = polyArea(poly, fa.n); if (area < 1e-9) continue;
+    const pb = inh ? inh(a, b) : null;
+    const bond = { id: bonds.length, a: a.id, b: b.id, fa: i, fb: j, area, kind: fa.k, str: MAT.sigma * weak(fa.k, fa.n) * area, dmg: 0, broken: false, dead: false, poly, n: fa.n,
+                   c: mul(poly.reduce(add, [0, 0, 0]), 1 / poly.length) };
+    if (pb) { bond.str = pb.str / pb.area * area; bond.dmg = pb.dmg; bond.broken = pb.broken; bond.kind = pb.kind; }
+    bonds.push(bond); a.bonds.push(bond.id); b.bonds.push(bond.id);
+  }
+}
+const other = (b, id) => b.a === id ? b.b : b.a;
+
+function generate() {
+  MAT = MATS[$('mat').value]; const seed = +$('seed').value, R = rng(seed * 9973 + MAT.id);
+  simR = rng(seed * 31 + MAT.id * 7); BED = nrm(MAT.bedN);
+  cells = []; bonds = []; frags = []; drills = []; drillPl = null; last = null; hover = null;
+  const k = MAT.stretch, A = x => add(x, mul(BED, (k - 1) * dot(BED, x))), Ai = u => add(u, mul(BED, (1 / k - 1) * dot(BED, u)));
+  // generation box = the outcrop's bounding box + 1 (so no kept cell touches it). Bottom = ground (anchored).
+  const out = outcrop(R, MAT), blo = [1e9, 0, 1e9], bhi = [-1e9, -1e9, -1e9];
+  for (const b of out) for (let i = 0; i < 3; i++) { if (i !== 1) blo[i] = Math.min(blo[i], b.lo[i] - 1); bhi[i] = Math.max(bhi[i], b.hi[i] + 1); }
+  const region = boxPoly(blo, bhi).map(f => f.n[1] < 0 ? { ...f, k: 9 } : f), boxVol = volCen(region).V;
+  // seeds: one per cell of a jittered grid in stretched space u = A x, so world cells are squashed along BED. Seeds up to 1.5h outside
+  // the region are kept too (their cells are clipped to the region, empty ones dropped), so no cell is stretched into a region corner.
+  const h = Math.cbrt(OUT_V * k / MAT.seeds), lo = [1e9, 1e9, 1e9], hi = [-1e9, -1e9, -1e9];
+  for (const f of region) for (const v of f.v) { const u = A(v); for (let i = 0; i < 3; i++) { lo[i] = Math.min(lo[i], u[i] - 1.5 * h); hi[i] = Math.max(hi[i], u[i] + 1.5 * h); } }
+  const G = [0, 1, 2].map(i => Math.ceil((hi[i] - lo[i]) / h) + 1), grid = new Map(), seeds = [];
+  for (let i = 0; i < G[0]; i++) for (let j = 0; j < G[1]; j++) for (let l = 0; l < G[2]; l++) {
+    const u = [lo[0] + (i + .5 + (R() - .5) * .7) * h, lo[1] + (j + .5 + (R() - .5) * .7) * h, lo[2] + (l + .5 + (R() - .5) * .7) * h], s = Ai(u);
+    if (region.every(f => dot(f.n, s) < f.d + 1.5 * h)) { grid.set((i * G[1] + j) * G[2] + l, seeds.length); seeds.push({ u, g: [i, j, l] }); }
+  }
+  const maxM = (P, u) => { let m = 0; for (const f of P) for (const v of f.v) { const e = sub(A(v), u); m = Math.max(m, dot(e, e)); } return m; };
+  const raw = [];
+  seeds.forEach((sd, si) => {
+    const cand = [];
+    for (let a = -RING; a <= RING; a++) for (let b = -RING; b <= RING; b++) for (let c = -RING; c <= RING; c++) {
+      const g = [sd.g[0] + a, sd.g[1] + b, sd.g[2] + c]; if (g.some((x, i) => x < 0 || x >= G[i])) continue;
+      const id = grid.get((g[0] * G[1] + g[1]) * G[2] + g[2]); if (id === undefined || id === si) continue;
+      const du = sub(seeds[id].u, sd.u); cand.push([dot(du, du), id]);
+    }
+    cand.sort((x, y) => x[0] - y[0]);
+    let P = region, m2 = maxM(P, sd.u);
+    for (const [d2, j] of cand) {
+      if (d2 / 4 >= m2) break;
+      const lo_ = si < j ? sd : seeds[j], hi_ = si < j ? seeds[j] : sd;   // canonical pair => the two cells get exactly negated planes
+      let n = A(sub(hi_.u, lo_.u)), d = (dot(hi_.u, hi_.u) - dot(lo_.u, lo_.u)) / 2; const L = len(n); n = mul(n, 1 / L); d /= L;
+      if (si > j) { n = mul(n, -1); d = -d; }
+      const Q = clip(P, n, d, 0); if (!Q) return;   // an outside seed whose cell misses the region
+      if (Q !== P) { P = Q; m2 = maxM(P, sd.u); }
+    }
+    if (4 * m2 > RING * RING * h * h) throw new Error('voronoi search ring too small');
+    raw.push(P);
+  });
+  // clip the cells to the outcrop: a cell straddling a block's planes is cut by them, the piece inside the block is kept and the rest
+  // goes on to the next block. Joint (kind 1) / bed (kind 2) planes between abutting blocks become weak coplanar faces inside the rock.
+  const mv = 1e-3 * h * h * h / k, bbox = P => { const lo = [1e9, 1e9, 1e9], hi = [-1e9, -1e9, -1e9]; for (const f of P) for (const v of f.v) for (let i = 0; i < 3; i++) { lo[i] = Math.min(lo[i], v[i]); hi[i] = Math.max(hi[i], v[i]); } return { lo, hi }; };
+  let rest = raw; const kept = [];
+  for (const b of out) {
+    const nx = [];
+    for (const P of rest) {
+      if (!aabbOv(P.bb || (P.bb = bbox(P)), b)) { nx.push(P); continue; }
+      let cur = P;
+      for (const q of b.pl) { const [i, o] = split(cur, q.n, q.d, q.k, mv); if (o) nx.push(o); if (!(cur = i)) break; }
+      if (cur) kept.push(cur);
+    }
+    rest = nx;
+  }
+  for (const P of kept) mkCell(P, undefined).keep = true;
+  for (const P of rest) mkCell(P, undefined).keep = false;
+  tileErr = Math.abs(cells.reduce((s, c) => s + c.vol, 0) - boxVol) / boxVol;
+  const order = cells.map(c => c).sort((a, b) => a.lo[0] - b.lo[0]);
+  for (let x = 0; x < order.length; x++) for (let y = x + 1; y < order.length; y++) {
+    if (order[y].lo[0] > order[x].hi[0] + 1e-7) break;
+    if (aabbOv(order[x], order[y])) link(order[x], order[y], null);
+  }
+  // keep the outcrop: renumber kept cells and kept-kept bonds; a kept face bonded to a dropped cell is exposed (weathered surface)
+  const all = cells, allB = bonds; cells = []; bonds = [];
+  for (const c of all) if (c.keep) { c.id = cells.length; c.bonds = []; cells.push(c); }
+  for (const b of allB) {
+    const A = all[b.a], B = all[b.b];
+    if (A.keep && B.keep) { b.a = A.id; b.b = B.id; b.id = bonds.length; bonds.push(b); A.bonds.push(b.id); B.bonds.push(b.id); }
+    else if (A.keep || B.keep) { const f = A.keep ? A.f[b.fa] : B.f[b.fb]; f.o = true; f.ea = (f.ea || 0) + b.area; }
+  }
+  nGen = cells.length; regionVol = rockVol(); cs = Math.cbrt(regionVol / nGen);
+  buildRock(); showMat();
+}
+
+// replace parent cells by pieces; bonds to old neighbours inherit strength-per-area / damage / kind from the parent bond
+function replaceCells(parents, pieces) {
+  const pmap = new Map(), nb = new Set(), key = (a, b) => a < b ? a + ',' + b : b + ',' + a;
+  for (const p of parents) p.grp = -1;
+  for (const p of parents) for (const bi of p.bonds) {
+    const b = bonds[bi]; if (b.dead) continue; b.dead = true; pmap.set(key(b.a, b.b), b);
+    const o = cells[other(b, p.id)]; o.bonds = o.bonds.filter(x => x !== bi); if (o.grp === 0) nb.add(o);
+  }
+  const fresh = pieces.map(([P, par]) => mkCell(P, par));
+  const inh = (a, b) => { const pa = a.par ?? a.id, pb = b.par ?? b.id; return pa === pb ? null : pmap.get(key(pa, pb)) || null; };
+  for (let i = 0; i < fresh.length; i++) {
+    for (const o of nb) if (aabbOv(fresh[i], o)) link(fresh[i], o, inh);
+    for (let j = i + 1; j < fresh.length; j++) if (aabbOv(fresh[i], fresh[j])) link(fresh[i], fresh[j], inh);
+  }
+  return fresh;
+}
+
+// ---- Dinic max-flow (ported from 3d-p4-mincut) over the bond graph ----
+const INF = 1e9, FEPS = 1e-12;
+let head, nxt, to, cap, orig, ec, level, it, bq, S, T;
+function addEdge(u, v, c1, c2) {
+  to[ec] = v; cap[ec] = c1; orig[ec] = c1; nxt[ec] = head[u]; head[u] = ec++;
+  to[ec] = u; cap[ec] = c2; orig[ec] = c2; nxt[ec] = head[v]; head[v] = ec++;
+}
+function bfsLevel() {
+  level.fill(-1); level[S] = 0; let qh = 0, qt = 0; bq[qt++] = S;
+  while (qh < qt) { const u = bq[qh++]; for (let e = head[u]; e !== -1; e = nxt[e]) { const v = to[e]; if (cap[e] > FEPS && level[v] < 0) { level[v] = level[u] + 1; bq[qt++] = v; } } }
+  return level[T] >= 0;
+}
+function dfs(u, f) {
+  if (u === T) return f;
+  for (; it[u] !== -1; it[u] = nxt[it[u]]) {
+    const e = it[u], v = to[e];
+    if (cap[e] > FEPS && level[v] === level[u] + 1) { const d = dfs(v, Math.min(f, cap[e])); if (d > FEPS) { cap[e] -= d; cap[e ^ 1] += d; return d; } }
+  }
+  return 0;
+}
+function minCut(src) {
+  const N = cells.length; S = N; T = N + 1;
+  const M = 2 * bonds.length + 2 * src.length + 2 * N + 8;
+  head = new Int32Array(N + 2).fill(-1); nxt = new Int32Array(M); to = new Int32Array(M); cap = new Float64Array(M); orig = new Float64Array(M);
+  level = new Int32Array(N + 2); bq = new Int32Array(N + 2); ec = 0;
+  const arcBond = [];
+  for (const b of bonds) if (!b.dead && !b.broken && cells[b.a].grp === 0 && cells[b.b].grp === 0) { const c = b.str * (1 - b.dmg); addEdge(b.a, b.b, c, c); arcBond.push(b); }
+  for (const c of src) addEdge(S, c.id, INF, 0);
+  for (const c of cells) if (c.grp === 0 && c.anch) addEdge(c.id, T, INF, 0);
+  let flow = 0;
+  while (bfsLevel()) { it = Int32Array.from(head); let f; while ((f = dfs(S, INF)) > FEPS) flow += f; }
+  const side = new Uint8Array(N + 2), q = [S]; side[S] = 1;
+  while (q.length) { const u = q.pop(); for (let e = head[u]; e !== -1; e = nxt[e]) if (cap[e] > FEPS && !side[to[e]]) { side[to[e]] = 1; q.push(to[e]); } }
+  const cut = arcBond.filter(b => side[b.a] !== side[b.b]);
+  return { flow, side, cut, cutSum: cut.reduce((s, b) => s + b.str * (1 - b.dmg), 0) };
+}
+
+// ---- fragments: rigid bodies made of cells ----
+function makeFragment(list, vel, spin, chip) {
+  const id = frags.length + 1;
+  for (const c of list) c.grp = id;
+  for (const c of list) for (const bi of c.bonds) { const b = bonds[bi]; if (!b.dead && cells[other(b, c.id)].grp !== id) b.broken = true; }
+  let m = 0, c0 = [0, 0, 0];
+  for (const c of list) { m += c.vol; c0 = add(c0, mul(c.cen, c.vol)); }
+  c0 = mul(c0, 1 / m);
+  const vs = []; for (const c of list) for (const f of c.f) for (const v of f.v) vs.push(v);
+  const verts = uniq(vs.length > 600 ? vs.filter((_, i) => i % 3 === 0) : vs);
+  let r2 = 0; for (const v of verts) r2 += dot(sub(v, c0), sub(v, c0));
+  const tri = [], lines = []; for (const c of list) cellFaces(c, tri, lines);
+  const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(tri), gl.STATIC_DRAW);
+  const f = { id, cells: list, chip, mass: m, I: 0.4 * m * r2 / verts.length + 1e-9, c0, verts, pos: c0.slice(), R: [1, 0, 0, 0, 1, 0, 0, 0, 1], v: vel, w: spin, still: 0, age: 0, sleep: false, buf, n: tri.length / 7 };
+  frags.push(f); return f;
+}
+// pieces not connected to an anchored cell by intact bonds fall; optional shatter breaks weak bonds inside the moving set
+function detach(moving, shatter, n, speed, chip) {
+  const seen = new Uint8Array(cells.length), q = [];
+  for (const c of cells) if (c.grp === 0 && c.anch && !moving.has(c.id)) { seen[c.id] = 1; q.push(c.id); }
+  while (q.length) {
+    const c = cells[q.pop()];
+    for (const bi of c.bonds) { const b = bonds[bi], o = other(b, c.id); if (!b.dead && !b.broken && !seen[o] && cells[o].grp === 0 && !moving.has(o)) { seen[o] = 1; q.push(o); } }
+  }
+  for (const c of cells) if (c.grp === 0 && !seen[c.id]) moving.add(c.id);
+  if (shatter) for (const id of moving) for (const bi of cells[id].bonds) { const b = bonds[bi]; if (!b.dead && !b.broken && b.str / (b.area * MAT.sigma) * (1 - b.dmg) < SHATTER) b.broken = true; }
+  const done = new Set(), out = [];
+  for (const id of moving) {
+    if (done.has(id)) continue;
+    const list = [], st = [id]; done.add(id);
+    while (st.length) { const c = cells[st.pop()]; list.push(c); for (const bi of c.bonds) { const b = bonds[bi], o = other(b, c.id); if (!b.dead && !b.broken && moving.has(o) && !done.has(o)) { done.add(o); st.push(o); } } }
+    const j = [simR() - .5, simR() - .5, simR() - .5];
+    out.push(makeFragment(list, add(mul(n, speed), mul(j, speed * 0.5)), mul([simR() - .5, simR() - .5, simR() - .5], speed * 1.5), chip));
+  }
+  return out;
+}
+
+// ---- the one entry point for every tool ----
+function cellAt(p) {
+  let best = null, bd = 1e9;
+  for (const c of cells) if (c.grp === 0) { const d = len(sub(c.cen, p)); if (c.f.every(f => dot(f.n, p) <= f.d + 1e-6)) return c; if (d < bd) { bd = d; best = c; } }
+  return best;
+}
+function impact(p, n, tool, energy) {
+  const t0 = performance.now(); let res;
+  if (tool === 'hammer') res = chip(p, n, energy);
+  else {
+    let src = [];
+    if (tool === 'sledge') {
+      const hit = cellAt(p);
+      for (const c of cells) if (c.grp === 0 && (c === hit || len(sub(c.cen, p)) < 0.9 * cs)) src.push(c);
+      // damage spreads along intact bonds with distance falloff
+      const Rd = 2.6 * cs, dist = new Map(), q = [];
+      for (const c of src) { dist.set(c.id, len(sub(c.cen, p))); q.push(c.id); }
+      while (q.length) {
+        const c = cells[q.shift()], dc = dist.get(c.id);
+        for (const bi of c.bonds) { const b = bonds[bi], o = other(b, c.id); if (b.dead || b.broken || cells[o].grp !== 0) continue;
+          const nd = dc + len(sub(cells[o].cen, c.cen)); if (nd < Rd && nd < (dist.get(o) ?? 1e9)) { dist.set(o, nd); q.push(o); } }
+      }
+      for (const b of bonds) if (!b.dead && !b.broken && dist.has(b.a) && dist.has(b.b)) { const dd = (dist.get(b.a) + dist.get(b.b)) / 2; b.dmg = Math.min(0.95, b.dmg + 0.45 * Math.max(0, 1 - dd / Rd)); }
+    } else {            // wedges: load the last drilled plane; the block is the smaller side
+      if (!drillPl) return null;
+      const s = c => dot(drillPl.n, c.cen) - drillPl.d; let vp = 0, vn = 0;
+      for (const c of cells) if (c.grp === 0) { if (s(c) > 0) vp += c.vol; else vn += c.vol; }
+      const sg = vp < vn ? 1 : -1;
+      for (const b of bonds) if (!b.dead && !b.broken && b.kind === 3 && cells[b.a].grp === 0 && cells[b.b].grp === 0) {
+        b.dmg = Math.min(0.9, b.dmg + 0.3);
+        for (const id of [b.a, b.b]) if (s(cells[id]) * sg > 0 && !src.includes(cells[id])) src.push(cells[id]);
+      }
+      n = mul(drillPl.n, sg);
+    }
+    if (!src.length || src.some(c => c.anch)) res = { flow: Infinity, cut: [], broke: false, pieces: [] };
+    else {
+      res = minCut(src); res.broke = res.flow < energy; res.pieces = [];
+      if (res.broke) {
+        for (const b of res.cut) b.broken = true;
+        const mv = new Set(); for (const c of cells) if (c.grp === 0 && res.side[c.id]) mv.add(c.id);
+        res.pieces = detach(mv, tool === 'sledge', n, tool === 'sledge' ? Math.min(4, 1 + (energy - res.flow) * 0.5) : 0.4, false);
+        if (tool === 'wedge') drills = [];
+      }
+    }
+  }
+  res.ms = performance.now() - t0; res.tool = tool; res.energy = energy; last = res;
+  buildRock(); return res;
+}
+// hammer: refine the hit cells with a flake polytope K (tilted base plane + 3 flaring side planes), chips = cells inside K
+function chip(p, n, E) {
+  const depth = MAT.chip * Math.sqrt(E), r = depth * 2.6, [t1, t2] = frame(n);
+  const nb = nrm(add(n, add(mul(t1, (simR() - .5) * .5), mul(t2, (simR() - .5) * .5))));
+  const K = [{ n: mul(nb, -1), d: -dot(nb, sub(p, mul(n, depth))) }];
+  for (let i = 0; i < 3; i++) {
+    const a = (i + simR() * .4) * 2.0944, dir = add(mul(t1, Math.cos(a)), mul(t2, Math.sin(a))), m = nrm(sub(dir, mul(n, .5)));
+    K.push({ n: m, d: dot(m, add(p, mul(dir, r))) });
+  }
+  const box = { lo: sub(p, [2 * r, 2 * r, 2 * r]), hi: add(p, [2 * r, 2 * r, 2 * r]) }, minV = 1e-5 * cs * cs * cs;
+  const parents = [], pieces = [], chipIdx = [];
+  for (const c of cells) {
+    if (c.grp !== 0 || !aabbOv(c, box)) continue;
+    let cur = c.f; const rem = [];
+    for (const pl of K) { const [i, o] = split(cur, pl.n, pl.d, 4, minV); if (o) rem.push(o); cur = i; if (!cur) break; }
+    if (!cur || !rem.length) continue;          // K misses this cell, or swallows it whole (keep it whole: no refinement needed)
+    parents.push(c); for (const P of rem) pieces.push([P, c.id]); chipIdx.push(pieces.length); pieces.push([cur, c.id]);
+  }
+  const res = { flow: 0, cut: [], broke: false, pieces: [], chipVol: 0 };
+  if (!parents.length) return res;
+  const fresh = replaceCells(parents, pieces);
+  for (const i of chipIdx) { const c = fresh[i]; res.chipVol += c.vol; res.pieces.push(makeFragment([c], add(mul(n, 2.5), mul([simR() - .5, simR() - .5, simR() - .5], 1.5)), mul([simR() - .5, simR() - .5, simR() - .5], 12), true)); }
+  for (const f of detach(new Set(), false, n, 1.5, true)) { res.chipVol += f.mass; res.pieces.push(f); }
+  res.broke = true; return res;
+}
+// plug-and-feather: a row of holes along p0->p1 = a vertical plane; split the cells it crosses so the plane exists, bonds across it are weak.
+// Each cell gets its own slightly tilted (<= 6 deg) and offset (<= 0.1 cell) copy of the plane, so the split face is rough and stepped, not sawn.
+function drill(p0, p1) {
+  const dir = sub(p1, p0); dir[1] = 0; const L = len(dir), td = mul(dir, 1 / L), n = nrm(cross(td, [0, 1, 0])), d = dot(n, p0), [t1, t2] = frame(n);
+  const parents = [], pieces = [], minV = 1e-4 * cs * cs * cs, T = Math.tan(6 * Math.PI / 180);
+  for (const c of cells) {
+    if (c.grp !== 0) continue; const t = dot(sub(c.cen, p0), td);
+    if (t < -0.3 * cs || t > L + 0.3 * cs) continue;
+    const a0 = simR() * 2 * Math.PI, tl = simR() * T, m = nrm(add(n, add(mul(t1, Math.cos(a0) * tl), mul(t2, Math.sin(a0) * tl))));
+    const q = add(c.cen, mul(n, d - dot(n, c.cen) + (simR() * 2 - 1) * 0.1 * cs));   // point on the offset plane, near this cell
+    const [a, b] = split(c.f, m, dot(m, q), 3, minV); if (!a || !b) continue;
+    parents.push(c); pieces.push([a, c.id], [b, c.id]);
+  }
+  replaceCells(parents, pieces);
+  drillPl = { n, d, p0, p1 }; drills.push([p0, p1]);
+  buildRock(); return parents.length;
+}
+
+// ---- WebGL ----
+const cv = $('cv');
+const gl = cv.getContext('webgl2', { preserveDrawingBuffer: true, antialias: true });
+const VS = `#version 300 es
+in vec3 a_pos; in vec3 a_nrm; in float a_kind;
+uniform mat4 u_vp; uniform mat4 u_model;
+out vec3 v_p; out vec3 v_n; out float v_k;
+void main(){ v_p = a_pos; v_n = a_nrm; v_k = a_kind; gl_Position = u_vp * (u_model * vec4(a_pos, 1.0)); }`;
+const FS = `#version 300 es
+precision highp float;
+in vec3 v_p; in vec3 v_n; in float v_k;
+uniform mat4 u_model; uniform vec3 u_o1; uniform vec3 u_o2; uniform vec3 u_f1; uniform vec3 u_f2; uniform vec3 u_bed; uniform float u_speck; uniform float u_band;
+out vec4 o;
+float h3(vec3 p){ p = fract(p * vec3(.1031, .1030, .0973)); p += dot(p, p.yxz + 33.33); return fract((p.x + p.y) * p.z); }
+float vn(vec3 x){ vec3 i = floor(x); vec3 f = fract(x); f = f * f * (3. - 2. * f);
+  float a = h3(i), b = h3(i + vec3(1,0,0)), c = h3(i + vec3(0,1,0)), d = h3(i + vec3(1,1,0));
+  float e = h3(i + vec3(0,0,1)), g = h3(i + vec3(1,0,1)), h = h3(i + vec3(0,1,1)), k = h3(i + vec3(1,1,1));
+  return mix(mix(mix(a, b, f.x), mix(c, d, f.x), f.y), mix(mix(e, g, f.x), mix(h, k, f.x), f.y), f.z); }
+float fbm(vec3 p){ float s = 0.; float a = .5; for (int i = 0; i < 4; i++) { s += a * vn(p); p = p * 2.07 + vec3(1.3, 7.1, 4.7); a *= .5; } return s; }
+void main(){
+  float gr = step(1.5, v_k); float fr = step(.5, v_k) * (1. - gr);
+  vec3 n = normalize(v_n);
+  float fq = mix(1.8, 5.0, fr); float amp = mix(.3, .55, fr);
+  vec3 p = v_p * fq; float e = .02; float w = .35 * (1. - fr);   // + a fine weathered grain octave on the outer surface
+  #define H(q) (fbm(q) + w * fbm((q) * 4.3 + 11.))
+  float f0 = H(p);
+  vec3 g = (vec3(H(p + vec3(e, 0., 0.)), H(p + vec3(0., e, 0.)), H(p + vec3(0., 0., e))) - f0) / e;
+  vec3 nb = normalize(n - amp * (g - n * dot(n, g)));
+  vec3 wn = normalize(mat3(u_model) * nb);
+  float m1 = fbm(v_p * 1.1 + 5.); float sp = vn(v_p * 13.); float sp2 = vn(v_p * 19. + 3.);
+  float band = sin(dot(v_p, u_bed) * 6. + m1 * 3.) * .5 + .5;
+  vec3 outer = mix(u_o1, u_o2, smoothstep(.35, .65, m1)) * (1. - .3 * u_band * band) * (.7 + .55 * f0);
+  outer = mix(outer, outer * .6, u_speck * smoothstep(.7, .8, sp) * .5);
+  vec3 fresh = mix(u_f1, u_f2, smoothstep(.35, .65, fbm(v_p * 3.1))) * (1. - .18 * u_band * band) * (.85 + .3 * f0);
+  fresh = mix(fresh, vec3(.12, .12, .13), u_speck * smoothstep(.68, .78, sp));
+  fresh = mix(fresh, vec3(.96, .94, .9), u_speck * smoothstep(.72, .8, sp2) * .6);
+  vec3 ground = mix(vec3(.30, .27, .21), vec3(.22, .21, .17), smoothstep(.3, .7, m1)) * (.8 + .4 * f0);
+  vec3 c = mix(mix(outer, fresh, fr), ground, gr);
+  vec3 L = normalize(vec3(.45, .8, .35));
+  float dif = max(dot(wn, L), 0.); float hemi = .5 + .5 * wn.y;
+  vec3 col = c * (vec3(1., .95, .86) * dif * 1.15 + vec3(.33, .38, .48) * hemi * .65);
+  o = vec4(pow(col, vec3(1. / 2.2)), 1.);
+}`;
+const LVS = `#version 300 es
+in vec3 a_pos; uniform mat4 u_vp; uniform mat4 u_model;
+void main(){ gl_Position = u_vp * (u_model * vec4(a_pos, 1.0)); }`;
+const LFS = `#version 300 es
+precision mediump float; uniform vec4 u_col; out vec4 o; void main(){ o = u_col; }`;
+function shader(type, src) { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
+function program(vs, fs) {
+  const p = gl.createProgram(); gl.attachShader(p, shader(gl.VERTEX_SHADER, vs)); gl.attachShader(p, shader(gl.FRAGMENT_SHADER, fs));
+  gl.bindAttribLocation(p, 0, 'a_pos'); gl.linkProgram(p); if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p)); return p;
+}
+const prog = program(VS, FS), lprog = program(LVS, LFS);
+const U = {}; for (const n of ['u_vp', 'u_model', 'u_o1', 'u_o2', 'u_f1', 'u_f2', 'u_bed', 'u_speck', 'u_band']) U[n] = gl.getUniformLocation(prog, n);
+const LU = { vp: gl.getUniformLocation(lprog, 'u_vp'), model: gl.getUniformLocation(lprog, 'u_model'), col: gl.getUniformLocation(lprog, 'u_col') };
+const aN = gl.getAttribLocation(prog, 'a_nrm'), aK = gl.getAttribLocation(prog, 'a_kind');
+const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+const ID4 = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+const rockBuf = gl.createBuffer(), lineBuf = gl.createBuffer(), overBuf = gl.createBuffer(), groundBuf = gl.createBuffer();
+let rockN = 0, lineN = 0;
+gl.bindBuffer(gl.ARRAY_BUFFER, groundBuf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-60, -0.002, -60, 0, 1, 0, 2, -60, -0.002, 60, 0, 1, 0, 2, 60, -0.002, 60, 0, 1, 0, 2, -60, -0.002, -60, 0, 1, 0, 2, 60, -0.002, 60, 0, 1, 0, 2, 60, -0.002, -60, 0, 1, 0, 2]), gl.STATIC_DRAW);
+
+// faces of a cell: outer faces always; interior faces only where not fully covered by intact bonds to the same group (=> no visible cell boundaries)
+function cellFaces(c, tri, lines) {
+  const cov = new Float64Array(c.f.length);
+  for (const bi of c.bonds) { const b = bonds[bi]; if (b.dead || b.broken || cells[other(b, c.id)].grp !== c.grp) continue; cov[b.a === c.id ? b.fa : b.fb] += b.area; }
+  c.f.forEach((f, i) => {
+    if (f.k === 9 && c.grp === 0) return;
+    const outer = f.k >= 8 || f.o; if (!outer && cov[i] > 0.999 * f.a) return;
+    const k = outer ? 0 : 1, v = f.v;
+    for (let j = 1; j + 1 < v.length; j++) for (const p of [v[0], v[j], v[j + 1]]) tri.push(p[0], p[1], p[2], f.n[0], f.n[1], f.n[2], k);
+    if (lines) for (let j = 0; j < v.length; j++) lines.push(...v[j], ...v[(j + 1) % v.length]);
+  });
+}
+function buildRock() {
+  const tri = [], lines = [];
+  for (const c of cells) if (c.grp === 0) cellFaces(c, tri, lines);
+  gl.bindBuffer(gl.ARRAY_BUFFER, rockBuf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(tri), gl.STATIC_DRAW); rockN = tri.length / 7;
+  gl.bindBuffer(gl.ARRAY_BUFFER, lineBuf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(lines), gl.STATIC_DRAW); lineN = lines.length / 3;
+  colGrid = new Map();     // rock cells by 1-unit grid cell, for fragment collision
+  for (const c of cells) if (c.grp === 0)
+    for (let x = Math.floor(c.lo[0]); x <= Math.floor(c.hi[0]); x++) for (let y = Math.floor(c.lo[1]); y <= Math.floor(c.hi[1]); y++) for (let z = Math.floor(c.lo[2]); z <= Math.floor(c.hi[2]); z++) {
+      const k = x + ',' + y + ',' + z; if (!colGrid.has(k)) colGrid.set(k, []); colGrid.get(k).push(c);
+    }
+}
+
+// camera (orbit, from 3d-p4-mincut)
+const cam = { yaw: 0.95, pitch: 0.42, dist: 25, tx: 0.5, ty: 2.4, tz: 0 };
+function camVecs() {
+  const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch), cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw);
+  const eye = [cam.tx + cam.dist * cp * sy, cam.ty + cam.dist * sp, cam.tz + cam.dist * cp * cy];
+  const f = nrm([cam.tx - eye[0], cam.ty - eye[1], cam.tz - eye[2]]), r = nrm([-f[2], 0, f[0]]), u = cross(r, f);
+  return { eye, f, r, u };
+}
+const FOV = 0.8;
+function vpMatrix() {
+  const { eye, f, r, u } = camVecs(), asp = cv.width / cv.height, t = 1 / Math.tan(FOV / 2), n = 0.3, fa = 300;
+  const V = [r[0], u[0], -f[0], 0, r[1], u[1], -f[1], 0, r[2], u[2], -f[2], 0, -dot(r, eye), -dot(u, eye), dot(f, eye), 1];
+  const P = [t / asp, 0, 0, 0, 0, t, 0, 0, 0, 0, (fa + n) / (n - fa), -1, 0, 0, 2 * fa * n / (n - fa), 0];
+  const m = new Float32Array(16);
+  for (let c = 0; c < 4; c++) for (let rr = 0; rr < 4; rr++) { let s = 0; for (let k = 0; k < 4; k++) s += P[k * 4 + rr] * V[c * 4 + k]; m[c * 4 + rr] = s; }
+  return m;
+}
+function fragModel(f) {   // world = pos + R (x - c0)
+  const R = f.R, t = sub(f.pos, [dot(R.slice(0, 3), f.c0), dot(R.slice(3, 6), f.c0), dot(R.slice(6, 9), f.c0)]);
+  return new Float32Array([R[0], R[3], R[6], 0, R[1], R[4], R[7], 0, R[2], R[5], R[8], 0, t[0], t[1], t[2], 1]);
+}
+function drawMesh(buf, n, model) {
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 28, 0);
+  gl.enableVertexAttribArray(aN); gl.vertexAttribPointer(aN, 3, gl.FLOAT, false, 28, 12);
+  gl.enableVertexAttribArray(aK); gl.vertexAttribPointer(aK, 1, gl.FLOAT, false, 28, 24);
+  gl.uniformMatrix4fv(U.u_model, false, model); gl.drawArrays(gl.TRIANGLES, 0, n);
+}
+function drawLines(buf, n, col, depth) {
+  gl.useProgram(lprog); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.disableVertexAttribArray(aN); gl.disableVertexAttribArray(aK);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 12, 0);
+  gl.uniformMatrix4fv(LU.model, false, ID4); gl.uniform4fv(LU.col, col);
+  if (depth) gl.enable(gl.DEPTH_TEST); else gl.disable(gl.DEPTH_TEST);
+  gl.drawArrays(gl.LINES, 0, n); gl.enable(gl.DEPTH_TEST);
+}
+const BG = [0.42, 0.52, 0.63];
+function draw() {
+  gl.viewport(0, 0, cv.width, cv.height);
+  gl.clearColor(BG[0], BG[1], BG[2], 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  const vp = vpMatrix();
+  gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.enable(gl.CULL_FACE); gl.disable(gl.BLEND);
+  gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(1, 1);
+  gl.useProgram(prog); gl.uniformMatrix4fv(U.u_vp, false, vp);
+  for (const [u, k] of [['u_o1', 'outer'], ['u_o2', 'outer2'], ['u_f1', 'fresh'], ['u_f2', 'fresh2']]) gl.uniform3fv(U[u], MAT[k]);
+  gl.uniform3fv(U.u_bed, BED); gl.uniform1f(U.u_speck, MAT.speck); gl.uniform1f(U.u_band, MAT.band);
+  drawMesh(groundBuf, 6, ID4);
+  drawMesh(rockBuf, rockN, ID4);
+  for (const f of frags) drawMesh(f.buf, f.n, fragModel(f));
+  gl.disable(gl.POLYGON_OFFSET_FILL); gl.disable(gl.CULL_FACE);
+  gl.useProgram(lprog); gl.uniformMatrix4fv(LU.vp, false, vp);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  if ($('cellsOn').checked) drawLines(lineBuf, lineN, [0, 0, 0, 0.35], true);
+  const ov = [];
+  for (const [a, b] of drills.concat(preview ? [preview] : [])) {
+    const d = sub(b, a), L = len(d);
+    for (let s = 0; s <= L; s += 0.35) { const p = add(a, mul(d, s / L)); ov.push(p[0], p[1] + 0.03, p[2], p[0], p[1] - 0.6, p[2]); }
+    ov.push(...a, ...b);
+  }
+  if (ov.length) { gl.bindBuffer(gl.ARRAY_BUFFER, overBuf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(ov), gl.DYNAMIC_DRAW); drawLines(overBuf, ov.length / 3, [0.05, 0.05, 0.05, 0.9], false); }
+  if (hover) {
+    const hl = []; for (const f of hover.f) for (let j = 0; j < f.v.length; j++) hl.push(...f.v[j], ...f.v[(j + 1) % f.v.length]);
+    gl.bindBuffer(gl.ARRAY_BUFFER, overBuf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(hl), gl.DYNAMIC_DRAW); drawLines(overBuf, hl.length / 3, [1, 0.85, 0.2, 0.9], true);
+  }
+  gl.disable(gl.BLEND);
+  updateStats();
+}
+
+// ---- rigid fragments: gravity, ground plane, vertex-vs-rock-cell contacts, sleep ----
+function contact(f, q, nC, pen) {
+  f.pos = add(f.pos, mul(nC, pen));
+  const r = sub(q, f.pos), vp = add(f.v, cross(f.w, r)), vn = dot(vp, nC);
+  if (vn >= 0) return;
+  const rn = cross(r, nC), j = -1.25 * vn / (1 / f.mass + dot(rn, rn) / f.I);
+  f.v = add(f.v, mul(nC, j / f.mass)); f.w = add(f.w, mul(rn, j / f.I));
+  const vt = sub(vp, mul(nC, vn)); f.v = sub(f.v, mul(vt, 0.3)); f.w = mul(f.w, 0.85);
+}
+function stepFragments(dt) {
+  let awake = false;
+  for (const f of frags) {
+    if (f.sleep) continue; awake = true; f.age += dt;
+    f.v[1] -= 9.8 * dt; f.pos = add(f.pos, mul(f.v, dt));
+    const R = f.R, w = mul(f.w, dt);
+    for (let c = 0; c < 3; c++) { const col = [R[c], R[3 + c], R[6 + c]], d = cross(w, col); R[c] += d[0]; R[3 + c] += d[1]; R[6 + c] += d[2]; }
+    let x = nrm([R[0], R[3], R[6]]), y = [R[1], R[4], R[7]]; y = nrm(sub(y, mul(x, dot(x, y)))); const z = cross(x, y);
+    f.R = [x[0], y[0], z[0], x[1], y[1], z[1], x[2], y[2], z[2]];
+    const W = v => { const l = sub(v, f.c0), R2 = f.R; return add(f.pos, [R2[0] * l[0] + R2[1] * l[1] + R2[2] * l[2], R2[3] * l[0] + R2[4] * l[1] + R2[5] * l[2], R2[6] * l[0] + R2[7] * l[1] + R2[8] * l[2]]); };
+    let low = null, lp = 0;
+    for (const v of f.verts) {
+      const q = W(v);
+      if (-q[1] > lp) { lp = -q[1]; low = q; }
+      const cl = colGrid.get(Math.floor(q[0]) + ',' + Math.floor(q[1]) + ',' + Math.floor(q[2])); if (!cl) continue;
+      for (const c of cl) {
+        let best = -1e9, bn = null; for (const fc of c.f) { const s = dot(fc.n, q) - fc.d; if (s > best) { best = s; bn = fc.n; } }
+        if (best < -2e-3) { contact(f, q, bn, Math.min(-best, 0.05)); break; }
+      }
+    }
+    if (low) contact(f, low, [0, 1, 0], lp);
+    if (len(f.v) < 0.08 && len(f.w) < 0.2) f.still += dt; else f.still = 0;
+    if (f.still > 0.5 || f.age > 8) f.sleep = true;
+  }
+  return awake;
+}
+
+// ---- stats / inspect ----
+function rockVol() { let v = 0; for (const c of cells) if (c.grp === 0) v += c.vol; return v; }
+function updateStats() {
+  let nc = 0, nb = 0, nbr = 0, cb = 0, chips = 0, fr = 0, gen = 0, removed = 0, pieceB = 0;
+  for (const c of cells) {
+    if (c.grp === 0) { nc++; for (const f of c.f) cb += 17 + 12 * f.v.length; }
+    if (c.par === undefined && c.grp !== 0) removed++;
+    if (c.par !== undefined && c.grp === 0) pieceB += 17 * c.f.length;
+  }
+  for (const b of bonds) if (!b.dead) { if (b.broken) nbr++; else if (cells[b.a].grp === 0 && cells[b.b].grp === 0) nb++; }
+  for (const f of frags) if (f.chip) chips++; else fr++;
+  const L = last;
+  $('stats').textContent =
+    `cells         ${nc}  (generated ${nGen}, size ${cs.toFixed(2)})\n` +
+    `bonds intact  ${nb}\n` +
+    `bonds broken  ${nbr}\n` +
+    `fragments     ${fr}   chips ${chips}\n` +
+    `rock volume   ${rockVol().toFixed(3)} / ${regionVol.toFixed(3)}\n` +
+    `bytes cells   ${cb}  (17/face + 12/vertex)\n` +
+    `bytes bonds   ${(nb + nbr) * 24}  (24/bond)\n` +
+    `game delta    ${removed * 4 + pieceB + nbr * 8} B (removed ids, piece planes, broken pairs)\n` +
+    `last solve    ${L ? L.ms.toFixed(2) + ' ms (' + L.tool + ')' : '-'}\n` +
+    `max-flow      ${L && L.tool !== 'hammer' ? (isFinite(L.flow) ? L.flow.toFixed(3) : 'inf (touches anchor)') : '-'}\n` +
+    `cut bonds     ${L ? L.cut.length : '-'}`;
+  const v = $('verdict');
+  if (!L) { v.textContent = 'Click the rock.'; v.style.color = '#d6dae0'; return; }
+  v.textContent = L.tool === 'hammer' ? (L.broke ? `chipped: ${L.pieces.length} flake(s), ${L.chipVol.toFixed(4)} vol` : 'glanced off')
+    : L.broke ? `CUT: cost ${L.flow.toFixed(2)} < energy ${L.energy.toFixed(2)} - ${L.pieces.length} piece(s)` : `holds: cut ${isFinite(L.flow) ? L.flow.toFixed(2) : 'inf'} > energy ${L.energy.toFixed(2)}`;
+  v.style.color = L.broke ? '#ffef3a' : '#38e0ff';
+}
+function showMat() {
+  const m = MAT, f = a => '[' + a.map(x => (+x).toFixed(2)).join(', ') + ']';
+  $('matrec').textContent = `Material ${$('mat').value} {\n  cell_stretch   ${m.stretch}  (cells 1/${m.stretch} thick along bed)\n  bed_normal     ${f(BED)}\n  bed_spacing    ${m.bedSpacing || '-'}\n  joint_sets     ${m.joints}\n` +
+    `  sigma          ${m.sigma}  (bond strength / area)\n  w_joint        ${m.jointW}\n  w_bed          ${m.bedW}\n  w_across_bed   ${m.across}  (anisotropy)\n  w_drill        ${DRILL_W}\n  shatter_below  ${SHATTER}\n` +
+    `  chip_depth     ${m.chip}\n  outer          ${f(m.outer)}\n  fresh          ${f(m.fresh)}\n}`;
+}
+function inspect(c) {
+  if (!c) { $('inspect').textContent = '-'; return; }
+  let ni = 0, nbk = 0, wk = null;
+  for (const bi of c.bonds) { const b = bonds[bi]; if (b.dead) continue; if (b.broken) nbk++; else { ni++; if (!wk || b.str * (1 - b.dmg) < wk.str * (1 - wk.dmg)) wk = b; } }
+  $('inspect').textContent = `cell     #${c.id}${c.par !== undefined ? ' (piece of #' + c.par + ')' : ''}\nmaterial ${$('mat').value}\nvolume   ${c.vol.toFixed(4)}\nfaces    ${c.f.length}\nbonds    ${ni} intact, ${nbk} broken\nanchored ${c.anch ? 'yes' : 'no'}\n` +
+    (wk ? `weakest  #${wk.id} ${KIND[wk.kind]} cap ${(wk.str * (1 - wk.dmg)).toFixed(3)}\n         area ${wk.area.toFixed(3)} dmg ${wk.dmg.toFixed(2)}` : 'weakest  -');
+}
+
+// ---- picking: ray vs convex cells ----
+function pickAt(px, py) {
+  const { eye, f, r, u } = camVecs(), t = Math.tan(FOV / 2), asp = cv.width / cv.height;
+  const d = nrm(add(f, add(mul(r, (px / cv.width * 2 - 1) * t * asp), mul(u, (1 - py / cv.height * 2) * t))));
+  let best = null;
+  for (const c of cells) {
+    if (c.grp !== 0) continue; let t0 = 0, t1 = 1e9, fn = null;
+    for (const fc of c.f) {
+      const dn = dot(fc.n, d), s = fc.d - dot(fc.n, eye);
+      if (Math.abs(dn) < 1e-12) { if (s < 0) { t0 = 2e9; break; } continue; }
+      const tt = s / dn; if (dn < 0) { if (tt > t0) { t0 = tt; fn = fc.n; } } else if (tt < t1) t1 = tt;
+    }
+    if (fn && t0 <= t1 && (!best || t0 < best.t)) best = { t: t0, c, n: fn };
+  }
+  if (best) best.p = add(eye, mul(d, best.t));
+  return best;
+}
+
+// ---- UI ----
+const tool = () => $('tool').value, E = t => TOOLS[t].e * +$('emul').value;
+function syncLabels() { $('seedV').textContent = $('seed').value; $('emulV').textContent = $('emul').value; }
+$('mat').onchange = $('seed').oninput = () => { syncLabels(); generate(); draw(); };
+$('emul').oninput = () => syncLabels();
+$('cellsOn').onchange = draw;
+$('reset').onclick = () => { generate(); draw(); };
+$('wedge').onclick = () => { if (impact(null, null, 'wedge', E('wedge'))) draw(); else $('verdict').textContent = 'drill a line first (plug-and-feather tool, drag on rock)'; };
+let drag = null;
+const rel = e => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+cv.oncontextmenu = e => e.preventDefault();
+cv.onmousedown = e => {
+  drag = { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, pan: e.button === 2 || e.shiftKey, btn: e.button };
+  if (e.button === 0 && !e.shiftKey && tool() === 'feather') { const h = pickAt(...rel(e)); if (h) drag.line = h.p; }
+};
+window.onmouseup = e => {
+  if (!drag) return;
+  const moved = Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) >= 4;
+  if (drag.line) { preview = null; const h = pickAt(...rel(e)); if (moved && h) { const n = drill(drag.line, h.p); $('verdict').textContent = `drilled: ${n} cells split on the plane; now Drive wedges`; } draw(); }
+  else if (drag.btn === 0 && !drag.pan && !moved && tool() !== 'feather') { const h = pickAt(...rel(e)); if (h) { impact(h.p, h.n, tool(), E(tool())); hover = null; draw(); } }
+  drag = null;
+};
+window.onmousemove = e => {
+  if (drag) {
+    if (drag.line) { const h = pickAt(...rel(e)); if (h) preview = [drag.line, h.p]; draw(); return; }
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY;
+    if (drag.pan) { const { r, u } = camVecs(), k = cam.dist * 0.0015; cam.tx -= (r[0] * dx - u[0] * dy) * k; cam.ty -= (r[1] * dx - u[1] * dy) * k; cam.tz -= (r[2] * dx - u[2] * dy) * k; }
+    else { cam.yaw -= dx * 0.008; cam.pitch = Math.max(-0.1, Math.min(1.5, cam.pitch + dy * 0.008)); }
+    draw();
+  } else if (e.target === cv) { const h = pickAt(...rel(e)), c = h ? h.c : null; if (c !== hover) { hover = c; inspect(c); draw(); } }
+};
+cv.onwheel = e => { e.preventDefault(); cam.dist = Math.max(5, Math.min(80, cam.dist * Math.exp(e.deltaY * 0.001))); draw(); };
+function resize() { cv.width = cv.clientWidth; cv.height = cv.clientHeight; draw(); }
+window.onresize = resize;
+
+syncLabels(); generate(); resize();
+const isTest = location.search.includes('selftest');
+if (location.search.includes('shot')) {   // scripted demo for screenshots: ?shot[&mat=slate&yaw=..&pitch=..&dist=..]
+  const q = new URLSearchParams(location.search);
+  if (q.has('mat')) { $('mat').value = q.get('mat'); generate(); }
+  drill([6.2, 6.5, -6], [6.2, 6.5, 6]); impact(null, null, 'wedge', E('wedge'));
+  for (const [x, y, t, e] of [[0.5, 0.5, 'sledge', 12], [0.42, 0.45, 'hammer', 2], [0.6, 0.4, 'hammer', 2]]) { const h = pickAt(cv.width * x, cv.height * y); if (h) impact(h.p, h.n, t, e); }
+  for (const k of ['yaw', 'pitch', 'dist']) if (q.has(k)) cam[k] = +q.get(k);
+  for (let i = 0; i < 600; i++) stepFragments(1 / 120);   // headless runs few frames: settle the pieces now
+  draw();
+}
+let lastT = performance.now();
+(function loop(now) {
+  const dt = Math.min(0.033, (now - lastT) / 1000 || 0); lastT = now;
+  if (!isTest && frags.length) { let a = false; for (let i = 0; i < 2; i++) a = stepFragments(dt / 2) || a; if (a) draw(); }
+  requestAnimationFrame(loop);
+})(lastT);
+
+// ---- self-test ----
+function extents(f) {     // principal extents of a fragment's vertex cloud (Jacobi eigenvectors of the covariance)
+  const vs = f.verts, c = mul(vs.reduce(add, [0, 0, 0]), 1 / vs.length), A = [[0, 0, 0], [0, 0, 0], [0, 0, 0]], V = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+  for (const v of vs) { const d = sub(v, c); for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) A[i][j] += d[i] * d[j]; }
+  for (let sw = 0; sw < 20; sw++) for (const [p, q] of [[0, 1], [0, 2], [1, 2]]) {
+    if (Math.abs(A[p][q]) < 1e-14) continue;
+    const th = (A[q][q] - A[p][p]) / (2 * A[p][q]), t = (th >= 0 ? 1 : -1) / (Math.abs(th) + Math.sqrt(th * th + 1)), co = 1 / Math.sqrt(t * t + 1), s = t * co;
+    for (let k = 0; k < 3; k++) { const a = A[k][p], b = A[k][q]; A[k][p] = co * a - s * b; A[k][q] = s * a + co * b; }
+    for (let k = 0; k < 3; k++) { const a = A[p][k], b = A[q][k]; A[p][k] = co * a - s * b; A[q][k] = s * a + co * b; }
+    for (let k = 0; k < 3; k++) { const a = V[k][p], b = V[k][q]; V[k][p] = co * a - s * b; V[k][q] = s * a + co * b; }
+  }
+  return [0, 1, 2].map(j => { const ax = [V[0][j], V[1][j], V[2][j]]; let lo = 1e9, hi = -1e9; for (const v of vs) { const s = dot(ax, v); lo = Math.min(lo, s); hi = Math.max(hi, s); } return hi - lo; }).sort((a, b) => a - b);
+}
+function selftest() {
+  const fail = m => { throw new Error(m); }, out = [];
+  $('seed').value = 3; $('emul').value = 1; $('cellsOn').checked = false;
+  for (const m of ['slate', 'sandstone', 'granite']) {
+    $('mat').value = m; const t0 = performance.now(); generate(); const ms = performance.now() - t0;
+    const n = cells.length; if (n < 600 || n > 1500) fail(`${m}: ${n} cells`);
+    if (tileErr > 1e-9) fail(`${m}: generated cells tile the box ${(tileErr * 100).toFixed(3)}% off`);
+    const vk = cells.reduce((s, c) => s + c.vol, 0), vr = Math.abs(vk - regionVol) / regionVol; if (vr > 1e-9) fail(`${m}: kept cells ${vk} != rock volume ${regionVol}`);
+    for (const b of bonds) { const fa = cells[b.a].f[b.fa], fb = cells[b.b].f[b.fb]; if (!(b.area > 0) || dot(fa.n, fb.n) > -1 + 1e-9 || Math.abs(fa.d + fb.d) > 1e-9) fail(`${m}: bond ${b.id} faces not shared`); }
+    // every kept face is ground, or exactly covered by bonds to kept neighbours + exposure to dropped cells (never the generation box)
+    let nOut = 0;
+    for (const c of cells) {
+      const cov = new Float64Array(c.f.length); for (const bi of c.bonds) { const b = bonds[bi]; cov[b.a === c.id ? b.fa : b.fb] += b.area; }
+      c.f.forEach((f, i) => {
+        if (f.k === 9) return; if (f.k === 8) fail(`${m}: cell ${c.id} touches the generation box`);
+        if (Math.abs(cov[i] + (f.ea || 0) - f.a) > 1e-6 * f.a + 1e-9) fail(`${m}: cell ${c.id} face ${i} neither bonded nor exposed`);
+        if (f.o) nOut++;
+      });
+    }
+    out.push(`${m} ${n}c/${bonds.length}b ${nOut} exposed faces, tile err ${tileErr.toExponential(1)} ${ms.toFixed(0)}ms`);
+  }
+  // hammer (granite): chip much smaller than a cell, volume conserved exactly
+  draw();
+  const h = pickAt(cv.width / 2, cv.height / 2); if (!h) fail('center pick missed the rock');
+  const V0 = rockVol(), avg = V0 / cells.filter(c => c.grp === 0).length, rh = impact(h.p, h.n, 'hammer', TOOLS.hammer.e);
+  const chips = rh.pieces; if (!chips.length || !chips.every(f => f.chip)) fail('hammer made no chip');
+  const cv0 = chips.reduce((s, f) => s + f.mass, 0), dV = V0 - rockVol(), minChip = Math.min(...chips.map(f => f.mass));
+  if (minChip > 0.2 * avg) fail(`chip ${minChip.toFixed(4)} not << cell ${avg.toFixed(4)}`);
+  if (Math.abs(dV - cv0) > 1e-6 * cv0) fail(`volume drop ${dV} != chips ${cv0}`);
+  out.push(`hammer ${chips.length} chip(s) ${(minChip / avg).toFixed(3)}x cell, dV-chips ${Math.abs(dV - cv0).toExponential(1)}`);
+  // plug-and-feather: drill across the overhang, drive wedges, block splits on the drilled plane
+  const ns = drill([6.2, 6.5, -6], [6.2, 6.5, 6]); if (ns < 5) fail(`drill split only ${ns} cells`);
+  let rw, k = 0; do { rw = impact(null, null, 'wedge', TOOLS.wedge.e); k++; } while (!rw.broke && k < 10);
+  if (!rw.broke || !rw.pieces.length) fail(`wedges did not release a block (cut ${rw.flow})`);
+  if (Math.abs(rw.flow - rw.cutSum) > 1e-6 * Math.max(1, rw.flow)) fail(`flow ${rw.flow} != cut sum ${rw.cutSum}`);
+  let aAll = 0, aNear = 0;
+  for (const b of rw.cut) { aAll += b.area; if (Math.max(...b.poly.map(v => Math.abs(dot(drillPl.n, v) - drillPl.d))) < 0.2 * cs) aNear += b.area; }
+  if (aNear < 0.8 * aAll) fail(`only ${(100 * aNear / aAll).toFixed(1)}% of cut area on the drilled plane`);
+  const blockV = rw.pieces.reduce((s, f) => s + f.mass, 0);
+  out.push(`wedges x${k}: block ${blockV.toFixed(2)} vol, ${(100 * aNear / aAll).toFixed(1)}% cut on plane, cost ${rw.flow.toFixed(2)}`);
+  // slate: sledge -> plates
+  $('mat').value = 'slate'; generate(); draw();
+  const hs = pickAt(cv.width / 2, cv.height / 2); if (!hs) fail('slate pick missed');
+  let rs, j = 0; do { rs = impact(hs.p, hs.n, 'sledge', TOOLS.sledge.e * 2); j++; } while (!rs.broke && j < 15);
+  if (!rs.broke || !rs.pieces.length) fail(`slate sledge never broke (cut ${rs.flow})`);
+  let worst = 0; for (const f of rs.pieces) { const e = extents(f); worst = Math.max(worst, e[0] / e[2]); }
+  if (worst >= 0.4) fail(`slate fragment not a plate: min/max extent ${worst.toFixed(2)}`);
+  out.push(`slate sledge x${j}: ${rs.pieces.length} plates, worst min/max ${worst.toFixed(2)}, ${rs.ms.toFixed(1)}ms`);
+  // render
+  draw();
+  const px = new Uint8Array(cv.width * cv.height * 4); gl.readPixels(0, 0, cv.width, cv.height, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  let lit = 0; for (let i = 0; i < px.length; i += 4) if (Math.abs(px[i] - BG[0] * 255) + Math.abs(px[i + 1] - BG[1] * 255) + Math.abs(px[i + 2] - BG[2] * 255) > 8) lit++;
+  if (lit === 0) fail('render is all background');
+  const err = gl.getError(); if (err) fail('gl error ' + err);
+  return out.join('; ') + `; ${lit} px; gl ok`;
+}
+if (isTest) {
+  try { selfEl.textContent = 'PASS ' + selftest(); } catch (e) { selfEl.textContent = 'FAIL ' + e.message; }
+}
+</script>
+</body>
+</html>

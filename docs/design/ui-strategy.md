@@ -99,7 +99,7 @@ Our project picks the consistent answer.
 
 **Where it lives:**
 - `lab/` integrates Dear ImGui from Phase 5 onward as the universal debug overlay. Toggle with a key (probably F1). Always-on in dev builds.
-- Bench programs do not need ImGui (they print to stdout and dump traces; visual is via Tracy/Spall).
+- Bench programs do not need ImGui (they print to stdout and dump traces; visual is via Tracy).
 - Tests do not need ImGui (they print fingerprints and exit).
 - Eventual shipping game UI: same library. Dear ImGui shipping in production games is normal; see *RimWorld*, *Tarkov*, *Deep Rock Galactic* mod tools, *Stunlock Citadel* editor.
 

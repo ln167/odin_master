@@ -1,0 +1,391 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>C: residual neural field</title>
+<style>
+  html,body{margin:0;height:100%;background:#0e1116;color:#d6dbe3;font:13px/1.4 system-ui,sans-serif}
+  body{display:flex}
+  #side{width:320px;min-width:320px;padding:10px 14px;box-sizing:border-box;overflow-y:auto;background:#151a22;border-right:1px solid #252c38}
+  #main{flex:1;position:relative}
+  canvas{display:block;width:100%;height:100%;cursor:crosshair}
+  h1{font-size:16px;margin:6px 0 8px}
+  h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#8a96a8;margin:12px 0 4px}
+  a{color:#7fb0ff}
+  p,ul{margin:4px 0}
+  ul{padding-left:18px}
+  button{background:#243042;color:#d6dbe3;border:1px solid #3a4a62;border-radius:3px;padding:3px 8px;margin:2px 2px 2px 0;cursor:pointer}
+  button.on{background:#3d6aa8;border-color:#5b8ad0}
+  label{display:block;margin:3px 0}
+  input[type=range]{width:150px;vertical-align:middle}
+  #bar{height:10px;background:#222a36;border:1px solid #3a4a62;margin:4px 0}
+  #barin{height:100%;width:0;background:#4caf7a;transition:width .3s}
+  #stats{font:11px/1.45 ui-monospace,Consolas,monospace;white-space:pre-wrap;color:#b8c2d0}
+  #foldinfo{font:11px/1.4 ui-monospace,Consolas,monospace;color:#e0c070;white-space:pre-wrap}
+  #selftest{position:absolute;right:6px;bottom:4px;margin:0;font-size:10px;color:#6a768a}
+  .f{color:#7d8899;font-size:11px}
+</style></head>
+<body>
+<div id="side">
+  <a href="index.html">&larr; all toys</a>
+  <h1>C: residual neural field</h1>
+  <h2>What it is</h2>
+  <p>A tiny neural network (a learned grid of numbers feeding a small formula) stores the whole hand-made world: shape, material and weakness. Your carves are stored as small "residual patches" (local correction grids added on top), so edits are instant. Folding re-trains the network to include the edits and frees the patches.</p>
+  <h2>Controls</h2>
+  <p class="f">Click the big view to carve (radius 6 px).</p>
+  <div id="views"></div>
+  <button id="fold">Fold patches into network</button>
+  <label><input type="checkbox" id="auto"> auto-fold when over budget</label>
+  <label>fold steps <input type="range" id="steps" min="20" max="400" step="10" value="150"> <span id="stepsv"></span></label>
+  <label>budget (patches) <input type="range" id="budget" min="1" max="16" value="6"> <span id="budgetv"></span></label>
+  <button id="reset">Reset world + retrain</button>
+  <h2>Patch memory budget</h2>
+  <div id="bar"><div id="barin"></div></div>
+  <h2>Live stats</h2>
+  <div id="stats"></div>
+  <div id="foldinfo"></div>
+  <h2>Good at / Bad at</h2>
+  <ul>
+    <li>Good: compresses a hand-crafted multi-channel world below a dense grid.</li>
+    <li>Good: edits are cheap and exact immediately (just add a patch).</li>
+    <li>Good: one network answers shape, material and weakness together.</li>
+  </ul>
+  <ul>
+    <li>Bad: folding costs training compute (see fold ms).</li>
+    <li>Bad: folding can blur detail; patch-exact edits become approximate.</li>
+    <li>Bad: every query = network forward pass + sum of overlapping patches.</li>
+  </ul>
+  <p><b>In 3D / for our game:</b> ship the quarry site as a 3D feature-grid network; player cuts are 16&sup3; patches, folded back during idle time under a fixed patch budget.</p>
+</div>
+<div id="main"><canvas id="cv"></canvas><pre id="selftest"></pre></div>
+<script>
+"use strict";
+window.onerror = (msg) => { document.getElementById('selftest').textContent = 'FAIL ' + msg; };
+
+// ---------- constants ----------
+const N = 96, NP = N * N;           // world is 96x96, 3 channels
+const R1 = 12, R2 = 48, F = 4, H = 16, IN = 2 * F;
+const PS = 16, CARVE_R = 6;         // patch is 16x16 floats of occupancy delta
+const BATCH = 512, LR = 0.01;
+
+function mulberry32(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+let rnd = mulberry32(7);
+
+// ---------- hand-crafted target world ----------
+const T = new Float32Array(NP * 3);   // base truth [p*3+c]: occupancy, material, weakness
+const C = new Float32Array(NP * 3);   // current truth = base + player edits
+
+function segDist(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay;
+  let t = ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy);
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - ax - t * dx, py - ay - t * dy);
+}
+function surfaceAt(x) {
+  let s = 46 + 5 * Math.sin(x * 0.11) + 3 * Math.sin(x * 0.29 + 1);
+  return Math.min(s, 27 + Math.max(0, 60 - x) * 2.5 + Math.max(0, x - 84) * 2.5); // mesa
+}
+const CRACKS = [[50, 30, 64, 58], [70, 38, 90, 72], [4, 76, 42, 90], [44, 70, 58, 94]];
+function genWorld() {
+  const zs = Math.round(surfaceAt(20));
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    let occ = y >= surfaceAt(x);
+    let zig = false;
+    for (let k = 0; k < 4; k++) if (Math.abs(x - 20) <= 12 - 3 * k && y >= zs - 4 * (k + 1) && y < zs + 2) zig = true;
+    occ = occ || zig;
+    if (((x - 34) / 10) ** 2 + ((y - 68) / 5) ** 2 < 1) occ = false;     // cave
+    if (Math.abs(x - 76) <= 1 && y >= 27 && y < 50) occ = false;          // shaft
+    const mat = zig ? 0 : (y > 62 + 4 * Math.sin(x / 9) ? 1 : 0);
+    let w = 0;
+    if (occ) for (const c of CRACKS) w = Math.max(w, 1 - segDist(x, y, c[0], c[1], c[2], c[3]) / 1.5);
+    const p = (y * N + x) * 3;
+    T[p] = occ ? 1 : 0; T[p + 1] = mat; T[p + 2] = w;
+  }
+}
+
+// ---------- network: 2-level feature grid -> MLP(8->16->3) ----------
+const O_G1 = 0, O_G2 = O_G1 + R1 * R1 * F, O_W1 = O_G2 + R2 * R2 * F, O_B1 = O_W1 + H * IN,
+      O_W2 = O_B1 + H, O_B2 = O_W2 + 3 * H, NPARAM = O_B2 + 3;
+const P = new Float32Array(NPARAM), G = new Float32Array(NPARAM), M = new Float32Array(NPARAM), V = new Float32Array(NPARAM);
+let adamT = 0;
+const NET_BYTES = NPARAM * 4;
+
+function initNet() {
+  for (let i = O_G1; i < O_W1; i++) P[i] = (rnd() * 2 - 1) * 0.1;
+  for (let i = 0; i < H * IN; i++) P[O_W1 + i] = (rnd() * 2 - 1) * Math.sqrt(6 / IN);
+  for (let i = 0; i < H; i++) P[O_B1 + i] = 0.1;
+  for (let i = 0; i < 3 * H; i++) P[O_W2 + i] = (rnd() * 2 - 1) * Math.sqrt(3 / H);
+  for (let i = 0; i < 3; i++) P[O_B2 + i] = 0;
+  M.fill(0); V.fill(0); adamT = 0;
+}
+
+// scratch for one sample
+const ci = new Int32Array(8), cw = new Float32Array(8), f = new Float32Array(IN), z = new Float32Array(H), h = new Float32Array(H), o = new Float32Array(3), dh = new Float32Array(H), df = new Float32Array(IN);
+
+function forward(x, y) {
+  for (let l = 0; l < 2; l++) {
+    const R = l ? R2 : R1, off = l ? O_G2 : O_G1;
+    const fx = (x + 0.5) / N * (R - 1), fy = (y + 0.5) / N * (R - 1);
+    const i = Math.min(fx | 0, R - 2), j = Math.min(fy | 0, R - 2), tx = fx - i, ty = fy - j;
+    const b = l * 4;
+    ci[b] = off + (j * R + i) * F;           cw[b] = (1 - tx) * (1 - ty);
+    ci[b + 1] = off + (j * R + i + 1) * F;   cw[b + 1] = tx * (1 - ty);
+    ci[b + 2] = off + ((j + 1) * R + i) * F; cw[b + 2] = (1 - tx) * ty;
+    ci[b + 3] = off + ((j + 1) * R + i + 1) * F; cw[b + 3] = tx * ty;
+    for (let k = 0; k < F; k++) f[l * F + k] = cw[b] * P[ci[b] + k] + cw[b + 1] * P[ci[b + 1] + k] + cw[b + 2] * P[ci[b + 2] + k] + cw[b + 3] * P[ci[b + 3] + k];
+  }
+  for (let j = 0; j < H; j++) {
+    let s = P[O_B1 + j];
+    for (let i = 0; i < IN; i++) s += P[O_W1 + j * IN + i] * f[i];
+    z[j] = s; h[j] = s > 0 ? s : 0;
+  }
+  for (let k = 0; k < 3; k++) {
+    let s = P[O_B2 + k];
+    for (let j = 0; j < H; j++) s += P[O_W2 + k * H + j] * h[j];
+    o[k] = s;   // linear outputs, clamped only for display/query
+  }
+}
+
+function backward(d0, d1, d2) {   // d = dLoss/dOutput
+  const d = [d0, d1, d2];
+  dh.fill(0);
+  for (let k = 0; k < 3; k++) {
+    G[O_B2 + k] += d[k];
+    for (let j = 0; j < H; j++) { G[O_W2 + k * H + j] += d[k] * h[j]; dh[j] += P[O_W2 + k * H + j] * d[k]; }
+  }
+  df.fill(0);
+  for (let j = 0; j < H; j++) {
+    if (z[j] <= 0) continue;
+    G[O_B1 + j] += dh[j];
+    for (let i = 0; i < IN; i++) { G[O_W1 + j * IN + i] += dh[j] * f[i]; df[i] += P[O_W1 + j * IN + i] * dh[j]; }
+  }
+  for (let c = 0; c < 8; c++) { const l = c >> 2; for (let k = 0; k < F; k++) G[ci[c] + k] += cw[c] * df[l * F + k]; }
+}
+
+function adamStep() {
+  adamT++;
+  const b1 = 0.9, b2 = 0.999, c1 = 1 - b1 ** adamT, c2 = 1 - b2 ** adamT;
+  for (let i = 0; i < NPARAM; i++) {
+    const g = G[i];
+    M[i] = b1 * M[i] + (1 - b1) * g;
+    V[i] = b2 * V[i] + (1 - b2) * g * g;
+    P[i] -= LR * (M[i] / c1) / (Math.sqrt(V[i] / c2) + 1e-8);
+  }
+}
+
+// train on target array tgt; if focus (pixel list) given, half of each batch samples from it
+function train(steps, tgt, focus) {
+  for (let s = 0; s < steps; s++) {
+    G.fill(0);
+    for (let b = 0; b < BATCH; b++) {
+      const p = (focus && focus.length && (b & 1)) ? focus[(rnd() * focus.length) | 0] : (rnd() * NP) | 0;
+      forward(p % N, (p / N) | 0);
+      const q = p * 3, sc = 2 / BATCH;
+      backward(sc * (o[0] - tgt[q]), sc * (o[1] - tgt[q + 1]), sc * (o[2] - tgt[q + 2]));
+    }
+    adamStep();
+  }
+}
+
+// ---------- evaluation caches ----------
+const netOut = new Float32Array(NP * 3);
+const patchSum = new Float32Array(NP);
+let patches = [];   // {x0, y0, d: Float32Array(PS*PS)}
+
+function evalNet() {
+  for (let p = 0; p < NP; p++) { forward(p % N, (p / N) | 0); netOut[p * 3] = o[0]; netOut[p * 3 + 1] = o[1]; netOut[p * 3 + 2] = o[2]; }
+}
+function rebuildPatchSum() {
+  patchSum.fill(0);
+  for (const pt of patches) for (let j = 0; j < PS; j++) for (let i = 0; i < PS; i++) patchSum[(pt.y0 + j) * N + pt.x0 + i] += pt.d[j * PS + i];
+}
+const clamp01 = v => v < 0 ? 0 : v > 1 ? 1 : v;
+// query = network + sum of patches (patches only carry occupancy)
+function query(p, c, withPatches = true) { return clamp01(netOut[p * 3 + c] + (c === 0 && withPatches ? patchSum[p] : 0)); }
+function maeAll(withPatches) {
+  const e = [0, 0, 0];
+  for (let p = 0; p < NP; p++) for (let c = 0; c < 3; c++) e[c] += Math.abs(query(p, c, withPatches) - C[p * 3 + c]);
+  return e.map(v => v / NP);
+}
+function maeOcc(pixels, withPatches) {
+  let s = 0; for (const p of pixels) s += Math.abs(query(p, 0, withPatches) - C[p * 3]);
+  return pixels.length ? s / pixels.length : 0;
+}
+function patchPixels() {
+  const seen = new Uint8Array(NP), out = [];
+  for (const pt of patches) for (let j = 0; j < PS; j++) for (let i = 0; i < PS; i++) { const p = (pt.y0 + j) * N + pt.x0 + i; if (!seen[p]) { seen[p] = 1; out.push(p); } }
+  return out;
+}
+
+// ---------- state + actions (UI and selftest both call these) ----------
+const S = { view: 'composite', steps: 150, budget: 6, auto: false, initErr: 0, pretrainErr: 0, lastFoldMs: 0, foldInfo: '', pretrainMs: 0 };
+
+function resetWorld() {
+  rnd = mulberry32(7);
+  C.set(T); patches = []; patchSum.fill(0);
+  initNet(); evalNet();
+  S.initErr = maeAll(false).reduce((a, b) => a + b) / 3;
+  const t0 = performance.now();
+  train(400, C, null);
+  S.pretrainMs = performance.now() - t0;
+  evalNet();
+  S.pretrainErr = maeAll(false).reduce((a, b) => a + b) / 3;
+  S.foldInfo = '';
+}
+
+function carve(cx, cy) {
+  cx = Math.round(cx); cy = Math.round(cy);
+  const x0 = Math.max(0, Math.min(N - PS, cx - PS / 2)), y0 = Math.max(0, Math.min(N - PS, cy - PS / 2));
+  const d = new Float32Array(PS * PS);
+  for (let j = 0; j < PS; j++) for (let i = 0; i < PS; i++) {
+    const x = x0 + i, y = y0 + j;
+    if ((x - cx) ** 2 + (y - cy) ** 2 > CARVE_R * CARVE_R) continue;
+    const p = y * N + x;
+    C[p * 3] = 0; C[p * 3 + 2] = 0;                           // truth: empty, no weakness left
+    d[j * PS + i] = 0 - (netOut[p * 3] + patchSum[p]);        // residual makes net+patches exactly 0
+  }
+  patches.push({ x0, y0, d }); rebuildPatchSum();
+  if (S.auto && patches.length > S.budget) fold();
+}
+
+function fold() {
+  if (!patches.length) return;
+  const px = patchPixels();
+  const before = { net: maeOcc(px, false), comp: maeOcc(px, true) };
+  const t0 = performance.now();
+  train(S.steps, C, px);
+  evalNet();
+  S.lastFoldMs = performance.now() - t0;
+  const n = patches.length;
+  const after = maeOcc(px, false);
+  patches = []; rebuildPatchSum();
+  S.foldInfo = `last fold: ${n} patches, ${S.steps} steps, ${S.lastFoldMs.toFixed(0)} ms\n` +
+    `occ error in patch area:\n  net only  ${before.net.toFixed(3)} -> ${after.toFixed(3)}\n` +
+    `  net+patch ${before.comp.toFixed(3)} -> ${after.toFixed(3)} ${after > before.comp + 0.01 ? '(fidelity lost: see Error view)' : ''}`;
+}
+
+// ---------- rendering ----------
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+const off = document.createElement('canvas'); off.width = off.height = N;
+const octx = off.getContext('2d'), img = octx.createImageData(N, N);
+let layout = { bx: 0, by: 0, bs: 1 };
+
+function valueAt(p, c) {
+  if (S.view === 'truth') return C[p * 3 + c];
+  if (S.view === 'net') return query(p, c, false);
+  if (S.view === 'error') return Math.abs(query(p, c, true) - C[p * 3 + c]);
+  return query(p, c, true);
+}
+function paint(fn) {   // fn(p) -> [r,g,b]
+  for (let p = 0; p < NP; p++) { const c = fn(p); img.data[p * 4] = c[0]; img.data[p * 4 + 1] = c[1]; img.data[p * 4 + 2] = c[2]; img.data[p * 4 + 3] = 255; }
+  octx.putImageData(img, 0, 0);
+}
+const heat = v => [Math.min(255, v * 3 * 255), Math.min(255, Math.max(0, v * 3 - 1) * 255), Math.max(0, v * 3 - 2) * 255];
+function compositeColor(p) {
+  if (S.view === 'error') return heat((valueAt(p, 0) + valueAt(p, 1) + valueAt(p, 2)) / 1.5);
+  const occ = valueAt(p, 0), mat = valueAt(p, 1), w = valueAt(p, 2);
+  const sky = [16, 20, 28], a = [200, 178, 122], b = [122, 130, 144];
+  const col = [0, 1, 2].map(i => a[i] * (1 - mat) + b[i] * mat);
+  const wc = [0, 1, 2].map(i => col[i] * (1 - w) + [220, 50, 40][i] * w);
+  return [0, 1, 2].map(i => sky[i] * (1 - occ) + wc[i] * occ);
+}
+
+function draw() {
+  const W = cv.width = cv.clientWidth, Hh = cv.height = cv.clientHeight;
+  ctx.fillStyle = '#0e1116'; ctx.fillRect(0, 0, W, Hh);
+  ctx.imageSmoothingEnabled = false;
+  const gap = 12, bs = Math.max(96, Math.min(Hh - 2 * gap - 16, (W - 3 * gap) * 0.72)), ss = Math.max(32, (bs - 2 * gap) / 3);
+  const bx = gap, by = gap + 16, sx = bx + bs + gap;
+  layout = { bx, by, bs };
+  ctx.font = '12px system-ui'; ctx.fillStyle = '#b8c2d0';
+  const vname = { composite: 'network + patches', net: 'network only', truth: 'ground truth (with edits)', error: '|error| vs truth (all channels)' }[S.view];
+  ctx.fillText('composite: ' + vname + '  (click to carve)', bx, by - 4);
+  paint(compositeColor); ctx.drawImage(off, bx, by, bs, bs);
+  // patches as outlined boxes
+  const k = bs / N;
+  ctx.strokeStyle = '#4fe3ff'; ctx.lineWidth = 1.5;
+  for (const pt of patches) ctx.strokeRect(bx + pt.x0 * k, by + pt.y0 * k, PS * k, PS * k);
+  // three channel views
+  const names = ['occupancy', 'material (0 lime / 1 granite)', 'weakness'];
+  for (let c = 0; c < 3; c++) {
+    const y = by + c * (ss + gap);
+    paint(p => { const v = valueAt(p, c); return S.view === 'error' ? heat(v * 2) : [v * 255, v * 255, v * 255]; });
+    ctx.drawImage(off, sx, y + 14, ss - 14, ss - 14);
+    ctx.fillStyle = '#b8c2d0'; ctx.fillText(names[c], sx, y + 10);
+  }
+}
+
+// ---------- UI ----------
+const $ = id => document.getElementById(id);
+function updateStats() {
+  const pb = patches.length * PS * PS * 4, budgetB = S.budget * PS * PS * 4, dense = NP * 3 * 4;
+  const ec = maeAll(true), en = maeAll(false);
+  $('stats').textContent =
+`network  ${NET_BYTES} B
+  = (12²+48²)·4 feat·4B + (8·16+16+16·3+3)·4B
+patches  ${pb} B = ${patches.length} × 16·16·4B
+budget   ${budgetB} B = ${S.budget} × 1024 B
+total    ${NET_BYTES + pb} B
+dense    ${dense} B = 96²·3 ch·4B
+ratio    ${((NET_BYTES + pb) / dense * 100).toFixed(1)}% of dense
+mean |err| net+patches  occ ${ec[0].toFixed(3)} mat ${ec[1].toFixed(3)} weak ${ec[2].toFixed(3)}
+mean |err| net only     occ ${en[0].toFixed(3)} mat ${en[1].toFixed(3)} weak ${en[2].toFixed(3)}
+pretrain 400 steps: err ${S.initErr.toFixed(3)} -> ${S.pretrainErr.toFixed(3)} (${S.pretrainMs.toFixed(0)} ms)
+last fold ${S.lastFoldMs.toFixed(0)} ms`;
+  $('foldinfo').textContent = S.foldInfo;
+  const frac = pb / budgetB;
+  $('barin').style.width = Math.min(100, frac * 100) + '%';
+  $('barin').style.background = frac > 1 ? '#d9534f' : frac > 0.75 ? '#e0a040' : '#4caf7a';
+  $('stepsv').textContent = S.steps; $('budgetv').textContent = `${S.budget} (${budgetB} B)`;
+  for (const b of $('views').children) b.classList.toggle('on', b.dataset.v === S.view);
+}
+function refresh() { updateStats(); draw(); }
+
+for (const [v, label] of [['composite', 'net + patches'], ['net', 'net only'], ['truth', 'ground truth'], ['error', 'error']]) {
+  const b = document.createElement('button'); b.textContent = label; b.dataset.v = v;
+  b.onclick = () => { S.view = v; refresh(); };
+  $('views').appendChild(b);
+}
+$('fold').onclick = () => { fold(); if (S.foldInfo.includes('lost')) S.view = 'error'; refresh(); };
+$('auto').onchange = e => { S.auto = e.target.checked; if (S.auto && patches.length > S.budget) fold(); refresh(); };
+$('steps').oninput = e => { S.steps = +e.target.value; refresh(); };
+$('budget').oninput = e => { S.budget = +e.target.value; if (S.auto && patches.length > S.budget) fold(); refresh(); };
+$('reset').onclick = () => { resetWorld(); refresh(); };
+cv.onclick = e => {
+  const r = cv.getBoundingClientRect(), k = layout.bs / N;
+  const x = (e.clientX - r.left - layout.bx) / k, y = (e.clientY - r.top - layout.by) / k;
+  if (x < 0 || y < 0 || x >= N || y >= N) return;
+  carve(x, y); refresh();
+};
+window.onresize = draw;
+
+// ---------- boot ----------
+genWorld();
+resetWorld();
+refresh();
+
+// ---------- selftest ----------
+function selftest() {
+  const out = $('selftest'), t0 = performance.now();
+  const fail = m => { out.textContent = 'FAIL ' + m; };
+  if (!(S.pretrainErr < S.initErr / 2)) return fail(`pretrain err ${S.pretrainErr} not < ${S.initErr}/2`);
+  // find a point whose whole carve disk is solid
+  let cx = -1, cy = -1;
+  for (let y = 40; y < 90 && cx < 0; y++) for (let x = 50; x < 90 && cx < 0; x++) {
+    let ok = true;
+    for (let j = -CARVE_R; j <= CARVE_R && ok; j++) for (let i = -CARVE_R; i <= CARVE_R; i++) if (T[((y + j) * N + x + i) * 3] < 1) { ok = false; break; }
+    if (ok) { cx = x; cy = y; }
+  }
+  if (cx < 0) return fail('no solid spot found');
+  const pc = cy * N + cx, occBefore = query(pc, 0);
+  const n0 = patches.length;
+  carve(cx, cy); refresh();
+  if (patches.length !== n0 + 1) return fail('carve did not add a patch');
+  const occCarved = query(pc, 0);
+  if (!(occCarved < 0.05)) return fail(`occ at carve centre ${occCarved}`);
+  fold(); refresh();
+  if (patches.length !== 0) return fail('fold left patches');
+  const occFolded = query(pc, 0);
+  if (!(occFolded < 0.5)) return fail(`occ after fold ${occFolded}`);
+  out.textContent = `PASS err ${S.initErr.toFixed(3)}->${S.pretrainErr.toFixed(3)}; carve (${cx},${cy}) occ ${occBefore.toFixed(2)}->${occCarved.toFixed(2)}; fold ${S.lastFoldMs.toFixed(0)}ms occ ${occFolded.toFixed(2)}; ${(performance.now() - t0).toFixed(0)}ms`;
+}
+if (location.search.includes('selftest')) selftest();
+</script>
+</body></html>

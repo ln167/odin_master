@@ -86,7 +86,7 @@ Invoke via the relevant per-domain skill (`odin`, etc.) in Claude Code; the skil
 
 - `LEARNING.md` — daily loop, hotkey table, lesson workflow
 - `GAME.md` — the bespoke game + its dev tools (lab / bench / tests / scratch / profiles / substrate)
-- `tools/profiler/README.md` — Spall + Tracy zone profiling
+- `tools/profiler/README.md` — Tracy zone profiling
 
 ### Profiler (Tracy)
 
@@ -108,7 +108,6 @@ Then build any program with zones live:
 
 ```sh
 odin run . -define:INSTRUMENT=tracy        # Tracy: live attach via Tracy.exe server
-odin run . -define:INSTRUMENT=spall        # Spall: offline trace -> profiles/*.spall
 ```
 
 Zone API is `instrument.SCOPE()` / `instrument.SCOPE_NAMED("name")` from `odin_lib:instrument`.
